@@ -1,0 +1,14 @@
+# Block node_modules from both frontend and backend
+**/node_modules/
+
+# Block environment variables and local configs
+.env
+.env.*
+*.local
+
+# CRITICAL: Block Firebase Admin Master Key
+**/backend/firebase-key.json
+
+# IDE configs
+.vscode/
+.idea/
