@@ -24,24 +24,6 @@ import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage';
 import UnderReviewPage from '../pages/auth/UnderReviewPage';
 import CompleteProfile from '../pages/auth/CompleteProfile';
 
-// Student Pages
-import StudentDashboard from '../pages/student/StudentDashboard';
-import MarketplacePage from '../pages/student/MarketplacePage';
-import MyExamsPage from '../pages/student/MyExamsPage';
-import PerformancePage from '../pages/student/PerformancePage';
-import SubscriptionPage from '../pages/student/SubscriptionPage';
-import StudentProfilePage from '../pages/student/StudentProfilePage';
-import SettingsPage from '../pages/student/SettingsPage';
-import ExamPreviewPage from '../pages/student/ExamPreviewPage';
-import ExamTakePage from '../pages/student/ExamTakePage';
-import ExamResultsPage from '../pages/student/ExamResultsPage';
-
-// Tutor Pages
-import TutorDashboard from '../pages/tutor/TutorDashboard';
-import TutorExamsPage from '../pages/tutor/TutorExamsPage';
-import CreateExamPage from '../pages/tutor/CreateExamPage';
-import TutorEarningsPage from '../pages/tutor/TutorEarningsPage';
-import TutorProfilePage from '../pages/tutor/TutorProfilePage';
 
 // Admin Pages
 import AdminDashboard from '../pages/admin/AdminDashboard';
@@ -49,52 +31,6 @@ import UserManagementPage from '../pages/admin/UserManagementPage';
 import AdminRevenuePage from '../pages/admin/AdminRevenuePage';
 import AuditLogsPage from '../pages/admin/AuditLogsPage';
 import SystemSecurity from '../pages/admin/SystemSecurity';
-
-// Academic Validator Pages
-import AcademicValidatorDashboard from '../pages/validator/AcademicValidatorDashboard';
-import TutorVerificationPage from '../pages/validator/TutorVerificationPage';
-import ContentDisputePage from '../pages/validator/ContentDisputePage';
-import ExamQualityAuditsPage from '../pages/validator/ExamQualityAuditsPage';
-
-// ==========================================
-// 1. STUDENT ROUTES SUB-MODULE
-// ==========================================
-function StudentRoutes() {
-  return (
-    <Routes>
-      <Route element={<StudentLayout />}>
-        <Route index element={<StudentDashboard />} />
-        <Route path="marketplace" element={<MarketplacePage />} />
-        <Route path="exams" element={<MyExamsPage />} />
-        <Route path="performance" element={<PerformancePage />} />
-        <Route path="subscription" element={<SubscriptionPage />} />
-        <Route path="profile" element={<StudentProfilePage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="*" element={<Navigate to="" replace />} />
-      </Route>
-    </Routes>
-  );
-}
-
-// ==========================================
-// 2. TUTOR ROUTES SUB-MODULE
-// ==========================================
-function TutorRoutes() {
-  return (
-    <Routes>
-      <Route element={<TutorLayout />}>
-        <Route index element={<TutorDashboard />} />
-        <Route path="exams" element={<TutorExamsPage />} />
-        <Route path="create" element={<CreateExamPage />} />
-        <Route path="earnings" element={<TutorEarningsPage />} />
-        <Route path="analytics" element={<TutorDashboard />} />
-        <Route path="reviews" element={<TutorDashboard />} />
-        <Route path="profile" element={<TutorProfilePage />} />
-        <Route path="*" element={<Navigate to="" replace />} />
-      </Route>
-    </Routes>
-  );
-}
 
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
@@ -116,26 +52,9 @@ function AdminRoutes() {
 }
 
 // ==========================================
-// 4. ACADEMIC VALIDATOR ROUTES SUB-MODULE
+// 5. PUBLIC & END USER ROUTES SUB-MODULE
 // ==========================================
-function ValidatorRoutes() {
-  return (
-    <Routes>
-      <Route element={<ValidatorLayout />}>
-        <Route index element={<AcademicValidatorDashboard />} />
-        <Route path="tutor-verification" element={<TutorVerificationPage />} />
-        <Route path="content-disputes" element={<ContentDisputePage />} />
-        <Route path="quality-audits" element={<ExamQualityAuditsPage />} />
-        <Route path="*" element={<Navigate to="" replace />} />
-      </Route>
-    </Routes>
-  );
-}
-
-// ==========================================
-// 5. PUBLIC & COMMON CUSTOMER ROUTES SUB-MODULE
-// ==========================================
-function PublicCustomerRoutes() {
+function PublicUserRoutes() {
   return (
     <Routes>
       <Route element={<PublicLayout />}>
@@ -144,8 +63,6 @@ function PublicCustomerRoutes() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/contact" element={<ContactPage />} />
-        <Route path="/marketplace" element={<MarketplacePage />} />
-        <Route path="/exam/:id/preview" element={<ExamPreviewPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
@@ -179,43 +96,6 @@ export default function AppRoutes() {
               />
             </Route>
 
-            {/* 2. Secure Core Testing Environment Track */}
-            <Route
-              path="/exam/:id/take"
-              element={
-                <ProtectedRoute allowedRoles={['student']}>
-                  <ExamTakePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/exam/:id/results"
-              element={
-                <ProtectedRoute allowedRoles={['student']}>
-                  <ExamResultsPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 3. Student Segment Workspace */}
-            <Route
-              path="/student/*"
-              element={
-                <ProtectedRoute allowedRoles={['student']}>
-                  <StudentRoutes />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 4. Tutor Segment Workspace */}
-            <Route
-              path="/tutor/*"
-              element={
-                <ProtectedRoute allowedRoles={['tutor']}>
-                  <TutorRoutes />
-                </ProtectedRoute>
-              }
-            />
 
             {/* 5. System Administration Control Center */}
             <Route
@@ -227,18 +107,8 @@ export default function AppRoutes() {
               }
             />
 
-            {/* 6. Academic Moderation & Validation Desk */}
-            <Route
-              path="/validator/*"
-              element={
-                <ProtectedRoute allowedRoles={['validator']}>
-                  <ValidatorRoutes />
-                </ProtectedRoute>
-              }
-            />
-
             {/* 7. Public Facing Content & Common Views (MUST BE AT THE BOTTOM) */}
-            <Route path="/*" element={<PublicCustomerRoutes />} />
+            <Route path="/*" element={<PublicUserRoutes />} />
           </Routes>
         </div>
       </AuthProvider>
