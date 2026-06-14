@@ -32,6 +32,13 @@ import AdminRevenuePage from '../pages/admin/AdminRevenuePage';
 import AuditLogsPage from '../pages/admin/AuditLogsPage';
 import SystemSecurity from '../pages/admin/SystemSecurity';
 
+// Tutor Pages
+import TutorDashboard from '../pages/tutor/TutorDashboard';
+import TutorExamsPage from '../pages/tutor/TutorExamsPage';
+import CreateExamPage from '../pages/tutor/CreateExamPage';
+import TutorEarningsPage from '../pages/tutor/TutorEarningsPage';
+import TutorProfilePage from '../pages/tutor/TutorProfilePage';
+
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
 // ==========================================
@@ -50,6 +57,28 @@ function AdminRoutes() {
     </Routes>
   );
 }
+
+
+// ==========================================
+// 2. TUTOR ROUTES SUB-MODULE
+// ==========================================
+function TutorRoutes() {
+  return (
+    <Routes>
+      <Route element={<TutorLayout />}>
+        <Route index element={<TutorDashboard />} />
+        <Route path="exams" element={<TutorExamsPage />} />
+        <Route path="create" element={<CreateExamPage />} />
+        <Route path="earnings" element={<TutorEarningsPage />} />
+        <Route path="analytics" element={<TutorDashboard />} />
+        <Route path="reviews" element={<TutorDashboard />} />
+        <Route path="profile" element={<TutorProfilePage />} />
+        <Route path="*" element={<Navigate to="" replace />} />
+      </Route>
+    </Routes>
+  );
+}
+
 
 // ==========================================
 // 5. PUBLIC & END USER ROUTES SUB-MODULE
@@ -95,6 +124,16 @@ export default function AppRoutes() {
                 }
               />
             </Route>
+
+             {/* 4. Tutor Segment Workspace */}
+            <Route
+              path="/tutor/*"
+              element={
+                <ProtectedRoute allowedRoles={['tutor']}>
+                  <TutorRoutes />
+                </ProtectedRoute>
+              }
+            />
 
 
             {/* 5. System Administration Control Center */}
