@@ -1,14 +1,42 @@
-# Block node_modules from both frontend and backend
+# ==========================================
+# 1. dependency folders (frontend & backend)
+# ==========================================
 **/node_modules/
+dist/
+dist-ssr/
+build/
 
-# Block environment variables and local configs
+# ==========================================
+# 2. environment variables (CRITICAL SECRETS)
+# ==========================================
 .env
 .env.*
 *.local
+**/backend/.env
 
-# CRITICAL: Block Firebase Admin Master Key
+# ==========================================
+# 3. FIREBASE ADMIN KEYS (NEVER PUSH TO GITHUB)
+# ==========================================
 **/backend/firebase-key.json
+**/firebase-key.json
 
-# IDE configs
+# ==========================================
+# 4. system and IDE configs
+# ==========================================
 .vscode/
 .idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ==========================================
+# 5. logs and debugs
+# ==========================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
