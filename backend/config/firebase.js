@@ -3,6 +3,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 const serviceAccount = require('../firebase-key.json'); 
 
+
 initializeApp({
   credential: cert(serviceAccount)
 });
