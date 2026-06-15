@@ -48,6 +48,8 @@ import ExamQualityAuditsPage from "../pages/validator/ExamQualityAuditsPage";
 import StudentDashboard from '../pages/student/StudentDashboard';
 import MyExamsPage from '../pages/student/MyExamsPage';
 import ExamTakePage from '../pages/student/ExamTakePage';
+import MarketplacePage from '../pages/student/MarketplacePage';
+import SubscriptionPage from '../pages/student/SubscriptionPage';
 import ExamResultsPage from '../pages/student/ExamResultsPage';
 
 // ==========================================
@@ -99,6 +101,8 @@ function StudentRoutes() {
         <Route index element={<StudentDashboard />} />
         <Route path="exams" element={<MyExamsPage />} />
         <Route path="performance" element={<PerformancePage />} />
+        <Route path="subscription" element={<SubscriptionPage />} />
+        <Route path="marketplace" element={<MarketplacePage />} />
         <Route path="*" element={<Navigate to="" replace />} />
       </Route>
     </Routes>
