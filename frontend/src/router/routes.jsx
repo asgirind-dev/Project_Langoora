@@ -44,6 +44,10 @@ import TutorVerificationPage from "../pages/validator/TutorVerificationPage";
 import ContentDisputePage from "../pages/validator/ContentDisputePage";
 import ExamQualityAuditsPage from "../pages/validator/ExamQualityAuditsPage";
 
+// Student Pages
+import StudentDashboard from '../pages/student/StudentDashboard';
+import MyExamsPage from '../pages/student/MyExamsPage';
+
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
 // ==========================================
@@ -77,6 +81,21 @@ function TutorRoutes() {
         <Route path="analytics" element={<TutorDashboard />} />
         <Route path="reviews" element={<TutorDashboard />} />
         <Route path="profile" element={<TutorProfilePage />} />
+        <Route path="*" element={<Navigate to="" replace />} />
+      </Route>
+    </Routes>
+  );
+}
+
+// ==========================================
+// 1. STUDENT ROUTES SUB-MODULE
+// ==========================================
+function StudentRoutes() {
+  return (
+    <Routes>
+      <Route element={<StudentLayout />}>
+        <Route index element={<StudentDashboard />} />
+        <Route path="exams" element={<MyExamsPage />} />
         <Route path="*" element={<Navigate to="" replace />} />
       </Route>
     </Routes>
@@ -154,6 +173,16 @@ export default function AppRoutes() {
               </ProtectedRoute>
             }
           />
+
+                      {/* 3. Student Segment Workspace */}
+            <Route
+              path="/student/*"
+              element={
+                <ProtectedRoute allowedRoles={['student']}>
+                  <StudentRoutes />
+                </ProtectedRoute>
+              }
+            />
 
           {/* 5. System Administration Control Center */}
           <Route
