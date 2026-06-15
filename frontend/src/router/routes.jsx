@@ -47,6 +47,8 @@ import ExamQualityAuditsPage from "../pages/validator/ExamQualityAuditsPage";
 // Student Pages
 import StudentDashboard from '../pages/student/StudentDashboard';
 import MyExamsPage from '../pages/student/MyExamsPage';
+import ExamTakePage from '../pages/student/ExamTakePage';
+import ExamResultsPage from '../pages/student/ExamResultsPage';
 
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
@@ -96,6 +98,7 @@ function StudentRoutes() {
       <Route element={<StudentLayout />}>
         <Route index element={<StudentDashboard />} />
         <Route path="exams" element={<MyExamsPage />} />
+        <Route path="performance" element={<PerformancePage />} />
         <Route path="*" element={<Navigate to="" replace />} />
       </Route>
     </Routes>
@@ -174,7 +177,14 @@ export default function AppRoutes() {
             }
           />
 
-                      {/* 3. Student Segment Workspace */}
+             <Route
+              path="/exam/:id/results"
+              element={
+                <ProtectedRoute allowedRoles={['student']}>
+                  <ExamResultsPage />
+                </ProtectedRoute>
+              }
+            />         {/* 3. Student Segment Workspace */}
             <Route
               path="/student/*"
               element={
