@@ -51,6 +51,8 @@ import ExamTakePage from '../pages/student/ExamTakePage';
 import MarketplacePage from '../pages/student/MarketplacePage';
 import SubscriptionPage from '../pages/student/SubscriptionPage';
 import ExamResultsPage from '../pages/student/ExamResultsPage';
+import ExamPreviewPage from '../pages/student/ExamPreviewPage';
+import ExamTakePage from '../pages/student/ExamTakePage';
 
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
@@ -180,6 +182,16 @@ export default function AppRoutes() {
               </ProtectedRoute>
             }
           />
+
+          {/* 2. Secure Core Testing Environment Track */}
+            <Route
+              path="/exam/:id/take"
+              element={
+                <ProtectedRoute allowedRoles={['student']}>
+                  <ExamTakePage />
+                </ProtectedRoute>
+              }
+            />
 
              <Route
               path="/exam/:id/results"
