@@ -9,6 +9,7 @@ import StudentLayout from "../layouts/StudentLayout";
 import TutorLayout from "../layouts/TutorLayout";
 import AdminLayout from "../layouts/AdminLayout";
 import ValidatorLayout from "../layouts/AcademicValidatorLayout";
+import FinanceAdminLayout from "../layouts/FinanceAdminLayout";
 
 // Public Pages
 import LandingPage from "../pages/public/LandingPage";
@@ -53,6 +54,12 @@ import ExamResultsPage from '../pages/student/ExamResultsPage';
 import ExamPreviewPage from '../pages/student/ExamPreviewPage';
 import ExamTakePage from '../pages/student/ExamTakePage';
 import PerformancePage from '../pages/student/PerformancePage';
+
+// Finance Admin Layout & Pages
+import FinanceDashboard from "../pages/finance_admin/FinanceDashboard";
+import SubscriptionManager from "../pages/finance_admin/SubscriptionManager";
+import TutorPayoutsPage from "../pages/finance_admin/TutorPayoutsPage";
+import TransactionLedger from "../pages/finance_admin/TransactionLedger";
 
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
@@ -129,7 +136,7 @@ function ValidatorRoutes() {
 }
 
 // ==========================================
-// 5. PUBLIC & END USER ROUTES SUB-MODULE
+// 5.  PUBLIC & END USER ROUTES SUB-MODULE
 // ==========================================
 function PublicUserRoutes() {
   return (
@@ -141,6 +148,22 @@ function PublicUserRoutes() {
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+}
+
+// ==========================================
+// 6. Finance Admin ROUTES SUB-MODULE
+// ==========================================
+function FinanceRoutes() {
+  return (
+    <Routes>
+      <Route element={<FinanceAdminLayout />}>
+        <Route index element={<FinanceDashboard />} />
+        <Route path="subscriptions" element={<SubscriptionManager />} />
+        <Route path="payouts" element={<TutorPayoutsPage />} />
+        <Route path="ledger" element={<TransactionLedger />} />
       </Route>
     </Routes>
   );
@@ -173,6 +196,35 @@ export default function AppRoutes() {
             />
           </Route>
 
+          {/* 2. Secure Core Testing Environment Track */}
+          <Route
+            path="/exam/:id/take"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <ExamTakePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/exam/:id/results"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <ExamResultsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* 3. Student Segment Workspace */}
+          <Route
+            path="/student/*"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <StudentRoutes />
+              </ProtectedRoute>
+            }
+          />
+
           {/* 4. Tutor Segment Workspace */}
           <Route
             path="/tutor/*"
@@ -182,33 +234,6 @@ export default function AppRoutes() {
               </ProtectedRoute>
             }
           />
-
-          {/* 2. Secure Core Testing Environment Track */}
-            <Route
-              path="/exam/:id/take"
-              element={
-                <ProtectedRoute allowedRoles={['student']}>
-                  <ExamTakePage />
-                </ProtectedRoute>
-              }
-            />
-
-             <Route
-              path="/exam/:id/results"
-              element={
-                <ProtectedRoute allowedRoles={['student']}>
-                  <ExamResultsPage />
-                </ProtectedRoute>
-              }
-            />         {/* 3. Student Segment Workspace */}
-            <Route
-              path="/student/*"
-              element={
-                <ProtectedRoute allowedRoles={['student']}>
-                  <StudentRoutes />
-                </ProtectedRoute>
-              }
-            />
 
           {/* 5. System Administration Control Center */}
           <Route
@@ -230,8 +255,12 @@ export default function AppRoutes() {
             }
           />
 
-          {/* 7. Public Facing Content & Common Views (MUST BE AT THE BOTTOM) */}
+          {/* 7. Finance Administration Control Center */}
+          <Route path="/finance-admin/*" element={<FinanceRoutes />} />
+
+          {/* 8. Public Facing Content & Common Views (MUST BE AT THE VERY BOTTOM) */}
           <Route path="/*" element={<PublicUserRoutes />} />
+
         </Routes>
       </div>
     </AuthProvider>
