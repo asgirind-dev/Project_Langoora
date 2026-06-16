@@ -47,12 +47,14 @@ import ExamQualityAuditsPage from "../pages/validator/ExamQualityAuditsPage";
 // Student Pages
 import StudentDashboard from '../pages/student/StudentDashboard';
 import MyExamsPage from '../pages/student/MyExamsPage';
-import ExamTakePage from '../pages/student/ExamTakePage';
 import MarketplacePage from '../pages/student/MarketplacePage';
 import SubscriptionPage from '../pages/student/SubscriptionPage';
 import ExamResultsPage from '../pages/student/ExamResultsPage';
 import ExamPreviewPage from '../pages/student/ExamPreviewPage';
 import ExamTakePage from '../pages/student/ExamTakePage';
+import PerformancePage from "../pages/student/PerformancePage";
+import StudentProfilePage from '../pages/student/StudentProfilePage';
+import SettingsPage from '../pages/student/SettingsPage';
 
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
@@ -105,6 +107,8 @@ function StudentRoutes() {
         <Route path="performance" element={<PerformancePage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
         <Route path="marketplace" element={<MarketplacePage />} />
+        <Route path="profile" element={<StudentProfilePage />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="" replace />} />
       </Route>
     </Routes>
@@ -140,6 +144,8 @@ function PublicUserRoutes() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/marketplace" element={<MarketplacePage />} />
+        <Route path="/exam/:id/preview" element={<ExamPreviewPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
