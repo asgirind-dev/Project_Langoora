@@ -52,6 +52,7 @@ import SubscriptionPage from '../pages/student/SubscriptionPage';
 import ExamResultsPage from '../pages/student/ExamResultsPage';
 import ExamPreviewPage from '../pages/student/ExamPreviewPage';
 import ExamTakePage from '../pages/student/ExamTakePage';
+import PerformancePage from '../pages/student/PerformancePage';
 
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
