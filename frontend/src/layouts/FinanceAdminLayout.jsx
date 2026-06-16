@@ -3,21 +3,18 @@ import { Activity, CreditCard, DollarSign, BookOpen, PieChart } from 'lucide-rea
 import DashboardSidebar from '../components/layout/DashboardSidebar';
 
 const financeNavItems = [
-  { label: 'Finance Overview', path: '', icon: PieChart },
-  { label: 'Subscription Manager', path: 'subscriptions', icon: CreditCard },
-  { label: 'Tutor Payouts', path: 'payouts', icon: DollarSign },
+  { label: 'Dashboard', path: '', icon: PieChart },
+  { label: 'Subscription Plance', path: 'subscriptions', icon: CreditCard },
   { label: 'Transaction Ledger', path: 'ledger', icon: BookOpen },
+    { label: 'Tutor Payouts', path: 'payouts', icon: DollarSign },
 ];
 
-// මේ "export default" කියන කෑල්ල අනිවාර්යයෙන්ම මේ විදිහටම තියෙන්න ඕනේ
 export default function FinanceAdminLayout() {
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#060d1f] text-slate-900 dark:text-white flex transition-colors duration-200">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#060d1f] text-slate-900 dark:text-white flex">
       <DashboardSidebar navItems={financeNavItems} basePath="/finance-admin" />
-      <main className="flex-1 ml-64 min-h-screen overflow-x-hidden">
-        <div className="p-8">
-          <Outlet />
-        </div>
+      <main className="flex-1 ml-64 p-8">
+        <Outlet />
       </main>
     </div>
   );
