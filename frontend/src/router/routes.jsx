@@ -47,12 +47,12 @@ import ExamQualityAuditsPage from "../pages/validator/ExamQualityAuditsPage";
 // Student Pages
 import StudentDashboard from '../pages/student/StudentDashboard';
 import MyExamsPage from '../pages/student/MyExamsPage';
-import ExamTakePage from '../pages/student/ExamTakePage';
 import MarketplacePage from '../pages/student/MarketplacePage';
 import SubscriptionPage from '../pages/student/SubscriptionPage';
 import ExamResultsPage from '../pages/student/ExamResultsPage';
 import ExamPreviewPage from '../pages/student/ExamPreviewPage';
 import ExamTakePage from '../pages/student/ExamTakePage';
+import PerformancePage from '../pages/student/PerformancePage';
 
 // ==========================================
 // 3. ADMIN ROUTES SUB-MODULE
