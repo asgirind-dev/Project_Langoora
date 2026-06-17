@@ -6,7 +6,8 @@ require('dotenv').config();
 require('./config/firebase'); 
 
 const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes'); 
+const userRoutes = require('./routes/userRoutes');
+const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 
 const app = express();
 
@@ -14,6 +15,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use('/api/tutor', tutorProfileRoutes);
 
 // Routing Middleware 
 app.use('/api/auth', authRoutes);
