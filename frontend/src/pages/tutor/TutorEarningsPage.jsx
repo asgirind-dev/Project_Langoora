@@ -35,11 +35,14 @@ export default function TutorEarningsPage() {
         <GlassCard className="lg:col-span-2 p-6">
           <h3 className="text-lg font-semibold text-white mb-5">Monthly Revenue</h3>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={tutorRevenueData}>
+            <BarChart data={tutorRevenueData || []}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="month" tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
-              <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={v => [`LKR ${v.toLocaleString()}`, 'Revenue']} />
+              <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => `${((v || 0)/1000).toFixed(0)}K`} />
+              <Tooltip 
+                contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} 
+                formatter={v => [`LKR ${(v ?? 0).toLocaleString()}`, 'Revenue']} 
+              />
               <Bar dataKey="revenue" fill="#10b981" radius={[6,6,0,0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -80,15 +83,19 @@ export default function TutorEarningsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {recentTransactions.map(t => (
-                <tr key={t.id} className="hover:bg-white/3 transition-colors">
-                  <td className="py-3 text-xs text-blue-400 font-mono">{t.id}</td>
-                  <td className="py-3 text-sm text-gray-300">{t.user}</td>
-                  <td className="py-3 text-sm text-gray-300">{t.exam}</td>
-                  <td className="py-3 text-sm font-semibold text-white">LKR {t.amount.toLocaleString()}</td>
-                  <td className="py-3 text-xs text-gray-500">{t.date}</td>
+              {(recentTransactions || []).map(t => (
+                <tr key={t?.id} className="hover:bg-white/3 transition-colors">
+                  <td className="py-3 text-xs text-blue-400 font-mono">{t?.id || 'N/A'}</td>
+                  <td className="py-3 text-sm text-gray-300">{t?.user || 'Unknown'}</td>
+                  <td className="py-3 text-sm text-gray-300">{t?.exam || 'N/A'}</td>
+                  <td className="py-3 text-sm font-semibold text-white">
+                    LKR {(t?.amount ?? 0).toLocaleString()}
+                  </td>
+                  <td className="py-3 text-xs text-gray-500">{t?.date || 'N/A'}</td>
                   <td className="py-3">
-                    <Badge color={t.status === 'completed' ? 'green' : t.status === 'pending' ? 'yellow' : 'red'}>{t.status}</Badge>
+                    <Badge color={t?.status === 'completed' ? 'green' : t?.status === 'pending' ? 'yellow' : 'red'}>
+                      {t?.status || 'unknown'}
+                    </Badge>
                   </td>
                 </tr>
               ))}
