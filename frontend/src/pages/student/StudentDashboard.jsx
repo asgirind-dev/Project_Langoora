@@ -198,7 +198,9 @@ export default function StudentDashboard() {
                     <p className="text-sm font-medium text-white line-clamp-2 leading-snug mb-1">{exam.title}</p>
                     <p className="text-xs text-gray-400">{exam.tutor}</p>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-blue-400 font-semibold text-sm">LKR {exam.price.toLocaleString()}</span>
+                      <span className="text-blue-400 font-semibold text-sm">
+                    LKR {exam?.price !== undefined && exam?.price !== null ? exam.price.toLocaleString() : '0'}
+                  </span>
                       <Badge color="blue">{exam.level}</Badge>
                     </div>
                   </div>

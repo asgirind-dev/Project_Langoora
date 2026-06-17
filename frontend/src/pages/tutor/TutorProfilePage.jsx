@@ -11,8 +11,8 @@ import Badge from '../../components/ui/Badge';
 import { storage } from '../../firebaseConfig'; 
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// Backend API URL
-const API_BASE_URL = 'http://localhost:5000/api/tutor';
+
+const API_BASE_URL = 'http://localhost:5000/api/tutors';
 
 export default function TutorProfilePage() {
   const { user } = useAuth();
@@ -40,7 +40,7 @@ export default function TutorProfilePage() {
   // Profile Picture State
   const [profilePic, setProfilePic] = useState(null);
 
-// ==========================================
+  // ==========================================
   // 1. FETCH PROFILE DATA FROM BACKEND API
   // ==========================================
   useEffect(() => {
@@ -58,7 +58,6 @@ export default function TutorProfilePage() {
             name: data.name || user.name || '',
             email: user.email || '', 
             phone: data.phone || '',
-            // 💡 ලෙඩේ සුවකළා: privileges අස්සේ නෙමෙයි, කෙලින්ම root එකේ තියෙන ඩේටා ගන්නවා
             qualifications: data.qualifications || '', 
             university: data.university || '',         
             address: data.address || '',
@@ -108,7 +107,6 @@ export default function TutorProfilePage() {
       const base64String = reader.result;
 
       try {
-        // Dispatch updated base64 image URL property directly to backend API
         const response = await fetch(`${API_BASE_URL}/${user.uid}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -130,7 +128,7 @@ export default function TutorProfilePage() {
     };
   };
 
- // Persist Personal Info & Qualifications via PUT Request to Backend
+  // Persist Personal Info & Qualifications via PUT Request to Backend
   const handleSavePersonalInfo = async () => {
     if (!user?.uid) return;
 
@@ -144,7 +142,6 @@ export default function TutorProfilePage() {
           name: form.name,
           phone: form.phone,
           address: form.address,
-          // 🔒 වෙනස් කරන්න බැරි වුණත්, දැනට තියෙන පරණ ඩේටා ටික මැකිලා යන්නේ නැතුව ආරක්ෂිතව root fields විදිහටම යවනවා
           qualifications: form.qualifications, 
           university: form.university
         }),
@@ -181,7 +178,6 @@ export default function TutorProfilePage() {
       const result = await response.json();
 
       if (result.success) {
-        // Manually push new entry to local state since active listeners are detached
         setBankCards(prev => [...prev, result.data]);
         setNewCard({ bankName: '', accountNo: '', accountHolder: '' });
         setShowAddCard(false);
@@ -206,7 +202,6 @@ export default function TutorProfilePage() {
         const result = await response.json();
 
         if (result.success) {
-          // Filter entry out of state arrays to cleanly force live UI render update
           setBankCards(prev => prev.filter(card => card.id !== id));
           alert('The selected bank card has been successfully removed.');
         }
@@ -277,7 +272,6 @@ export default function TutorProfilePage() {
             <div className="space-y-4">
               <Input label="Full Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} icon={User} disabled={!editPersonal} />
               
-              {/* Email Field - Permanently Disabled */}
               <div>
                 <Input label="Email Address" value={form.email} icon={Mail} disabled={true} className="opacity-60 cursor-not-allowed" />
                 <p className="text-[11px] text-gray-500 mt-1 pl-1">Email address cannot be changed as it is linked to your login account.</p>
@@ -308,7 +302,6 @@ export default function TutorProfilePage() {
             </div>
             
             <div className="space-y-4">
-              {/* 🔒 Permanently Disabled Fields - වෙනස් කරන්න බැහැ, පෙන්වන්න විතරයි */}
               <div>
                 <Input label="Qualifications" value={form.qualifications} icon={GraduationCap} disabled={true} className="opacity-60 cursor-not-allowed" />
               </div>
