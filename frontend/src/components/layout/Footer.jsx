@@ -9,6 +9,7 @@ const footerLinks = {
     { label: 'Become a Tutor', href: '/auth/register?role=tutor' },
   ],
   Company: [
+    { label: 'Home', href: '/' },
     { label: 'About Us', href: '/about' },
     { label: 'Contact Us', href: '/contact' },
     { label: 'Privacy Policy', href: '#' },
@@ -16,7 +17,8 @@ const footerLinks = {
   ],
   Exams: [
     { label: 'JLPT', href: '/marketplace?category=JLPT' },
-    { label: 'EPS-TOPIK', href: '/marketplace?category=EPS-TOPIK' }
+    { label: 'EPS-TOPIK', href: '/marketplace?category=EPS-TOPIK' },
+    { label: 'TOPIK I', href: '/marketplace?category=TOPIK-I' }
   ],
 };
 
