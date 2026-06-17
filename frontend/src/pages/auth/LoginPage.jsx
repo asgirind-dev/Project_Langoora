@@ -7,7 +7,7 @@ import Input from '../../components/ui/Input';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, loginWithGoogle } = useAuth(); // 🔥 Destructured loginWithGoogle
+  const { login, loginWithGoogle } = useAuth(); 
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [errors, setErrors] = useState({});
@@ -23,14 +23,39 @@ export default function LoginPage() {
   };
 
   // Safe navigation handler tool shared across both entry paths
-  const handleRoleRedirection = (userObj) => {
-    if (userObj && userObj.role === 'admin') navigate('/admin');
-    else if (userObj && userObj.role === 'validator') navigate('/validator');
-    else if (userObj && userObj.role === 'tutor') {
-      if (userObj.status === 'pending') navigate('/auth/under-review');
-      else navigate('/tutor');
-    } 
-    else navigate('/student'); // Default student target
+const handleRoleRedirection = (userObj) => {
+    console.log("Current Redirecting User Object:", userObj);
+
+    if (!userObj) {
+      navigate('/auth/login');
+      return;
+    }
+
+    if (userObj.status === 'profile_incomplete') {
+      navigate('/auth/complete-profile', { state: { metadata: userObj } });
+      return;
+    }
+
+    const currentRole = userObj.role || userObj.user?.role;
+
+    if (currentRole === 'admin') {
+      navigate('/admin');
+    } else if (currentRole === 'validator') {
+      navigate('/validator');
+    } else if (currentRole === 'finance') { 
+      navigate('/finance-admin');
+    } else if (currentRole === 'tutor') {
+      if (userObj.status === 'pending' || userObj.user?.status === 'pending') {
+        navigate('/auth/under-review');
+      } else {
+        navigate('/tutor');
+      }
+    } else if (currentRole === 'student') {
+      navigate('/student');
+    } else {
+      console.warn("Unknown user role detected:", currentRole);
+      setErrors({ server: "Role assignment configuration error. Contact support." });
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -55,7 +80,7 @@ export default function LoginPage() {
     }
   };
 
-  // 🔥 NEW: Google Action Click Trigger Workflow
+  // Google Action Click Trigger Workflow
   const handleGoogleClick = async () => {
     setLoading(true);
     setErrors({});
@@ -123,7 +148,6 @@ export default function LoginPage() {
           <div className="relative flex justify-center"><span className="bg-[#060d1f] px-3 text-gray-500 text-sm">or continue with</span></div>
         </div>
 
-        {/* 🔥 FIXED: Hooked onClick parameter interface dynamically */}
         <Button variant="secondary" size="lg" fullWidth type="button" onClick={handleGoogleClick} disabled={loading}>
           <Chrome size={18} className="text-blue-400" /> Continue with Google
         </Button>

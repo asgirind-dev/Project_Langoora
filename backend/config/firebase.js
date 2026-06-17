@@ -1,14 +1,21 @@
-const { initializeApp, cert } = require('firebase-admin/app');
+const { initializeApp, cert, getApps, getApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 const serviceAccount = require('../firebase-key.json'); 
 
+let app;
 
-initializeApp({
-  credential: cert(serviceAccount)
-});
 
-const db = getFirestore();
-const auth = getAuth();
+if (getApps().length === 0) {
+  app = initializeApp({
+    credential: cert(serviceAccount)
+  });
+} else {
+  app = getApp();
+}
+
+
+const db = getFirestore(app);
+const auth = getAuth(app);
 
 module.exports = { db, auth };

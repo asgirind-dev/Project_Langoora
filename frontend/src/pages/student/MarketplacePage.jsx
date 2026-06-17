@@ -46,9 +46,9 @@ export default function MarketplacePage() {
   const hasActiveFilters = search || activeCategory !== 'All' || priceRange[1] < 10000 || minRating > 0 || difficulty !== 'All' || dateFrom || dateTo;
 
   return (
-    <div className="space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-3xl font-bold text-white mb-1">Exam Marketplace</h1>
+<div className="space-y-6 pt-24 px-4 max-w-7xl mx-auto"> 
+    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+      <h1 className="text-3xl font-bold text-white mb-1">Exam Marketplace</h1>
         <p className="text-gray-400">Find the perfect mock exam for your language goals</p>
       </motion.div>
 
