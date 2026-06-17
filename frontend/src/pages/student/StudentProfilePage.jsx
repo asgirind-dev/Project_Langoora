@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { User, Mail, Phone, Calendar, MapPin, CreditCard as Edit3, Save, Camera, BookOpen, Award } from 'lucide-react';
+import { User, Mail, Phone, Calendar, MapPin, CreditCard as Edit3, Save, Camera, BookOpen, Award, Globe, Lock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -10,6 +10,8 @@ import Badge from '../../components/ui/Badge';
 export default function StudentProfilePage() {
   const { user } = useAuth();
   const [editing, setEditing] = useState(false);
+  
+  // 1. Personal & Exam Info State
   const [form, setForm] = useState({
     name: user?.name || 'Kavindu Perera',
     email: user?.email || 'kavindu@example.com',
@@ -20,13 +22,60 @@ export default function StudentProfilePage() {
     targetDate: '2024-12-01',
   });
 
+  // 2. Language State
+  const [language, setLanguage] = useState('English');
+
+  // 3. Change Password State
+  const [passwords, setPasswords] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+
+  // Password fields handle කරන function එක
+  const handlePasswordChange = (e) => {
+    setPasswords(p => ({ ...p, [e.target.name]: e.target.value }));
+  };
+
+  // CRUD: Profile details update කරන function එක
+  const handleProfileSave = () => {
+    setEditing(false);
+    console.log("Saving profile data to DB:", form);
+    // මෙතනට ඔයාගේ backend axios update route එක දාන්න පුළුවන්:
+    // axios.put('/api/student/profile', form)...
+  };
+
+  // CRUD: Language update කරන function එක
+  const handleLanguageSubmit = (e) => {
+    e.preventDefault();
+    console.log("Saving Language preference:", language);
+    alert(`Language updated to ${language} successfully!`);
+    // axios.put('/api/student/settings/language', { language })...
+  };
+
+  // CRUD: Password update කරන function එක
+  const handlePasswordSubmit = (e) => {
+    e.preventDefault();
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      alert("New passwords do not match!");
+      return;
+    }
+    console.log("Submitting password change:", passwords);
+    alert("Password updated successfully!");
+    // Password update එකෙන් පස්සේ fields හිස් කරන්න:
+    setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    // axios.put('/api/student/settings/password', passwords)...
+  };
+
   return (
     <div className="space-y-8 max-w-4xl">
+      {/* Title Section */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-3xl font-bold text-white mb-1">My Profile</h1>
         <p className="text-gray-400">Manage your personal information and preferences</p>
       </motion.div>
 
+      {/* Main Avatar Card */}
       <GlassCard className="p-6">
         <div className="flex items-start gap-6">
           <div className="relative">
@@ -47,7 +96,11 @@ export default function StudentProfilePage() {
                   <Badge color="amber">12-day streak</Badge>
                 </div>
               </div>
-              <Button variant={editing ? 'success' : 'secondary'} size="sm" onClick={() => setEditing(!editing)}>
+              <Button 
+                variant={editing ? 'success' : 'secondary'} 
+                size="sm" 
+                onClick={editing ? handleProfileSave : () => setEditing(true)}
+              >
                 {editing ? <><Save size={14} /> Save</> : <><Edit3 size={14} /> Edit</>}
               </Button>
             </div>
@@ -55,7 +108,9 @@ export default function StudentProfilePage() {
         </div>
       </GlassCard>
 
+      {/* Info & Goals Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Personal Info Card */}
         <GlassCard className="p-6">
           <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2"><User size={18} className="text-blue-400" /> Personal Info</h3>
           <div className="space-y-4">
@@ -69,6 +124,7 @@ export default function StudentProfilePage() {
           </div>
         </GlassCard>
 
+        {/* Exam Goals Card */}
         <GlassCard className="p-6">
           <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2"><Award size={18} className="text-amber-400" /> Exam Goals</h3>
           <div className="space-y-4">
@@ -106,6 +162,76 @@ export default function StudentProfilePage() {
         </GlassCard>
       </div>
 
+      {/* ================= අලුතින් එකතු කරපු: LANGUAGE & REGION CARD ================= */}
+      <GlassCard className="p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Globe size={18} className="text-emerald-400" />
+          <h3 className="text-lg font-semibold text-white">Language & Region</h3>
+        </div>
+        
+        <form onSubmit={handleLanguageSubmit} className="space-y-4 max-w-md">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-gray-300">Interface Language</label>
+            <select
+              value={language}
+              onChange={e => setLanguage(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/60"
+            >
+              <option value="English" className="bg-[#0f1629]">English</option>
+              <option value="Sinhala" className="bg-[#0f1629]">Sinhala</option>
+              <option value="Tamil" className="bg-[#0f1629]">Tamil</option>
+            </select>
+          </div>
+          <Button type="submit" variant="primary" size="sm">
+            Save Preference
+          </Button>
+        </form>
+      </GlassCard>
+
+      {/* ================= අලුතින් එකතු කරපු: CHANGE PASSWORD CARD ================= */}
+      <GlassCard className="p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Lock size={18} className="text-amber-400" />
+          <h3 className="text-lg font-semibold text-white">Change Password</h3>
+        </div>
+
+        <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
+          <Input 
+            label="Current Password" 
+            type="password" 
+            name="currentPassword"
+            value={passwords.currentPassword} 
+            onChange={handlePasswordChange} 
+            icon={Lock} 
+            placeholder="••••••••"
+          />
+          <Input 
+            label="New Password" 
+            type="password" 
+            name="newPassword"
+            value={passwords.newPassword} 
+            onChange={handlePasswordChange} 
+            icon={Lock} 
+            placeholder="••••••••"
+          />
+          <Input 
+            label="Confirm New Password" 
+            type="password" 
+            name="confirmPassword"
+            value={passwords.confirmPassword} 
+            onChange={handlePasswordChange} 
+            icon={Lock} 
+            placeholder="••••••••"
+          />
+          <div className="pt-2">
+            <Button type="submit" variant="primary" size="sm">
+              Update Password
+            </Button>
+          </div>
+        </form>
+      </GlassCard>
+
+      {/* Purchased Exams Card */}
       <GlassCard className="p-6">
         <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2"><BookOpen size={18} className="text-emerald-400" /> Purchased Exams</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
