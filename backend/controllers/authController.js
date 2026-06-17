@@ -2,7 +2,9 @@ const { db, auth } = require('../config/firebase');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+// ==========================================
 // 1. REGISTER LOGIC
+// ==========================================
 exports.registerUser = async (req, res) => {
   const { email, password, role, userData } = req.body;
 
@@ -59,7 +61,7 @@ exports.registerUser = async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    return res.status(201).json({ token: appToken, user: userProfile });
+    return res.status(201).json({ token: appToken, user: { id: userRecord.uid, ...userProfile } });
 
   } catch (error) {
     console.error('Registration Failure:', error);
@@ -70,18 +72,24 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-// 2. LOGIN LOGIC
+// ==========================================
+// 2. UNIFIED LOGIN GATEWAY LOGIC
+// ==========================================
 exports.loginUser = async (req, res) => {
   const { email, password, idToken } = req.body;
 
   try {
+    // ------------------------------------------
+    // PATHWAY A: ID TOKEN VALIDATION (Frontend Firebase Auth Integrations)
+    // ------------------------------------------
     if (idToken) {
       const decodedToken = await auth.verifyIdToken(idToken);
       const uid = decodedToken.uid;
       const emailFromToken = decodedToken.email;
-      const nameFromToken = decodedToken.name || 'Google User';
+      const nameFromToken = decodedToken.name || 'User';
 
       let userDoc = await db.collection('users').doc(uid).get();
+
 
       if (!userDoc.exists) {
         return res.status(200).json({
@@ -103,11 +111,22 @@ exports.loginUser = async (req, res) => {
         { expiresIn: '1d' }
       );
 
-      return res.status(200).json({ token: appToken, user: { id: uid, ...userData } });
+
+      return res.status(200).json({ 
+        token: appToken, 
+        user: { 
+          id: uid, 
+          uid: uid, 
+          ...userData 
+        } 
+      });
     }
 
+    // ------------------------------------------
+    // PATHWAY B: LEGACY BACKEND AUTHENTICATION (Bcrypt / Postman Flow)
+    // ------------------------------------------
     if (!email || !password) {
-      return res.status(400).json({ message: 'Please provide valid email and password.' });
+      return res.status(400).json({ message: 'Please provide valid credentials or an identity idToken.' });
     }
 
     const userSnapshot = await db.collection('users').where('email', '==', email.toLowerCase().trim()).get();
@@ -126,6 +145,7 @@ exports.loginUser = async (req, res) => {
       return res.status(403).json({ message: 'Your account has been suspended!' });
     }
 
+    // Bcrypt Password Verification
     if (userData.password && (userData.password.startsWith('$2a$') || userData.password.startsWith('$2b$'))) {
       const isMatch = await bcrypt.compare(password, userData.password);
       if (!isMatch) return res.status(400).json({ message: 'Invalid credentials!' });
@@ -136,19 +156,29 @@ exports.loginUser = async (req, res) => {
         { expiresIn: '1d' }
       );
 
-      delete userData.password;
-      return res.status(200).json({ token: appToken, user: { id: userId, ...userData } });
+      delete userData.password; 
+      
+      return res.status(200).json({ 
+        token: appToken, 
+        user: { 
+          id: userId, 
+          uid: userId, 
+          ...userData 
+        } 
+      });
     }
 
     return res.status(400).json({ message: 'Invalid identity target authentication method.' });
 
   } catch (error) {
     console.error('Login Failure:', error);
-    res.status(500).json({ message: 'Server error during authentication processing phase' });
+    res.status(500).json({ message: 'Server error during authentication processing phase', error: error.message });
   }
 };
 
+// ==========================================
 // 3. COMPLETE GOOGLE REGISTRATION LOGIC
+// ==========================================
 exports.completeGoogleRegistration = async (req, res) => {
   const { uid, email, name, phone, dob, role } = req.body;
 
@@ -183,7 +213,7 @@ exports.completeGoogleRegistration = async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    return res.status(201).json({ token: appToken, user: newGoogleProfile });
+    return res.status(201).json({ token: appToken, user: { id: uid, ...newGoogleProfile } });
 
   } catch (error) {
     console.error('Google Profile Finalization Failure:', error);

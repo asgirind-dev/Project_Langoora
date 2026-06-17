@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Phone, Calendar, User, Mail, ArrowRight } from 'lucide-react';
 import Button from '../../components/ui/Button';
@@ -7,9 +7,10 @@ import Input from '../../components/ui/Input';
 export default function CompleteProfile() {
   const location = useLocation();
   const navigate = useNavigate();
-  
-  // Retrieve the Google data passed from RegisterPage through 'state'
-  const { uid, email, name } = location.state || {};
+
+
+  const metadata = location.state?.metadata || {};
+  const { uid, email, name } = metadata;
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -18,11 +19,15 @@ export default function CompleteProfile() {
     dob: ''
   });
 
-  // If the user directly accesses this page via URL (without Google data),
-  // redirect them back to the registration page
+
+  useEffect(() => {
+    if (!uid || !email) {
+      navigate('/auth/register');
+    }
+  }, [uid, email, navigate]);
+
   if (!uid || !email) {
-    setTimeout(() => navigate('/auth/register'), 0);
-    return null;
+    return null; 
   }
 
   const handleInputChange = (field) => (e) => {
@@ -45,7 +50,6 @@ export default function CompleteProfile() {
     setErrors({});
 
     try {
-      // 🚀 Send the data to the newly created backend endpoint
       const response = await fetch('http://localhost:5000/api/auth/complete-google-registration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -55,7 +59,7 @@ export default function CompleteProfile() {
           name,
           phone: form.phone,
           dob: form.dob,
-          role: 'student' // Users registering through Google are assigned as students by default
+          role: 'student'
         })
       });
 
@@ -65,12 +69,9 @@ export default function CompleteProfile() {
         throw new Error(data.message || 'Failed to complete profile creation.');
       }
 
-      // If successful, save the token and user data,
-      // then redirect directly to the Student Dashboard
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
 
-      // Typically used to refresh the AuthContext (depending on your implementation)
       window.location.href = '/student'; 
 
     } catch (err) {
@@ -95,11 +96,10 @@ export default function CompleteProfile() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Details received from Google (read-only for the user) */}
         <Input
           label="Full Name (From Google)"
           icon={User}
-          value={name}
+          value={name || ''}
           disabled
           className="opacity-60 bg-white/5 cursor-not-allowed"
         />
@@ -107,12 +107,11 @@ export default function CompleteProfile() {
         <Input
           label="Email Address (From Google)"
           icon={Mail}
-          value={email}
+          value={email || ''}
           disabled
           className="opacity-60 bg-white/5 cursor-not-allowed"
         />
 
-        {/* Additional required information */}
         <Input 
           label="Phone Number" 
           type="tel" 

@@ -177,8 +177,6 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <Footer />
-
       <Modal isOpen={modal} onClose={() => setModal(false)} title={`Upgrade to ${selected?.name}`}>
         {selected && (
           <div className="space-y-5">
