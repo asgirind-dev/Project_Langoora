@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Mail, Phone, GraduationCap, MapPin, Save, Camera, Edit3, Building, CreditCard, Trash2, Plus } from 'lucide-react';
+import { User, Mail, Phone, GraduationCap, MapPin, Save, Camera, Edit3, Building, CreditCard, Trash2, Plus, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -40,7 +40,7 @@ export default function TutorProfilePage() {
   // Profile Picture State
   const [profilePic, setProfilePic] = useState(null);
 
-// ==========================================
+  // ==========================================
   // 1. FETCH PROFILE DATA FROM BACKEND API
   // ==========================================
   useEffect(() => {
@@ -130,7 +130,7 @@ export default function TutorProfilePage() {
     };
   };
 
- // Persist Personal Info & Qualifications via PUT Request to Backend
+  // Persist Personal Info & Qualifications via PUT Request to Backend
   const handleSavePersonalInfo = async () => {
     if (!user?.uid) return;
 
@@ -213,6 +213,37 @@ export default function TutorProfilePage() {
       } catch (error) {
         console.error("Error deleting card:", error);
         alert('Unable to delete bank card. Please refresh the page and try again.');
+      }
+    }
+  };
+
+  // 🚨 3. ACCOUNT DELETE HANDLER (DOUBLE CONFIRMATION)
+  const handleDeleteAccount = async () => {
+    if (!user?.uid) return;
+
+    const firstConfirm = window.confirm("Are you sure you want to delete your account? This action cannot be undone!");
+    
+    if (firstConfirm) {
+      const secondConfirm = window.confirm("Final Warning: Do you really want to permanently delete all your profile details and registered bank cards?");
+      
+      if (secondConfirm) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/${user.uid}`, {
+            method: 'DELETE',
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert("Your account has been successfully deleted. Redirecting...");
+            window.location.href = '/login'; // Logout කරලා login එකට හරවනවා
+          } else {
+            alert("Could not delete account: " + result.message);
+          }
+        } catch (error) {
+          console.error("Error deleting account:", error);
+          alert("Network error. Failed to delete account. Please check your connection.");
+        }
       }
     }
   };
@@ -388,6 +419,25 @@ export default function TutorProfilePage() {
           </div>
 
           <p className="text-xs text-gray-500 mt-4">Bank details are used for payout processing. All information is securely encrypted and stored.</p>
+        </GlassCard>
+
+        {/* 🚨 4. DANGER ZONE - DELETE ACCOUNT CARD */}
+        <GlassCard className="p-6 border-red-500/20 bg-red-500/5 md:col-span-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold text-red-400 flex items-center gap-2">
+                <AlertTriangle size={18} /> Danger Zone
+              </h3>
+              <p className="text-sm text-gray-400">Permanently delete your tutor account and all associated profile and payout data.</p>
+            </div>
+            <button 
+              type="button"
+              className="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-xl transition-colors w-full sm:w-auto shadow-md"
+              onClick={handleDeleteAccount}
+            >
+              Delete Account
+            </button>
+          </div>
         </GlassCard>
       </div>
     </div>

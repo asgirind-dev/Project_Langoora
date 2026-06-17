@@ -11,4 +11,7 @@ router.get('/:uid/cards', tutorController.getBankCards);
 router.post('/:uid/cards', tutorController.addBankCard);
 router.delete('/:uid/cards/:cardId', tutorController.deleteBankCard);
 
+// Delete account route
+router.delete('/:uid', tutorController.deleteTutorAccount);
+
 module.exports = router;
