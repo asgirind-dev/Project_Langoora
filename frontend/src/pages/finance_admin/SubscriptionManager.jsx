@@ -1,240 +1,163 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import axios from 'axios'; // Axios install කරලා නැත්නම් install කරගන්න මචන් (npm i axios)
 import { 
   Plus, Edit, Trash2, Crown, Sparkles, 
-  Zap, Infinity, CheckCircle, XCircle,
-  DollarSign, Users, Clock, TrendingUp,
-  Shield, Star, Gift, Rocket, Layers,
-  BookOpen, Award, Settings, Save,
-  X, AlertCircle, Database, RefreshCw
+  Zap, Infinity, CheckCircle,
+  DollarSign, BookOpen, Settings, Save,
+  X, Database, RefreshCw, Rocket, Star, Layers, Award
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 
-// Initial Data
-const initialPlans = [
-  {
-    id: 1,
-    name: 'Starter',
-    icon: 'Zap',
-    price: 999,
-    credits: 50,
-    features: ['Basic Exam Access', '5 Exam Attempts', 'Email Support'],
-    color: 'from-blue-400 to-cyan-500',
-    bg: 'bg-blue-500/10',
-    popular: false,
-    active: true
-  },
-  {
-    id: 2,
-    name: 'Pro',
-    icon: 'Rocket',
-    price: 2500,
-    credits: 100,
-    features: ['All Exam Access', '25 Exam Attempts', 'Priority Support', 'Detailed Analytics'],
-    color: 'from-purple-400 to-pink-500',
-    bg: 'bg-purple-500/10',
-    popular: true,
-    active: true
-  },
-  {
-    id: 3,
-    name: 'Elite',
-    icon: 'Crown',
-    price: 4500,
-    credits: 250,
-    features: ['Unlimited Access', '100 Exam Attempts', '24/7 Priority Support', 'Custom Reports', 'API Access'],
-    color: 'from-amber-400 to-orange-500',
-    bg: 'bg-amber-500/10',
-    popular: false,
-    active: true
-  },
-];
-
-const initialExamCategories = [
-  { id: 1, name: 'JLPT N5', credits: 20, exams: 12, status: 'active' },
-  { id: 2, name: 'JLPT N4', credits: 30, exams: 8, status: 'active' },
-  { id: 3, name: 'EPS-TOPIK', credits: 25, exams: 15, status: 'active' },
-  { id: 4, name: 'JLPT N3', credits: 40, exams: 6, status: 'inactive' },
-  { id: 5, name: 'TOEFL', credits: 35, exams: 10, status: 'active' },
-];
+const API_BASE_URL = 'http://localhost:5000/api/subscription-management'; // ඔයාලගේ බැක්එන්ඩ් පෝර්ට් එකට ගැලපෙන්න වෙනස් කරන්න
 
 const iconMap = {
   Zap: Zap,
   Rocket: Rocket,
   Crown: Crown,
   Infinity: Infinity,
-  Star: Star,
-  Shield: Shield
+  Star: Star
 };
 
 export default function SubscriptionManager() {
   const [activeTab, setActiveTab] = useState('plans');
-  const [plans, setPlans] = useState(initialPlans);
-  const [examCategories, setExamCategories] = useState(initialExamCategories);
+  const [plans, setPlans] = useState([]);
+  const [examCategories, setExamCategories] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('plan');
   const [editingItem, setEditingItem] = useState(null);
+  
   const [formData, setFormData] = useState({
-    name: '',
-    price: '',
-    credits: '',
-    features: [''],
-    popular: false,
+    name: '', price: '', credits: '', features: [''], popular: false,
   });
   const [examFormData, setExamFormData] = useState({
-    name: '',
-    credits: '',
-    exams: '',
-    status: 'active'
+    name: '', credits: '', exams: '', status: 'active'
   });
 
-  // Stats
+  // Fetch initial data from database
+  const fetchData = async () => {
+    setLoadingData(true);
+    try {
+      const plansRes = await axios.get(`${API_BASE_URL}/plans`);
+      const catsRes = await axios.get(`${API_BASE_URL}/categories`);
+      setPlans(plansRes.data);
+      setExamCategories(catsRes.data);
+    } catch (error) {
+      console.error("Database fetch error: ", error);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Stats Counters
   const stats = [
     { label: 'Total Plans', value: plans.length, icon: Crown, color: 'text-purple-400' },
     { label: 'Active Plans', value: plans.filter(p => p.active).length, icon: CheckCircle, color: 'text-emerald-400' },
     { label: 'Exam Categories', value: examCategories.length, icon: BookOpen, color: 'text-blue-400' },
-    { label: 'Total Credits Pool', value: examCategories.reduce((acc, cat) => acc + cat.credits, 0), icon: Database, color: 'text-amber-400' },
+    { label: 'Total Credits Pool', value: examCategories.reduce((acc, cat) => acc + (cat.credits || 0), 0), icon: Database, color: 'text-amber-400' },
   ];
 
-  // CRUD Operations for Plans
-  const addPlan = () => {
-    const newPlan = {
-      id: Date.now(),
-      name: formData.name,
-      icon: 'Rocket',
-      price: parseInt(formData.price),
-      credits: parseInt(formData.credits),
-      features: formData.features.filter(f => f.trim() !== ''),
-      color: 'from-purple-400 to-pink-500',
-      bg: 'bg-purple-500/10',
-      popular: formData.popular,
-      active: true
-    };
-    setPlans([...plans, newPlan]);
-    resetForm();
+  // ==========================================
+  // DB CRUD Operations for Plans
+  // ==========================================
+  const addPlan = async () => {
+    try {
+      const res = await axios.post(`${API_BASE_URL}/plans`, formData);
+      setPlans([...plans, res.data]);
+      resetForm();
+    } catch (error) {
+      console.error("Add plan failed:", error);
+    }
   };
 
-  const updatePlan = () => {
-    setPlans(plans.map(plan => 
-      plan.id === editingItem.id ? {
-        ...plan,
-        name: formData.name,
-        price: parseInt(formData.price),
-        credits: parseInt(formData.credits),
-        features: formData.features.filter(f => f.trim() !== ''),
-        popular: formData.popular
-      } : plan
-    ));
-    resetForm();
+  const updatePlan = async () => {
+    try {
+      await axios.put(`${API_BASE_URL}/plans/${editingItem.id}`, formData);
+      setPlans(plans.map(p => p.id === editingItem.id ? { ...p, ...formData, price: parseInt(formData.price), credits: parseInt(formData.credits) } : p));
+      resetForm();
+    } catch (error) {
+      console.error("Update plan failed:", error);
+    }
   };
 
-  const deletePlan = (id) => {
-    setPlans(plans.filter(plan => plan.id !== id));
+  const deletePlan = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this plan?")) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/plans/${id}`);
+      setPlans(plans.filter(p => p.id !== id));
+    } catch (error) {
+      console.error("Delete plan failed:", error);
+    }
   };
 
-  const togglePlanStatus = (id) => {
-    setPlans(plans.map(plan => 
-      plan.id === id ? { ...plan, active: !plan.active } : plan
-    ));
+  const togglePlanStatus = async (id, currentStatus) => {
+    try {
+      await axios.put(`${API_BASE_URL}/plans/${id}`, { active: !currentStatus });
+      setPlans(plans.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
+    } catch (error) {
+      console.error("Toggle plan status failed:", error);
+    }
   };
 
-  // CRUD Operations for Exam Categories
-  const addExamCategory = () => {
-    const newExam = {
-      id: Date.now(),
-      name: examFormData.name,
-      credits: parseInt(examFormData.credits),
-      exams: parseInt(examFormData.exams) || 0,
-      status: examFormData.status
-    };
-    setExamCategories([...examCategories, newExam]);
-    resetExamForm();
+  // ==========================================
+  // DB CRUD Operations for Exam Categories
+  // ==========================================
+  const addExamCategory = async () => {
+    try {
+      const res = await axios.post(`${API_BASE_URL}/categories`, examFormData);
+      setExamCategories([...examCategories, res.data]);
+      resetExamForm();
+    } catch (error) {
+      console.error("Add category failed:", error);
+    }
   };
 
-  const updateExamCategory = () => {
-    setExamCategories(examCategories.map(cat => 
-      cat.id === editingItem.id ? {
-        ...cat,
-        name: examFormData.name,
-        credits: parseInt(examFormData.credits),
-        exams: parseInt(examFormData.exams) || 0,
-        status: examFormData.status
-      } : cat
-    ));
-    resetExamForm();
+  const updateExamCategory = async () => {
+    try {
+      await axios.put(`${API_BASE_URL}/categories/${editingItem.id}`, examFormData);
+      setExamCategories(examCategories.map(c => c.id === editingItem.id ? { ...c, ...examFormData, credits: parseInt(examFormData.credits), exams: parseInt(examFormData.exams) } : c));
+      resetExamForm();
+    } catch (error) {
+      console.error("Update category failed:", error);
+    }
   };
 
-  const deleteExamCategory = (id) => {
-    setExamCategories(examCategories.filter(cat => cat.id !== id));
+  const deleteExamCategory = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this category?")) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/categories/${id}`);
+      setExamCategories(examCategories.filter(c => c.id !== id));
+    } catch (error) {
+      console.error("Delete category failed:", error);
+    }
   };
 
-  const toggleExamStatus = (id) => {
-    setExamCategories(examCategories.map(cat => 
-      cat.id === id ? { ...cat, status: cat.status === 'active' ? 'inactive' : 'active' } : cat
-    ));
+  const toggleExamStatus = async (id, currentStatus) => {
+    const nextStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    try {
+      await axios.put(`${API_BASE_URL}/categories/${id}`, { status: nextStatus });
+      setExamCategories(examCategories.map(c => c.id === id ? { ...c, status: nextStatus } : c));
+    } catch (error) {
+      console.error("Toggle category status failed:", error);
+    }
   };
 
-  // Form Helpers
-  const resetForm = () => {
-    setFormData({ name: '', price: '', credits: '', features: [''], popular: false });
-    setEditingItem(null);
-    setShowModal(false);
-  };
-
-  const resetExamForm = () => {
-    setExamFormData({ name: '', credits: '', exams: '', status: 'active' });
-    setEditingItem(null);
-    setShowModal(false);
-  };
-
-  const handleFeatureChange = (index, value) => {
-    const newFeatures = [...formData.features];
-    newFeatures[index] = value;
-    setFormData({ ...formData, features: newFeatures });
-  };
-
-  const addFeatureField = () => {
-    setFormData({ ...formData, features: [...formData.features, ''] });
-  };
-
-  const removeFeatureField = (index) => {
-    const newFeatures = formData.features.filter((_, i) => i !== index);
-    setFormData({ ...formData, features: newFeatures });
-  };
-
-  const openEditPlan = (plan) => {
-    setModalType('plan');
-    setEditingItem(plan);
-    setFormData({
-      name: plan.name,
-      price: plan.price.toString(),
-      credits: plan.credits.toString(),
-      features: plan.features,
-      popular: plan.popular
-    });
-    setShowModal(true);
-  };
-
-  const openEditExam = (exam) => {
-    setModalType('exam');
-    setEditingItem(exam);
-    setExamFormData({
-      name: exam.name,
-      credits: exam.credits.toString(),
-      exams: exam.exams.toString(),
-      status: exam.status
-    });
-    setShowModal(true);
-  };
+  // Helpers
+  const resetForm = () => { setFormData({ name: '', price: '', credits: '', features: [''], popular: false }); setEditingItem(null); setShowModal(false); };
+  const resetExamForm = () => { setExamFormData({ name: '', credits: '', exams: '', status: 'active' }); setEditingItem(null); setShowModal(false); };
+  const handleFeatureChange = (index, val) => { const f = [...formData.features]; f[index] = val; setFormData({ ...formData, features: f }); };
+  const addFeatureField = () => { setFormData({ ...formData, features: [...formData.features, ''] }); };
+  const removeFeatureField = (idx) => { setFormData({ ...formData, features: formData.features.filter((_, i) => i !== idx) }); };
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div 
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between flex-wrap gap-4"
-      >
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/10">
@@ -244,505 +167,143 @@ export default function SubscriptionManager() {
               Credit Architecture Core
             </h1>
           </div>
-          <p className="text-sm text-gray-400 mt-1 ml-14">
-            Configure subscription tiers and assign fixed exam valuation weights
-          </p>
+          <p className="text-sm text-gray-400 mt-1 ml-14">Configure subscription tiers and assign fixed exam valuation weights</p>
         </div>
-        <div className="flex items-center gap-2">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors border border-white/5"
-          >
-            <RefreshCw size={16} className="text-gray-400" />
-          </motion.button>
-        </div>
-      </motion.div>
+        <button onClick={fetchData} className="p-2 bg-white/5 rounded-xl hover:bg-white/10 border border-white/5 transition-colors">
+          <RefreshCw size={16} className={`text-gray-400 ${loadingData ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <GlassCard className="p-4 border-white/10 hover:border-white/20 transition-all duration-300">
-              <div className="flex items-center justify-between">
-                <div className={`p-2 bg-${stat.color.split('-')[1]}/10 rounded-xl`}>
-                  <stat.icon size={18} className={stat.color} />
+      {loadingData ? (
+        <div className="text-center py-20 text-gray-400">Loading architecture components from Firestore...</div>
+      ) : (
+        <>
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {stats.map((stat, i) => (
+              <GlassCard key={i} className="p-4 border-white/10 hover:border-white/20 transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="p-2 bg-white/5 rounded-xl"><stat.icon size={18} className={stat.color} /></div>
+                  <span className="text-xs text-gray-400">{stat.label}</span>
                 </div>
-                <span className="text-xs text-gray-400">{stat.label}</span>
-              </div>
-              <div className="mt-2">
-                <div className="text-2xl font-bold text-white">{stat.value}</div>
-              </div>
-            </GlassCard>
-          </motion.div>
-        ))}
-      </div>
+                <div className="text-2xl font-bold text-white mt-2">{stat.value}</div>
+              </GlassCard>
+            ))}
+          </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-white/10 pb-4">
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setActiveTab('plans')}
-          className={`px-6 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
-            activeTab === 'plans'
-              ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <Layers size={16} />
-          Subscription Plans
-        </motion.button>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setActiveTab('exams')}
-          className={`px-6 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
-            activeTab === 'exams'
-              ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <Award size={16} />
-          Exam Category Credit Fixer
-        </motion.button>
-      </div>
+          {/* Navigation Tabs */}
+          <div className="flex gap-2 border-b border-white/10 pb-4">
+            <button onClick={() => setActiveTab('plans')} className={`px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'plans' ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}><Layers size={16} className="inline mr-2"/>Subscription Plans</button>
+            <button onClick={() => setActiveTab('exams')} className={`px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'exams' ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}><Award size={16} className="inline mr-2"/>Exam Category Credit Fixer</button>
+          </div>
 
-      {/* Tab Content */}
-      <AnimatePresence mode="wait">
-        {activeTab === 'plans' ? (
-          <motion.div
-            key="plans"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Subscription Plans</h2>
-                <p className="text-sm text-gray-400">Manage student subscription tiers and pricing</p>
-              </div>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  setModalType('plan');
-                  setEditingItem(null);
-                  setFormData({ name: '', price: '', credits: '', features: [''], popular: false });
-                  setShowModal(true);
-                }}
-                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-white text-sm font-medium hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-300 flex items-center gap-2"
-              >
-                <Plus size={16} />
-                Add Plan
-              </motion.button>
-            </div>
+          {/* Core Panes */}
+          <AnimatePresence mode="wait">
+            {activeTab === 'plans' ? (
+              <motion.div key="plans" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="flex justify-between items-center mb-6">
+                  <div><h2 className="text-lg font-semibold text-white">Subscription Plans</h2><p className="text-sm text-gray-400">Manage student levels and structure weights</p></div>
+                  <button onClick={() => { setModalType('plan'); setEditingItem(null); resetForm(); setShowModal(true); }} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-sm font-medium flex items-center gap-2 text-white"><Plus size={16}/>Add Plan</button>
+                </div>
 
-            {/* Plans Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {plans.map((plan, index) => {
-                const Icon = iconMap[plan.icon] || Zap;
-                return (
-                  <motion.div
-                    key={plan.id}
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    whileHover={{ y: -8, transition: { type: 'spring', stiffness: 300 } }}
-                    className="relative group"
-                  >
-                    <GlassCard 
-                      className={`p-6 border transition-all duration-300 hover:shadow-2xl ${
-                        plan.active 
-                          ? 'border-white/10 hover:border-purple-500/30 hover:shadow-purple-500/10'
-                          : 'border-red-500/20 opacity-60 hover:border-red-500/40'
-                      }`}
-                    >
-                      {!plan.active && (
-                        <div className="absolute top-3 right-3 px-2 py-1 bg-red-500/20 rounded-lg border border-red-500/20">
-                          <span className="text-xs text-red-400 font-medium">Inactive</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {plans.map((plan) => {
+                    const Icon = iconMap[plan.icon] || Zap;
+                    return (
+                      <GlassCard key={plan.id} className={`p-6 relative transition-all ${plan.active ? 'border-white/10' : 'border-red-500/20 opacity-50'}`}>
+                        {plan.popular && plan.active && <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-[10px] font-bold uppercase tracking-wider">Most Popular</div>}
+                        <div className="p-3 bg-white/5 rounded-xl w-fit mb-3"><Icon size={24} className="text-purple-400" /></div>
+                        <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
+                        <div className="text-2xl font-bold text-white mb-4">LKR {plan.price} <span className="text-xs text-gray-400">/mo</span></div>
+                        <div className="text-xs text-amber-400 mb-4 flex items-center gap-1"><Sparkles size={12}/>{plan.credits} credits granted</div>
+                        <div className="space-y-2 mb-6">
+                          {plan.features?.map((f, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-sm text-gray-300"><CheckCircle size={14} className="text-emerald-400"/>{f}</div>
+                          ))}
                         </div>
-                      )}
-                      
-                      {plan.popular && plan.active && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full">
-                          <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1">
-                            <Star size={10} /> Most Popular
-                          </span>
+                        <div className="flex gap-2">
+                          <button onClick={() => togglePlanStatus(plan.id, plan.active)} className={`flex-1 py-2 rounded-xl text-xs font-medium ${plan.active ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>{plan.active ? 'Active' : 'Inactive'}</button>
+                          <button onClick={() => { setModalType('plan'); setEditingItem(plan); setFormData({ name: plan.name, price: plan.price.toString(), credits: plan.credits.toString(), features: plan.features || [''], popular: plan.popular }); setShowModal(true); }} className="p-2 bg-white/5 border border-white/5 rounded-xl text-gray-400 hover:text-white"><Edit size={16}/></button>
+                          <button onClick={() => deletePlan(plan.id)} className="p-2 bg-red-500/10 border border-red-500/10 rounded-xl text-red-400 hover:bg-red-500/20"><Trash2 size={16}/></button>
                         </div>
-                      )}
+                      </GlassCard>
+                    )
+                  })}
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="flex justify-between items-center mb-6">
+                  <div><h2 className="text-lg font-semibold text-white">Exam Category Credit Fixer</h2><p className="text-sm text-gray-400">Assign fixed credit costs for entry tokens</p></div>
+                  <button onClick={() => { setModalType('exam'); setEditingItem(null); resetExamForm(); setShowModal(true); }} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-sm font-medium flex items-center gap-2 text-white"><Plus size={16}/>Add Category</button>
+                </div>
 
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <div className={`p-3 ${plan.bg} rounded-xl w-fit mb-3`}>
-                            <Icon size={24} className={`text-${plan.color.split('-')[1]}-400`} />
-                          </div>
-                          <h3 className="text-xl font-bold text-white">{plan.name}</h3>
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {examCategories.map((cat) => (
+                    <GlassCard key={cat.id} className={`p-6 relative transition-all ${cat.status === 'active' ? 'border-white/10' : 'border-red-500/20 opacity-50'}`}>
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-lg font-bold text-white">{cat.name}</h3>
+                        <span className={`text-[10px] px-2 py-0.5 border rounded-md uppercase font-semibold ${cat.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{cat.status}</span>
                       </div>
-
-                      <div className="mb-4">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-bold text-white">LKR {plan.price}</span>
-                          <span className="text-xs text-gray-400">/month</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Sparkles size={12} className="text-amber-400" />
-                          <span className="text-xs text-gray-400">{plan.credits} credits included</span>
-                        </div>
+                      <div className="space-y-2 mb-4">
+                        <div className="flex justify-between text-sm bg-white/5 p-2 rounded-lg"><span className="text-gray-400">Credits Required</span><span className="font-bold text-white">{cat.credits}</span></div>
+                        <div className="flex justify-between text-sm bg-white/5 p-2 rounded-lg"><span className="text-gray-400">Exams Count</span><span className="text-gray-300">{cat.exams}</span></div>
                       </div>
-
-                      <div className="space-y-2 mb-6">
-                        {plan.features.map((feature, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-sm">
-                            <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
-                            <span className="text-sm text-gray-300">{feature}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => togglePlanStatus(plan.id)}
-                          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
-                            plan.active
-                              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/20'
-                              : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20'
-                          }`}
-                        >
-                          {plan.active ? 'Active' : 'Inactive'}
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => openEditPlan(plan)}
-                          className="p-2.5 bg-white/5 rounded-xl hover:bg-white/10 transition-colors border border-white/5"
-                        >
-                          <Edit size={16} className="text-gray-400" />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => deletePlan(plan.id)}
-                          className="p-2.5 bg-red-500/10 rounded-xl hover:bg-red-500/20 transition-colors border border-red-500/10"
-                        >
-                          <Trash2 size={16} className="text-red-400" />
-                        </motion.button>
+                      <div className="flex gap-2">
+                        <button onClick={() => toggleExamStatus(cat.id, cat.status)} className={`flex-1 py-2 rounded-xl text-xs font-medium ${cat.status === 'active' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>{cat.status === 'active' ? 'Active' : 'Inactive'}</button>
+                        <button onClick={() => { setModalType('exam'); setEditingItem(cat); setExamFormData({ name: cat.name, credits: cat.credits.toString(), exams: cat.exams.toString(), status: cat.status }); setShowModal(true); }} className="p-2 bg-white/5 border border-white/5 rounded-xl text-gray-400 hover:text-white"><Edit size={16}/></button>
+                        <button onClick={() => deleteExamCategory(cat.id)} className="p-2 bg-red-500/10 border border-red-500/10 rounded-xl text-red-400 hover:bg-red-500/20"><Trash2 size={16}/></button>
                       </div>
                     </GlassCard>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="exams"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Exam Category Credit Fixer</h2>
-                <p className="text-sm text-gray-400">Assign fixed credit values to each exam category</p>
-              </div>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  setModalType('exam');
-                  setEditingItem(null);
-                  setExamFormData({ name: '', credits: '', exams: '', status: 'active' });
-                  setShowModal(true);
-                }}
-                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-white text-sm font-medium hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-300 flex items-center gap-2"
-              >
-                <Plus size={16} />
-                Add Category
-              </motion.button>
-            </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
 
-            {/* Exam Categories Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {examCategories.map((category, index) => (
-                <motion.div
-                  key={category.id}
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  whileHover={{ y: -5 }}
-                  className="relative group"
-                >
-                  <GlassCard 
-                    className={`p-6 border transition-all duration-300 hover:shadow-xl ${
-                      category.status === 'active'
-                        ? 'border-white/10 hover:border-blue-500/30 hover:shadow-blue-500/10'
-                        : 'border-red-500/20 opacity-60 hover:border-red-500/40'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <div className="p-3 bg-blue-500/10 rounded-xl w-fit mb-3">
-                          <BookOpen size={24} className="text-blue-400" />
-                        </div>
-                        <h3 className="text-lg font-bold text-white">{category.name}</h3>
-                      </div>
-                      <div className={`px-2 py-1 rounded-lg text-xs font-medium ${
-                        category.status === 'active'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-red-500/20 text-red-400 border border-red-500/20'
-                      }`}>
-                        {category.status === 'active' ? 'Active' : 'Inactive'}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
-                        <span className="text-sm text-gray-400">Credits Required</span>
-                        <span className="text-xl font-bold text-white">{category.credits}</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
-                        <span className="text-sm text-gray-400">Total Exams</span>
-                        <span className="text-lg font-semibold text-white">{category.exams}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 mt-4">
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => toggleExamStatus(category.id)}
-                        className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
-                          category.status === 'active'
-                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/20'
-                            : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20'
-                        }`}
-                      >
-                        {category.status === 'active' ? 'Active' : 'Inactive'}
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => openEditExam(category)}
-                        className="p-2.5 bg-white/5 rounded-xl hover:bg-white/10 transition-colors border border-white/5"
-                      >
-                        <Edit size={16} className="text-gray-400" />
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => deleteExamCategory(category.id)}
-                        className="p-2.5 bg-red-500/10 rounded-xl hover:bg-red-500/20 transition-colors border border-red-500/10"
-                      >
-                        <Trash2 size={16} className="text-red-400" />
-                      </motion.button>
-                    </div>
-                  </GlassCard>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Modal */}
+      {/* Shared Configuration Modal */}
       <AnimatePresence>
         {showModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-[#0f1629] to-[#1a1f3a] border border-white/10 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto"
-            >
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-gradient-to-br from-[#0f1629] to-[#1a1f3a] border border-white/10 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-white">
-                    {modalType === 'plan' 
-                      ? (editingItem ? 'Edit Plan' : 'Add New Plan')
-                      : (editingItem ? 'Edit Exam Category' : 'Add Exam Category')
-                    }
-                  </h2>
-                  <p className="text-sm text-gray-400 mt-1">
-                    {modalType === 'plan' 
-                      ? 'Configure subscription tier details'
-                      : 'Set credit value for exam category'
-                    }
-                  </p>
-                </div>
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setShowModal(false)}
-                  className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
-                >
-                  <X size={18} className="text-gray-400" />
-                </motion.button>
+                <h2 className="text-xl font-bold text-white">{modalType === 'plan' ? (editingItem ? 'Edit Tier' : 'Add New Tier') : (editingItem ? 'Edit Exam Category' : 'Add Category')}</h2>
+                <button onClick={() => setShowModal(false)} className="p-2 bg-white/5 rounded-xl text-gray-400"><X size={16}/></button>
               </div>
 
               {modalType === 'plan' ? (
                 <div className="space-y-4">
+                  <div><label className="text-xs text-gray-400 block mb-1">Plan Name</label><input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Price (LKR)</label><input type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Credits Per Month</label><input type="number" value={formData.credits} onChange={(e) => setFormData({ ...formData, credits: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
                   <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Plan Name</label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                      placeholder="e.g. Pro"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Price (LKR)</label>
-                    <input
-                      type="number"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                      placeholder="e.g. 2500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Credits per Month</label>
-                    <input
-                      type="number"
-                      value={formData.credits}
-                      onChange={(e) => setFormData({ ...formData, credits: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                      placeholder="e.g. 100"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Features</label>
-                    {formData.features.map((feature, index) => (
-                      <div key={index} className="flex gap-2 mb-2">
-                        <input
-                          type="text"
-                          value={feature}
-                          onChange={(e) => handleFeatureChange(index, e.target.value)}
-                          className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                          placeholder="e.g. 24/7 Support"
-                        />
-                        {formData.features.length > 1 && (
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => removeFeatureField(index)}
-                            className="p-2.5 bg-red-500/20 rounded-xl hover:bg-red-500/30 transition-colors"
-                          >
-                            <X size={16} className="text-red-400" />
-                          </motion.button>
-                        )}
+                    <label className="text-xs text-gray-400 block mb-1">Tiers Feature Nodes</label>
+                    {formData.features.map((f, i) => (
+                      <div key={i} className="flex gap-2 mb-2">
+                        <input type="text" value={f} onChange={(e) => handleFeatureChange(i, e.target.value)} className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/>
+                        {formData.features.length > 1 && <button onClick={() => removeFeatureField(i)} className="p-2 bg-red-500/10 rounded-xl text-red-400"><X size={16}/></button>}
                       </div>
                     ))}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={addFeatureField}
-                      className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
-                    >
-                      <Plus size={14} /> Add Feature
-                    </motion.button>
+                    <button onClick={addFeatureField} className="text-xs text-blue-400 mt-1 flex items-center gap-1">+ Add Node Feature</button>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-gray-400">Popular Plan</label>
-                    <input
-                      type="checkbox"
-                      checked={formData.popular}
-                      onChange={(e) => setFormData({ ...formData, popular: e.target.checked })}
-                      className="w-4 h-4 accent-purple-500"
-                    />
-                  </div>
+                  <div className="flex items-center gap-2"><input type="checkbox" checked={formData.popular} onChange={(e) => setFormData({ ...formData, popular: e.target.checked })} className="accent-purple-500"/><label className="text-xs text-gray-400">Mark Tier as Most Popular</label></div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Category Name</label>
-                    <input
-                      type="text"
-                      value={examFormData.name}
-                      onChange={(e) => setExamFormData({ ...examFormData, name: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                      placeholder="e.g. JLPT N5"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Credits Required</label>
-                    <input
-                      type="number"
-                      value={examFormData.credits}
-                      onChange={(e) => setExamFormData({ ...examFormData, credits: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                      placeholder="e.g. 20"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Total Exams in Category</label>
-                    <input
-                      type="number"
-                      value={examFormData.exams}
-                      onChange={(e) => setExamFormData({ ...examFormData, exams: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                      placeholder="e.g. 12"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-400 block mb-1.5">Status</label>
-                    <select
-                      value={examFormData.status}
-                      onChange={(e) => setExamFormData({ ...examFormData, status: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:border-purple-500/50 focus:outline-none transition-colors text-sm"
-                    >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                  </div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Category Domain Identifier</label><input type="text" value={examFormData.name} onChange={(e) => setExamFormData({ ...examFormData, name: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Valuation Token Weight (Credits)</label><input type="number" value={examFormData.credits} onChange={(e) => setExamFormData({ ...examFormData, credits: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Total Loaded Exam Structures</label><input type="number" value={examFormData.exams} onChange={(e) => setExamFormData({ ...examFormData, exams: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
                 </div>
               )}
 
               <div className="flex gap-3 mt-6">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-white/10 rounded-xl text-white hover:bg-white/20 transition-colors text-sm"
-                >
-                  Cancel
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    if (modalType === 'plan') {
-                      editingItem ? updatePlan() : addPlan();
-                    } else {
-                      editingItem ? updateExamCategory() : addExamCategory();
-                    }
-                  }}
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-white hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-300 flex items-center justify-center gap-2 text-sm"
-                >
-                  <Save size={16} />
-                  {editingItem ? 'Update' : 'Create'}
-                </motion.button>
+                <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 bg-white/5 rounded-xl text-sm font-medium">Cancel</button>
+                <button onClick={modalType === 'plan' ? (editingItem ? updatePlan : addPlan) : (editingItem ? updateExamCategory : addExamCategory)} className="flex-1 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-sm font-medium flex items-center justify-center gap-2 text-white"><Save size={16}/>{editingItem ? 'Update Node' : 'Save Node'}</button>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

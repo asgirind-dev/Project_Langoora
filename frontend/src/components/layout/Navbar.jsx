@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import Button from '../ui/Button';
 
 const navLinks = [
+  { label: 'Home', href: '/' },
   { label: 'Exams', href: '/marketplace' },
   { label: 'Services', href: '/services' },
   { label: 'Pricing', href: '/pricing' },
@@ -65,7 +66,7 @@ export default function Navbar() {
             <span className="text-xl font-bold bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">Langoora</span>
           </Link>
 
-          <div className="hidden lg:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
             {navLinks.map(link => (
               <Link key={link.label} to={link.href} className="text-gray-300 hover:text-white text-sm font-medium transition-colors hover:text-blue-300">
                 {link.label}
@@ -74,7 +75,7 @@ export default function Navbar() {
           </div>
 
           {/* Desktop Navigation Group */}
-          <div className="hidden lg:flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-3 ml-auto">
             {user ? (
               <div className="flex items-center gap-3">
                 <Button variant="ghost" size="sm" onClick={handleDashboardNavigation}>Dashboard</Button>

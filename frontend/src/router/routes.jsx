@@ -171,7 +171,7 @@ export default function AppRoutes() {
           </Route>
 
          {/* 7. Finance Administration Control Center*/}
-          <Route path="/finance-admin" element={<ProtectedRoute allowedRoles={['finance_admin', 'finance']}><FinanceAdminLayout /></ProtectedRoute>}>
+           <Route path="/finance-admin" element={<ProtectedRoute allowedRoles={['finance_admin', 'finance']}><FinanceAdminLayout /></ProtectedRoute>}>
             <Route index element={<FinanceDashboard />} />
             
             <Route path="subscriptions" element={
