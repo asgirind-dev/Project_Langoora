@@ -164,16 +164,7 @@ export default function PricingPage() {
             </div>
           </motion.div>
 
-          {/* CTA */}
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mt-20 text-center">
-            <GlassCard className="p-12 border-blue-500/20 bg-gradient-to-br from-blue-900/20 to-cyan-900/10">
-              <h2 className="text-3xl font-bold mb-3">Still not sure?</h2>
-              <p className="text-gray-400 mb-6 max-w-lg mx-auto">Start with the free plan and upgrade when you're ready. No credit card required.</p>
-              <Button variant="primary" size="xl" onClick={() => navigate('/auth/register')}>
-                Start Free Today <ArrowRight size={18} />
-              </Button>
-            </GlassCard>
-          </motion.div>
+
         </div>
       </section>
 

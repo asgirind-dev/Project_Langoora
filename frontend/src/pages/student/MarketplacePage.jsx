@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, SlidersHorizontal, Clock, BookOpen, Star, Calendar, X } from 'lucide-react';
+import { Search, SlidersHorizontal, Clock, BookOpen, Star, Calendar, X, Coins } from 'lucide-react'; 
 import { featuredExams, examCategories } from '../../data/mockData';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -13,7 +13,7 @@ export default function MarketplacePage() {
   const [params] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') || '');
   const [activeCategory, setActiveCategory] = useState(params.get('category') || 'All');
-  const [priceRange, setPriceRange] = useState([0, 10000]);
+  const [creditRange, setCreditRange] = useState([0, 100]);
   const [minRating, setMinRating] = useState(0);
   const [difficulty, setDifficulty] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
@@ -27,7 +27,7 @@ export default function MarketplacePage() {
   const filtered = featuredExams.filter(e => {
     if (search && !e.title.toLowerCase().includes(search.toLowerCase()) && !e.category.toLowerCase().includes(search.toLowerCase())) return false;
     if (activeCategory !== 'All' && e.category !== activeCategory) return false;
-    if (e.price < priceRange[0] || e.price > priceRange[1]) return false;
+    if (e.credits < creditRange[0] || e.credits > creditRange[1]) return false; 
     if (e.rating < minRating) return false;
     if (difficulty !== 'All' && e.difficulty !== difficulty) return false;
     return true;
@@ -36,20 +36,20 @@ export default function MarketplacePage() {
   const clearFilters = () => {
     setSearch('');
     setActiveCategory('All');
-    setPriceRange([0, 10000]);
+    setCreditRange([0, 100]);
     setMinRating(0);
     setDifficulty('All');
     setDateFrom('');
     setDateTo('');
   };
 
-  const hasActiveFilters = search || activeCategory !== 'All' || priceRange[1] < 10000 || minRating > 0 || difficulty !== 'All' || dateFrom || dateTo;
+  const hasActiveFilters = search || activeCategory !== 'All' || creditRange[1] < 100 || minRating > 0 || difficulty !== 'All' || dateFrom || dateTo;
 
   return (
-<div className="space-y-6 pt-24 px-4 max-w-7xl mx-auto"> 
-    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-      <h1 className="text-3xl font-bold text-white mb-1">Exam Marketplace</h1>
-        <p className="text-gray-400">Find the perfect mock exam for your language goals</p>
+    <div className="space-y-6 pt-24 px-4 max-w-7xl mx-auto min-h-screen text-white"> 
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+        <h1 className="text-3xl font-bold text-white mb-1">Exam Marketplace</h1>
+        <p className="text-gray-400">Unlock mock exams using your plan credits</p>
       </motion.div>
 
       {/* Search & Filter Bar */}
@@ -99,8 +99,9 @@ export default function MarketplacePage() {
                 className="w-full accent-blue-500" />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-300 mb-2 block">Max Price: LKR {priceRange[1].toLocaleString()}</label>
-              <input type="range" min={0} max={10000} step={500} value={priceRange[1]} onChange={e => setPriceRange([0, Number(e.target.value)])}
+              {/* 🟢 LKR වෙනුවට Max Credits range slider එක */}
+              <label className="text-sm font-medium text-gray-300 mb-2 block">Max Credits: {creditRange[1]} Credits</label>
+              <input type="range" min={0} max={100} step={5} value={creditRange[1]} onChange={e => setCreditRange([0, Number(e.target.value)])}
                 className="w-full accent-blue-500" />
             </div>
             <div>
@@ -149,8 +150,8 @@ export default function MarketplacePage() {
         >
           <option value="popular" className="bg-[#0f1629]">Most Popular</option>
           <option value="rating" className="bg-[#0f1629]">Highest Rated</option>
-          <option value="price-low" className="bg-[#0f1629]">Price: Low to High</option>
-          <option value="price-high" className="bg-[#0f1629]">Price: High to Low</option>
+          <option value="credits-low" className="bg-[#0f1629]">Credits: Low to High</option> 
+          <option value="credits-high" className="bg-[#0f1629]">Credits: High to Low</option>
           <option value="newest" className="bg-[#0f1629]">Newest First</option>
         </select>
       </div>
@@ -159,7 +160,7 @@ export default function MarketplacePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
         {filtered.map((exam, i) => (
           <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
-            <GlassCard hover className="overflow-hidden" onClick={() => navigate(`/exam/${exam.id}/preview`)}>
+            <GlassCard hover className="overflow-hidden cursor-pointer" onClick={() => navigate(`/exam/${exam.id}/preview`)}>
               <div className="relative h-36 sm:h-44 overflow-hidden">
                 <img src={exam.thumbnail} alt={exam.title} className="w-full h-full object-cover transition-transform duration-300 hover:scale-105" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
@@ -183,11 +184,12 @@ export default function MarketplacePage() {
                   <span className="flex items-center gap-1"><BookOpen size={11} />{exam.questions} Q</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-lg sm:text-xl font-bold text-white">LKR {exam.price.toLocaleString()}</span>
-                    <span className="text-xs text-gray-500 line-through ml-2">LKR {exam.originalPrice.toLocaleString()}</span>
+                  <div className="flex items-center gap-1.5">
+                    <Coins size={16} className="text-amber-400" />
+                    <span className="text-lg sm:text-xl font-bold text-amber-400">{exam.credits}</span>
+                    <span className="text-xs text-gray-400">Credits</span>
                   </div>
-                  <Button variant="primary" size="sm">Buy</Button>
+                  <Button variant="primary" size="sm">Unlock</Button>
                 </div>
               </div>
             </GlassCard>

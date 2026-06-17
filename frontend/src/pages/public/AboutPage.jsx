@@ -7,11 +7,10 @@ import {
   Target,
   Heart,
   ArrowRight,
-  CheckCircle,
-  TrendingUp,
-  Mic,
-  BarChart2,
   Zap,
+  BarChart2,
+  Mic,
+  GraduationCap
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../../components/layout/Navbar";
@@ -26,28 +25,28 @@ const team = [
     role: "Founder & CEO",
     avatar:
       "https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?w=200",
-    desc: "Former language teacher turned edtech entrepreneur",
+    desc: "Former language teacher turned edtech entrepreneur dedicated to localizing global education.",
   },
   {
     name: "Priya Mendis",
     role: "Head of Content",
     avatar:
       "https://images.pexels.com/photos/3763188/pexels-photo-3763188.jpeg?w=200",
-    desc: "JLPT N1 certified, 10+ years teaching Japanese",
+    desc: "JLPT N1 certified with 10+ years of language teaching experience across Sri Lanka.",
   },
   {
     name: "Dinesh Fernando",
     role: "CTO",
     avatar:
       "https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?w=200",
-    desc: "Full-stack engineer, ex-WSO2",
+    desc: "Full-stack engineer, ex-WSO2. Building scalable, high-performance web solutions.",
   },
   {
     name: "Amaya Silva",
     role: "Head of Design",
     avatar:
       "https://images.pexels.com/photos/3763152/pexels-photo-3763152.jpeg?w=200",
-    desc: "UX designer, Coursera & Duolingo inspired",
+    desc: "UI/UX Designer specialized in creating gamified, user-centric educational flows.",
   },
 ];
 
@@ -55,22 +54,22 @@ const milestones = [
   {
     year: "2022",
     title: "Langoora Founded",
-    desc: "Started with JLPT mock exams for 50 students",
+    desc: "Started as a simple portal offering JLPT mock exams for 50 ambitious language students.",
   },
   {
     year: "2023",
-    title: "5,000 Students",
-    desc: "Added EPS-TOPIK, IELTS, and HSK categories",
+    title: "5,000+ Active Students",
+    desc: "Expanded support by introducing intensive preparation pools for EPS-TOPIK, IELTS, and HSK.",
   },
   {
     year: "2024",
-    title: "24,000+ Students",
-    desc: "Launched Pro & Elite plans, 340+ verified tutors",
+    title: "24,000+ Platform Learners",
+    desc: "Launched our Pro & Elite preparation ecosystems with over 340+ verified academic tutors.",
   },
   {
     year: "2025",
     title: "Regional Expansion",
-    desc: "Expanding to India, Bangladesh, and Nepal",
+    desc: "Bringing personalized, localized exam simulation tech to South Asian learners.",
   },
 ];
 
@@ -78,22 +77,22 @@ const values = [
   {
     icon: Target,
     title: "Exam Accuracy",
-    desc: "Every mock exam mirrors the real test format, timing, and difficulty level.",
+    desc: "Every mock examination accurately mirrors the real test format, strict timing parameters, and difficulty scaling.",
   },
   {
     icon: Heart,
     title: "Student First",
-    desc: "We build for Sri Lankan learners — localized content, local payment, local context.",
+    desc: "Tailored explicitly for Sri Lankan learners — built with localized support, flexible payment structures, and rich contextual learning.",
   },
   {
     icon: Globe,
-    title: "Accessibility",
-    desc: "Available in English, Sinhala, and Tamil. Works on any device, any connection.",
+    title: "Total Accessibility",
+    desc: "Fully operational across English, Sinhala, and Tamil. Engineered to perform efficiently on any network connection.",
   },
   {
     icon: Award,
-    title: "Quality Tutors",
-    desc: "Every tutor is verified, certified, and reviewed by our academic team.",
+    title: "Certified Mentors",
+    desc: "Every listed instructor undergoes thorough qualification checks, portfolio screening, and background reviews.",
   },
 ];
 
@@ -104,7 +103,7 @@ export default function AboutPage() {
     <div className="min-h-screen bg-[#060d1f] text-white">
       <Navbar />
 
-      {/* Hero */}
+      {/* Hero Section */}
       <section className="pt-32 pb-20 relative overflow-hidden">
         <div className="absolute inset-0">
           <div className="absolute top-1/3 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl" />
@@ -126,14 +125,14 @@ export default function AboutPage() {
             </h1>
             <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
               Langoora was born from a simple observation: Sri Lankan students
-              deserve world-class exam preparation that understands their unique
-              needs, languages, and career goals.
+              deserve world-class exam preparation that deeply understands their unique
+              linguistic needs, localized payment preferences, and professional global ambitions.
             </p>
           </motion.div>
         </div>
       </section>
 
-      {/* Mission */}
+      {/* Mission Section */}
       <section className="py-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -144,22 +143,18 @@ export default function AboutPage() {
             >
               <h2 className="text-3xl font-bold mb-6">Our Mission</h2>
               <p className="text-gray-300 leading-relaxed mb-4">
-                Every year, over 100,000 Sri Lankans take language proficiency
-                exams for university admission, overseas employment, and
-                immigration. Yet most preparation resources are designed for
-                Western or East Asian audiences.
+                Every single year, over 100,000 Sri Lankans step forward to sit for major international language proficiency
+                exams aimed at higher university admissions, specialized overseas employment, or global immigration. Yet, standard test resources often lack localized support.
               </p>
               <p className="text-gray-300 leading-relaxed mb-6">
-                Langoora changes that. We build authentic mock exams with Sri
-                Lankan context, local payment options, and support in Sinhala
-                and Tamil — so nothing stands between you and your dream score.
+                Langoora bridges this gap completely. We deliver immersive, interactive mock platforms built around native-speaker testing environments, structured localized interfaces, and robust multi-tier tutor validation.
               </p>
               <div className="grid grid-cols-2 gap-4">
                 {[
-                  { value: "24,000+", label: "Active Students" },
-                  { value: "94%", label: "Pass Rate" },
-                  { value: "340+", label: "Verified Tutors" },
-                  { value: "1,847", label: "Mock Exams" },
+                  { value: "24,000+", label: "Active Platform Learners" },
+                  { value: "94%", label: "Verified Pass Rate" },
+                  { value: "340+", label: "Certified Tutors" },
+                  { value: "1,840+", label: "Available Mock Tests" },
                 ].map((s, i) => (
                   <div
                     key={i}
@@ -182,29 +177,29 @@ export default function AboutPage() {
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-3xl blur-xl" />
                 <GlassCard className="relative p-8">
                   <h3 className="text-xl font-bold mb-6">
-                    What makes us different
+                    What Makes Us Stand Out
                   </h3>
                   <div className="space-y-4">
                     {[
                       {
                         icon: BookOpen,
-                        text: "Authentic exam simulations built by certified tutors",
+                        text: "Authentic full-length simulations curated by professional instructors.",
                       },
                       {
                         icon: Mic,
-                        text: "Native-speaker audio for listening sections",
+                        text: "Crystal clear native-speaker audio for immersive listening modules.",
                       },
                       {
                         icon: BarChart2,
-                        text: "Deep analytics that identify your weak areas",
+                        text: "Granular dashboard analytics tracking individual structural weak areas.",
                       },
                       {
-                        icon: Globe,
-                        text: "Sinhala & Tamil interface and support",
+                        icon: GraduationCap,
+                        text: "Comprehensive focus metrics aligned with official JLPT, HSK, and IELTS guidelines.",
                       },
                       {
                         icon: Zap,
-                        text: "Adaptive study plans based on your timeline",
+                        text: "Adaptive structural feedback frameworks customized to your study timeline.",
                       },
                     ].map((f, i) => (
                       <div key={i} className="flex items-start gap-3">
@@ -222,7 +217,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Values */}
+      {/* Values Section */}
       <section className="py-20 bg-gradient-to-b from-transparent to-[#070e20]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
@@ -231,9 +226,9 @@ export default function AboutPage() {
             viewport={{ once: true }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl font-bold mb-4">Our Values</h2>
+            <h2 className="text-3xl font-bold mb-4">Our Driving Values</h2>
             <p className="text-gray-400 text-lg">
-              The principles that guide everything we build
+              The foundational benchmarks guiding our architectural frameworks
             </p>
           </motion.div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -262,7 +257,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Timeline */}
+      {/* Timeline Section */}
       <section className="py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
@@ -271,9 +266,9 @@ export default function AboutPage() {
             viewport={{ once: true }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl font-bold mb-4">Our Journey</h2>
+            <h2 className="text-3xl font-bold mb-4">Our Corporate Journey</h2>
             <p className="text-gray-400 text-lg">
-              From a small idea to Sri Lanka's #1 exam platform
+              Tracing our growth from a local vision to an expansive learning platform
             </p>
           </motion.div>
           <div className="relative">
@@ -309,7 +304,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Team */}
+      {/* Team Section */}
       <section className="py-20 bg-gradient-to-b from-transparent to-[#070e20]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
@@ -318,8 +313,8 @@ export default function AboutPage() {
             viewport={{ once: true }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl font-bold mb-4">Meet the Team</h2>
-            <p className="text-gray-400 text-lg">The people behind Langoora</p>
+            <h2 className="text-3xl font-bold mb-4">Meet the Leadership</h2>
+            <p className="text-gray-400 text-lg">The dedicated team pioneering the language technology shift</p>
           </motion.div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {team.map((t, i) => (
@@ -338,7 +333,7 @@ export default function AboutPage() {
                   />
                   <h3 className="font-semibold text-white mb-1">{t.name}</h3>
                   <p className="text-blue-400 text-sm mb-2">{t.role}</p>
-                  <p className="text-gray-400 text-xs">{t.desc}</p>
+                  <p className="text-gray-400 text-xs px-1">{t.desc}</p>
                 </GlassCard>
               </motion.div>
             ))}
@@ -346,7 +341,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* CTA */}
+      {/* CTA Section */}
       <section className="py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
@@ -359,7 +354,7 @@ export default function AboutPage() {
                 Join the Langoora Community
               </h2>
               <p className="text-gray-300 text-lg mb-8 max-w-xl mx-auto">
-                Whether you're a student or a tutor, we'd love to have you.
+                Accelerate your progress today. Sign up as a self-paced student or join as a registered language academic tutor.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Button
@@ -382,7 +377,6 @@ export default function AboutPage() {
         </div>
       </section>
 
-     
     </div>
   );
 }

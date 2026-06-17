@@ -6,6 +6,8 @@ export default function ProtectedRoute({ children, allowedRoles, requiredPrivile
   const { user, role, loading } = useAuth(); 
   const location = useLocation();
 
+  return children ? children : <Outlet />; //Mekath ain karanna sikurada weddi 
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#060d1f] flex items-center justify-center">

@@ -2,7 +2,8 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   BookOpen, Mic, BarChart2, Award, Globe, Zap, Shield, Users,
-  CheckCircle, ArrowRight, Headphones, FileText, PenTool, Volume2, Brain, Target
+  CheckCircle, ArrowRight, Headphones, FileText, PenTool, Volume2, Brain, Target,
+  Coins, KeyRound 
 } from 'lucide-react';
 import Navbar from '../../components/layout/Navbar';
 import Footer from '../../components/layout/Footer';
@@ -14,7 +15,7 @@ const coreServices = [
   {
     icon: BookOpen,
     title: 'Authentic Mock Exams',
-    desc: 'Full-length practice exams that mirror the real test format, timing, and difficulty for JLPT, EPS-TOPIK, IELTS, HSK, GRE, SAT, and more.',
+    desc: 'Full-length practice exams that mirror the real test format, timing, and difficulty for JLPT, EPS-TOPIK, and TOPIK I.',
     features: ['Real exam format replication', 'Timed sections with auto-submit', 'Section-by-section scoring', 'Detailed answer explanations'],
     color: 'from-blue-500 to-cyan-500',
   },
@@ -29,21 +30,21 @@ const coreServices = [
     icon: BarChart2,
     title: 'Deep Performance Analytics',
     desc: 'Track your progress across every section, identify weak areas, and get personalized recommendations based on your score history.',
-    features: ['Section-by-section breakdowns', 'Radar chart skill mapping', 'Historical score tracking', 'AI-powered recommendations'],
+    features: ['Section-by-section breakdowns', 'Radar chart skill mapping', 'Historical score tracking', 'Weakness detection'],
     color: 'from-amber-500 to-orange-500',
   },
   {
-    icon: Award,
-    title: 'Smart Grading & Feedback',
-    desc: 'Instant AI-powered grading with detailed explanations for every answer, so you understand why an answer is correct or incorrect.',
-    features: ['Instant score calculation', 'Detailed explanations per question', 'Common mistake highlighting', 'Pass/fail prediction'],
+    icon: Coins, 
+    title: 'Instant Evaluation',
+    desc: 'Get automated scoring immediately, optimized through our structured credit-based framework.',
+    features: ['Instant score calculation', 'Detailed explanations per question', 'Automated performance scoring', 'Backed by credit architecture'],
     color: 'from-rose-500 to-pink-500',
   },
   {
-    icon: Globe,
-    title: 'Localized Learning',
-    desc: 'Content and interface available in English, Sinhala, and Tamil. Payment via local banks, FriMi, and Genie.',
-    features: ['Sinhala & Tamil interface', 'Local payment methods', 'Sri Lankan exam context', 'Regional tutor network'],
+    icon: KeyRound,
+    title: 'Value-Driven Access',
+    desc: "Unlock specific exam categories dynamically using your subscription plan's assigned credit weights.",
+    features: ['Dynamic category unlocking', 'Flexible credit consumption', 'Tailored for individual tiers', 'Clear payment-to-credit structure'],
     color: 'from-sky-500 to-blue-500',
   },
   {
@@ -55,21 +56,17 @@ const coreServices = [
   },
 ];
 
+
 const examServices = [
   { exam: 'JLPT', levels: 'N1–N5', desc: 'Grammar, vocabulary, listening, and reading sections with authentic Japanese content', icon: BookOpen },
-  { exam: 'EPS-TOPIK', levels: 'Basic & Standard', desc: 'Korean language proficiency for overseas employment with employment-focused vocabulary', icon: FileText },
-  { exam: 'IELTS', levels: 'Academic & General', desc: 'All four sections with speaking practice prompts and writing task templates', icon: PenTool },
-  { exam: 'HSK', levels: 'Levels 1–6', desc: 'Chinese proficiency with character recognition, listening, and reading comprehension', icon: Volume2 },
-  { exam: 'TOPIK', levels: 'I & II', desc: 'Korean proficiency test with grammar, vocabulary, writing, listening, and reading', icon: Brain },
-  { exam: 'GRE', levels: 'Verbal, Quant, AWA', desc: 'Graduate record exam with verbal reasoning, quantitative, and analytical writing', icon: Target },
-  { exam: 'SAT', levels: 'Math & EBRW', desc: 'Scholastic assessment test with math, evidence-based reading, and writing', icon: Headphones },
-  { exam: 'TOEFL', levels: 'iBT', desc: 'Internet-based test with reading, listening, speaking, and writing sections', icon: Users },
+  { exam: 'EPS-TOPIK', levels: 'CBT / UBT Method', desc: 'Korean language proficiency for overseas employment with employment-focused vocabulary structures', icon: FileText },
+  { exam: 'TOPIK', levels: 'TOPIK I', desc: 'Korean proficiency test covering essential grammar, reading comprehension, and structured listening rooms', icon: Brain },
 ];
 
 const processSteps = [
-  { step: 1, title: 'Choose Your Exam', desc: 'Browse our marketplace and select the exam pack that matches your target test and level.' },
+  { step: 1, title: 'Choose Your Exam Pack', desc: 'Browse our marketplace and select the exam pack or tier that matches your target test and level.' },
   { step: 2, title: 'Practice Under Real Conditions', desc: 'Take timed mock exams that replicate the real test environment, including listening audio.' },
-  { step: 3, title: 'Review Your Results', desc: 'Get instant scores with detailed section analytics, answer explanations, and pass/fail prediction.' },
+  { step: 3, title: 'Review Your Results', desc: 'Get instant scores with detailed section analytics, answer explanations, and clear score tracking.' },
   { step: 4, title: 'Improve & Retake', desc: 'Focus on weak areas with targeted practice, then retake to track your improvement.' },
 ];
 
@@ -94,7 +91,7 @@ export default function ServicesPage() {
               <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">Pass Your Exam</span>
             </h1>
             <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
-              From authentic mock exams to AI-powered analytics, Langoora provides a complete preparation ecosystem designed specifically for Sri Lankan learners.
+              From authentic mock exams to structured credit-based evaluations, Langoora provides a complete preparation ecosystem designed specifically for language learners.
             </p>
           </motion.div>
         </div>
@@ -136,9 +133,9 @@ export default function ServicesPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">Exam-Specific Preparation</h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">Tailored content and practice for every major language exam</p>
+            <p className="text-gray-400 text-lg max-w-2xl mx-auto">Tailored content and practice for our specialized language exams</p>
           </motion.div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto">
             {examServices.map((s, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}>
                 <GlassCard className="p-5 h-full hover:border-blue-500/30 transition-all">
@@ -253,8 +250,8 @@ export default function ServicesPage() {
           </motion.div>
         </div>
       </section>
+      
 
-   
     </div>
   );
 }
