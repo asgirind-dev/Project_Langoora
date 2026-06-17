@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { User, Mail, Phone, Calendar, MapPin, CreditCard as Edit3, Save, Camera, BookOpen, Award, Globe, Lock } from 'lucide-react';
-
+import { Building, CreditCard } from 'lucide-react';
 // 🔥 ඔයාගේ Context එකෙන් දැනට ඉන්න යූසර්ව විතරක් ගන්නවා (Safe & Simple)
 import { useAuth } from '../../context/AuthContext'; 
 
@@ -24,6 +24,9 @@ export default function StudentProfilePage() {
     city: '',
     targetExam: 'JLPT N2',
     targetDate: '',
+    bankName: '',
+    accountNo: '',
+    accountHolder: '',
   });
 
   // 2. Language State
@@ -35,6 +38,8 @@ export default function StudentProfilePage() {
     newPassword: '',
     confirmPassword: '',
   });
+
+
 
   // 🔄 CRUD: Read 
   useEffect(() => {
@@ -64,6 +69,9 @@ export default function StudentProfilePage() {
               city: dbUser.city || '',
               targetExam: dbUser.targetExam || 'JLPT N2',
               targetDate: dbUser.targetDate || '',
+              bankName: resData.data.bankName || '', 
+              accountNo: resData.data.accountNo || '', 
+              accountHolder: resData.data.accountHolder || '',
             });
             if (dbUser.language) setLanguage(dbUser.language);
             return;
@@ -118,6 +126,9 @@ export default function StudentProfilePage() {
           city: form.city,
           targetExam: form.targetExam,
           targetDate: form.targetDate,
+          bankName: form.bankName,
+          accountNo: form.accountNo,
+          accountHolder: form.accountHolder,
         })
       });
 
@@ -384,20 +395,41 @@ export default function StudentProfilePage() {
         </form>
       </GlassCard>
 
-      {/* Purchased Exams Card */}
       <GlassCard className="p-6">
-        <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2"><BookOpen size={14} className="text-emerald-400" /> Purchased Exams</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {['JLPT N2 Full Mock', 'EPS-TOPIK Standard', 'JLPT N2 Grammar', 'JLPT N2 Vocabulary'].map((e, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 bg-white/3 rounded-xl border border-white/8">
-              <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                <BookOpen size={14} className="text-blue-400" />
-              </div>
-              <span className="text-sm text-gray-300">{e}</span>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
+  <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+    <CreditCard size={18} className="text-emerald-400" /> Bank Details
+  </h3>
+  
+  {/* මෙතන grid-cols-1 md:grid-cols-3 දැම්මම ලස්සනට කාඩ් එක ඇතුලේ අයිතම 3ක් පේනවා */}
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <Input 
+      label="Bank Name" 
+      value={form.bankName} 
+      onChange={e => setForm(p => ({ ...p, bankName: e.target.value }))} 
+      icon={Building} 
+      disabled={!editing} 
+    />
+    <Input 
+      label="Account Number" 
+      value={form.accountNo} 
+      onChange={e => setForm(p => ({ ...p, accountNo: e.target.value }))} 
+      icon={CreditCard} 
+      disabled={!editing} 
+    />
+    <Input 
+      label="Account Holder" 
+      value={form.accountHolder} 
+      onChange={e => setForm(p => ({ ...p, accountHolder: e.target.value }))} 
+      icon={User} 
+      disabled={!editing} 
+    />
+  </div>
+  <p className="text-xs text-gray-500 mt-3">Bank details are used for payout processing. All information is securely stored.</p>
+</GlassCard>
+
+
+
+     
     </div>
   );
 }
