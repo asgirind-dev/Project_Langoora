@@ -29,7 +29,7 @@ class SubscriptionService {
     return { id: docRef.id, ...newPlan };
   }
 
-  // 🟢 Firestore එකේ Plan එකක් Update කරන්න:
+ 
   async updateExistingPlan(id, planData) {
     const updateData = {};
     if (planData.name !== undefined) updateData.name = planData.name;
@@ -42,7 +42,6 @@ class SubscriptionService {
     return await db.collection('subscription_plans').doc(id).update(updateData);
   }
 
-  // 🟢 Firestore එකෙන් Plan එකක් Delete කරන්න:
   async deleteExistingPlan(id) {
     return await db.collection('subscription_plans').doc(id).delete();
   }
@@ -69,7 +68,7 @@ class SubscriptionService {
     return { id: docRef.id, ...newCategory };
   }
 
-  // 🟢 Firestore එකේ Category එකක් Update කරන්න:
+  
   async updateExistingCategory(id, catData) {
     const updateData = {};
     if (catData.name !== undefined) updateData.name = catData.name;
@@ -80,7 +79,7 @@ class SubscriptionService {
     return await db.collection('exam_categories').doc(id).update(updateData);
   }
 
-  // 🟢 Firestore එකෙන් Category එකක් Delete කරන්න:
+  
   async deleteExistingCategory(id) {
     return await db.collection('exam_categories').doc(id).delete();
   }
