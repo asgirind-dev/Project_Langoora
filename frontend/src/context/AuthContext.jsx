@@ -1,10 +1,10 @@
-// src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
 import { 
   signInWithEmailAndPassword,
   signInWithPopup,          
   GoogleAuthProvider,       
-  signOut as firebaseSignOut 
+  signOut as firebaseSignOut,
+  onAuthStateChanged 
 } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 
@@ -16,8 +16,34 @@ export const AuthProvider = ({ children }) => {
   const [privileges, setPrivileges] = useState([]); 
   const [loading, setLoading] = useState(true); 
 
+  // Helper function to carefully parse data structures from backend response
+  const extractUserData = (data) => {
+    console.log("=== BACKEND RAW DATA RECOVERY ===");
+    console.log("Full Data Object:", data);
+    console.log("Nested User Object:", data?.user);
+    console.log("=================================");
+
+    if (!data) return null;
+    
+    const rawUser = data.user || data;
+    
+    if (!rawUser.role && !rawUser.email && !rawUser.uid && !rawUser.id) {
+      return null;
+    }
+
+    return {
+      id: rawUser.id || rawUser.uid || '',
+      uid: rawUser.uid || rawUser.id || '',
+      email: rawUser.email || '',
+      role: rawUser.role || 'student', 
+      status: rawUser.status || 'active',
+      privileges: rawUser.privileges || [],
+      name: rawUser.name || 'User'
+    };
+  };
+
   // ==========================================
-  // 1. REGISTER WORKFLOW (No Auto-Login)
+  // 1. REGISTER WORKFLOW
   // ==========================================
   const register = async (email, password, userData, userRole) => {
     try {
@@ -38,8 +64,12 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Registration processing failed on the backend.');
       }
 
-      // FIXED: Auto-login disabled for normal form registration. 
-      // User must redirect to login screen manually.
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (firebaseErr) {
+        console.warn("Firebase client session sync deferred:", firebaseErr.message);
+      }
+
       return data; 
     } catch (error) {
       console.error("Auth Engine Registration Failure:", error);
@@ -52,21 +82,14 @@ export const AuthProvider = ({ children }) => {
   // ==========================================
   const login = async (email, password) => {
     try {
-      let requestBody = {};
-      const targetEmail = email.toLowerCase().trim();
-
-      if (targetEmail === 'admin@novacore.com') {
-        requestBody = { email: targetEmail, password };
-      } else {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const idToken = await userCredential.user.getIdToken();
-        requestBody = { idToken };
-      }
-
+      setLoading(true); 
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const idToken = await userCredential.user.getIdToken(true); 
+      
       const response = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({ idToken })
       });
 
       const data = await response.json();
@@ -75,13 +98,18 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Authentication processing phase failed');
       }
 
-      // Safe Extraction: Ensure user mapping naturally contains fallback status attributes
-      const authenticatedUser = {
-        ...data.user,
-        status: data.user.status || 'active' // Fallback to active if not explicitly set (e.g. admin/student)
-      };
 
-      localStorage.setItem('token', data.token);
+      if (data.status === 'profile_incomplete' || data.user?.status === 'profile_incomplete') {
+        return data.user || data; 
+      }
+
+      const authenticatedUser = extractUserData(data);
+
+      if (!authenticatedUser) {
+        throw new Error("Invalid user profile configuration returned from backend gateway.");
+      }
+
+      localStorage.setItem('token', idToken);
       localStorage.setItem('user', JSON.stringify(authenticatedUser));
 
       setUser(authenticatedUser);
@@ -92,17 +120,20 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error("Identity Validation Session Failure:", error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   // ==========================================
-  // 3. NEW: GOOGLE SIGN-IN & UPGRADE WORKFLOW 
+  // 3. GOOGLE SIGN-IN WORKFLOW 
   // ==========================================
   const loginWithGoogle = async () => {
     try {
+      setLoading(true);
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
-      const idToken = await result.user.getIdToken();
+      const idToken = await result.user.getIdToken(true);
 
       const response = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
@@ -116,18 +147,17 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Google Auth verification failed on backend');
       }
 
-      // FIXED: Check if the backend says profile is incomplete
       if (data.status === 'profile_incomplete') {
-        return data; // Return the metadata containing uid, email, name to handle redirection
+        return data; 
       }
 
-      const authenticatedUser = {
-        ...data.user,
-        status: data.user.status || 'active'
-      };
+      const authenticatedUser = extractUserData(data);
 
-      // If user profile is already fully setup, commit to active session state
-      localStorage.setItem('token', data.token);
+      if (!authenticatedUser) {
+        throw new Error("Invalid user profile configuration returned from Google gateway.");
+      }
+
+      localStorage.setItem('token', idToken);
       localStorage.setItem('user', JSON.stringify(authenticatedUser));
 
       setUser(authenticatedUser);
@@ -138,6 +168,8 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error("Google Authentication Workflow Failure:", error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -146,6 +178,7 @@ export const AuthProvider = ({ children }) => {
   // ==========================================
   const logout = async () => {
     try {
+      setLoading(true);
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       await firebaseSignOut(auth);
@@ -155,33 +188,65 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setRole(null);
       setPrivileges([]);
+      setLoading(false);
     }
   };
 
   // ==========================================
-  // 5. SESSION RECOVERY HOOK
+  // 5. REAL-TIME SESSION RECOVERY HOOK 
   // ==========================================
   useEffect(() => {
-    const checkPersistedAuthSession = () => {
-      const savedToken = localStorage.getItem('token');
-      const savedUser = localStorage.getItem('user');
-
-      if (savedToken && savedUser) {
-        try {
-          const parsedUser = JSON.parse(savedUser);
-          setUser(parsedUser);
-          setRole(parsedUser.role);
-          setPrivileges(parsedUser.privileges || []);
-        } catch (err) {
-          console.error("Corrupted state session structures wiped:", err);
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-        }
+    const savedUser = localStorage.getItem('user');
+    const savedToken = localStorage.getItem('token');
+    
+    if (savedUser && savedToken) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
+        setRole(parsedUser.role);
+        setPrivileges(parsedUser.privileges || []);
+      } catch (e) {
+        console.error("Failed to parse local storage user data", e);
       }
-      setLoading(false);
-    };
+    }
 
-    checkPersistedAuthSession();
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const response = await fetch('http://localhost:5000/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken })
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const authenticatedUser = extractUserData(data);
+
+            if (authenticatedUser && authenticatedUser.role) {
+              localStorage.setItem('token', idToken);
+              localStorage.setItem('user', JSON.stringify(authenticatedUser));
+              
+              setUser(authenticatedUser);
+              setRole(authenticatedUser.role);
+              setPrivileges(authenticatedUser.privileges || []);
+            }
+          }
+        } catch (error) {
+          console.error("Background session sync failed:", error);
+        }
+      } else {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setUser(null);
+        setRole(null);
+        setPrivileges([]);
+      }
+      setLoading(false); 
+    });
+
+    return () => unsubscribe();
   }, []);
 
   return (
@@ -191,4 +256,10 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    console.error("useAuth must be used within an AuthProvider Wrapper.");
+  }
+  return context;
+};
