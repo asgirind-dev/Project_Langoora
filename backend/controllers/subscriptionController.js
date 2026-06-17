@@ -1,122 +1,95 @@
-const { db } = require('../config/firebase');
+const subscriptionService = require('../services/subscriptionService');
 
-const COLLECTION = 'subscriptions';
+// ==========================================
+// 1. SUBSCRIPTION PLANS CONTROLLER
+// ==========================================
 
-// Get all active plans
-const getPlans = async (req, res) => {
+exports.getPlans = async (req, res) => {
   try {
-    const snapshot = await db.collection(COLLECTION).where('isActive', '==', true).get();
-    const plans = [];
-    snapshot.forEach(doc => {
-      plans.push({ id: doc.id, ...doc.data() });
-    });
-    res.json({ plans });
+    const plans = await subscriptionService.getAllPlans();
+    res.status(200).json(plans);
   } catch (error) {
-    console.error('Get plans error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: "Plans fetch error", error: error.message });
   }
 };
 
-// Create plan
-const createPlan = async (req, res) => {
+exports.createPlan = async (req, res) => {
   try {
-    const { name, price, credits, features, popular, color, icon } = req.body;
-
-    if (!name || !price || !credits) {
-      return res.status(400).json({ error: 'Name, price and credits are required' });
+    if (!req.body.name || !req.body.price) {
+      return res.status(400).json({ message: "Name and Price are required" });
     }
-
-    const planData = {
-      name,
-      price: parseFloat(price),
-      credits: parseInt(credits),
-      features: features || [],
-      popular: popular || false,
-      color: color || 'from-purple-400 to-pink-500',
-      icon: icon || 'Rocket',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const docRef = await db.collection(COLLECTION).add(planData);
-    const newPlan = { id: docRef.id, ...planData };
-
-    res.status(201).json({ success: true, plan: newPlan });
+    const newPlan = await subscriptionService.createNewPlan(req.body);
+    res.status(201).json(newPlan);
   } catch (error) {
-    console.error('Create plan error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: "Plan creation error", error: error.message });
   }
 };
 
-// Update plan
-const updatePlan = async (req, res) => {
+// 🟢 මෙන්න මේ කෑල්ල මිස් වෙලා තිබුණේ මචන්:
+exports.updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, price, credits, features, popular, color, icon, isActive } = req.body;
-
-    const updateData = {
-      ...(name && { name }),
-      ...(price && { price: parseFloat(price) }),
-      ...(credits && { credits: parseInt(credits) }),
-      ...(features && { features }),
-      ...(popular !== undefined && { popular }),
-      ...(color && { color }),
-      ...(icon && { icon }),
-      ...(isActive !== undefined && { isActive }),
-      updatedAt: new Date().toISOString()
-    };
-
-    await db.collection(COLLECTION).doc(id).update(updateData);
-    const doc = await db.collection(COLLECTION).doc(id).get();
-    res.json({ success: true, plan: { id: doc.id, ...doc.data() } });
+    await subscriptionService.updateExistingPlan(id, req.body);
+    res.status(200).json({ message: "Plan updated successfully", id });
   } catch (error) {
-    console.error('Update plan error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: "Plan update error", error: error.message });
   }
 };
 
-// Delete plan
-const deletePlan = async (req, res) => {
+// 🟢 මෙන්න මේ කෑල්ලත් මිස් වෙලා තිබුණේ:
+exports.deletePlan = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.collection(COLLECTION).doc(id).delete();
-    res.json({ success: true, message: 'Plan deleted successfully' });
+    await subscriptionService.deleteExistingPlan(id);
+    res.status(200).json({ message: "Plan deleted successfully", id });
   } catch (error) {
-    console.error('Delete plan error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: "Plan deletion error", error: error.message });
   }
 };
 
-// Toggle plan status
-const togglePlanStatus = async (req, res) => {
+// ==========================================
+// 2. EXAM CATEGORY CONTROLLER
+// ==========================================
+
+exports.getCategories = async (req, res) => {
   try {
-    const { id } = req.params;
-    const doc = await db.collection(COLLECTION).doc(id).get();
-    if (!doc.exists) {
-      return res.status(404).json({ error: 'Plan not found' });
+    const categories = await subscriptionService.getAllCategories();
+    res.status(200).json(categories);
+  } catch (error) {
+    res.status(500).json({ message: "Categories fetch error", error: error.message });
+  }
+};
+
+exports.createCategory = async (req, res) => {
+  try {
+    if (!req.body.name || req.body.credits === undefined) {
+      return res.status(400).json({ message: "Category Name and Credits are required" });
     }
-
-    const currentStatus = doc.data().isActive;
-    const newStatus = !currentStatus;
-    
-    await db.collection(COLLECTION).doc(id).update({
-      isActive: newStatus,
-      updatedAt: new Date().toISOString()
-    });
-
-    const updatedDoc = await db.collection(COLLECTION).doc(id).get();
-    res.json({ success: true, isActive: newStatus, plan: { id: updatedDoc.id, ...updatedDoc.data() } });
+    const newCategory = await subscriptionService.createNewCategory(req.body);
+    res.status(201).json(newCategory);
   } catch (error) {
-    console.error('Toggle plan error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: "Category creation error", error: error.message });
   }
 };
 
-module.exports = {
-  getPlans,
-  createPlan,
-  updatePlan,
-  deletePlan,
-  togglePlanStatus
+// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
+exports.updateCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await subscriptionService.updateExistingCategory(id, req.body);
+    res.status(200).json({ message: "Category updated successfully", id });
+  } catch (error) {
+    res.status(500).json({ message: "Category update error", error: error.message });
+  }
+};
+
+// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
+exports.deleteCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await subscriptionService.deleteExistingCategory(id);
+    res.status(200).json({ message: "Category deleted successfully", id });
+  } catch (error) {
+    res.status(500).json({ message: "Category deletion error", error: error.message });
+  }
 };

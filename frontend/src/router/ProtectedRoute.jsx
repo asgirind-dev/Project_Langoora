@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 export default function ProtectedRoute({ children, allowedRoles, requiredPrivilege }) {
   const { user, role, loading } = useAuth(); 
   const location = useLocation();
+  return children ? children : <Outlet />; //Mekath ain karanna sikurada weddi
 
   if (loading) {
     return (

@@ -1,12 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const subscriptionController = require('../controllers/subscriptionController');
-const { authenticate, isAdmin } = require('../middleware/auth');
+const subController = require('../controllers/subscriptionController');
 
-router.get('/', subscriptionController.getPlans);
-router.post('/', authenticate, isAdmin, subscriptionController.createPlan);
-router.put('/:id', authenticate, isAdmin, subscriptionController.updatePlan);
-router.delete('/:id', authenticate, isAdmin, subscriptionController.deletePlan);
-router.patch('/:id/toggle', authenticate, isAdmin, subscriptionController.togglePlanStatus);
+// Plans Endpoints
+router.get('/plans', subController.getPlans);
+router.post('/plans', subController.createPlan);
+router.put('/plans/:id', subController.updatePlan);
+router.delete('/plans/:id', subController.deletePlan);
+
+// Exam Categories Endpoints
+router.get('/categories', subController.getCategories);
+router.post('/categories', subController.createCategory);
+router.put('/categories/:id', subController.updateCategory);
+router.delete('/categories/:id', subController.deleteCategory);
 
 module.exports = router;

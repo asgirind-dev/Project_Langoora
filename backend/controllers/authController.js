@@ -1,4 +1,5 @@
-const { db } = require('../config/firebase');
+const { db, auth } = require('../config/firebase'); 
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 // ==========================================
@@ -167,7 +168,8 @@ exports.loginUser = async (req, res) => {
       });
     }
 
-    return res.status(401).json({ error: 'Invalid credentials' });
+    return res.status(400).json({ message: 'Invalid identity target authentication method.' });
+
   } catch (error) {
     console.error('Login Failure:', error);
     res.status(500).json({ message: 'Server error during authentication processing phase', error: error.message });
@@ -181,65 +183,40 @@ exports.completeGoogleRegistration = async (req, res) => {
   const { uid, email, name, phone, dob, role } = req.body;
 
   try {
-    const { email, password, name, role } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    if (!uid || !email || !phone || !dob) {
+      return res.status(400).json({ message: 'Missing required parameters.' });
     }
 
-    const userSnapshot = await db.collection('users').where('email', '==', email).get();
-    if (!userSnapshot.empty) {
-      return res.status(400).json({ error: 'User already exists' });
+    const userCheck = await db.collection('users').doc(uid).get();
+    if (userCheck.exists) {
+      return res.status(400).json({ message: 'Profile configuration already established.' });
     }
 
-    const userData = {
-      email,
-      name: name || 'User',
+    const newGoogleProfile = {
+      uid: uid,
+      email: email.toLowerCase().trim(),
+      name: name,
+      phone: phone,
+      dob: dob,
       role: role || 'student',
       status: 'active',
-      credits: 0,
+      joined: new Date().toISOString().split('T')[0], 
+      privileges: [],
       createdAt: new Date().toISOString()
     };
 
-    await db.collection('users').add(userData);
+    await db.collection('users').doc(uid).set(newGoogleProfile);
 
-    const token = jwt.sign(
-      { email, role: userData.role },
-      process.env.JWT_SECRET || 'secret',
-      { expiresIn: '30d' }
+    const appToken = jwt.sign(
+      { id: uid, role: newGoogleProfile.role },
+      process.env.JWT_SECRET || 'fallback_secret_key',
+      { expiresIn: '1d' }
     );
 
     return res.status(201).json({ token: appToken, user: { id: uid, ...newGoogleProfile } });
 
   } catch (error) {
-    console.error('Register error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Google Profile Finalization Failure:', error);
+    return res.status(500).json({ message: 'Server error finalizing profile setups.' });
   }
-};
-
-// Get current user
-const getCurrentUser = async (req, res) => {
-  try {
-    const email = req.user?.email;
-    if (!email) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userSnapshot = await db.collection('users').where('email', '==', email).get();
-    if (userSnapshot.empty) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const userData = userSnapshot.docs[0].data();
-    res.json({ user: userData });
-  } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-module.exports = {
-  loginUser,
-  registerUser,
-  getCurrentUser
 };
