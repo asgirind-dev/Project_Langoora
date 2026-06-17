@@ -1,76 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, Edit, Trash2, Crown, Sparkles, 
-  Zap, Infinity, CheckCircle, XCircle,
+  Zap, Rocket, CheckCircle, XCircle,
   DollarSign, Users, Clock, TrendingUp,
-  Shield, Star, Gift, Rocket, Layers,
-  BookOpen, Award, Settings, Save,
+  Shield, Star, Gift, Layers,
+  BookOpen, Award, Save,
   X, AlertCircle, Database, RefreshCw
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
-
-// Initial Data
-const initialPlans = [
-  {
-    id: 1,
-    name: 'Starter',
-    icon: 'Zap',
-    price: 999,
-    credits: 50,
-    features: ['Basic Exam Access', '5 Exam Attempts', 'Email Support'],
-    color: 'from-blue-400 to-cyan-500',
-    bg: 'bg-blue-500/10',
-    popular: false,
-    active: true
-  },
-  {
-    id: 2,
-    name: 'Pro',
-    icon: 'Rocket',
-    price: 2500,
-    credits: 100,
-    features: ['All Exam Access', '25 Exam Attempts', 'Priority Support', 'Detailed Analytics'],
-    color: 'from-purple-400 to-pink-500',
-    bg: 'bg-purple-500/10',
-    popular: true,
-    active: true
-  },
-  {
-    id: 3,
-    name: 'Elite',
-    icon: 'Crown',
-    price: 4500,
-    credits: 250,
-    features: ['Unlimited Access', '100 Exam Attempts', '24/7 Priority Support', 'Custom Reports', 'API Access'],
-    color: 'from-amber-400 to-orange-500',
-    bg: 'bg-amber-500/10',
-    popular: false,
-    active: true
-  },
-];
-
-const initialExamCategories = [
-  { id: 1, name: 'JLPT N5', credits: 20, exams: 12, status: 'active' },
-  { id: 2, name: 'JLPT N4', credits: 30, exams: 8, status: 'active' },
-  { id: 3, name: 'EPS-TOPIK', credits: 25, exams: 15, status: 'active' },
-  { id: 4, name: 'JLPT N3', credits: 40, exams: 6, status: 'inactive' },
-  { id: 5, name: 'TOEFL', credits: 35, exams: 10, status: 'active' },
-];
+import { subscriptionService } from '../../services';
 
 const iconMap = {
   Zap: Zap,
   Rocket: Rocket,
   Crown: Crown,
-  Infinity: Infinity,
   Star: Star,
   Shield: Shield
 };
 
 export default function SubscriptionManager() {
   const [activeTab, setActiveTab] = useState('plans');
-  const [plans, setPlans] = useState(initialPlans);
-  const [examCategories, setExamCategories] = useState(initialExamCategories);
+  const [plans, setPlans] = useState([]);
+  const [examCategories, setExamCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('plan');
   const [editingItem, setEditingItem] = useState(null);
@@ -88,57 +41,153 @@ export default function SubscriptionManager() {
     status: 'active'
   });
 
-  // Stats
-  const stats = [
-    { label: 'Total Plans', value: plans.length, icon: Crown, color: 'text-purple-400' },
-    { label: 'Active Plans', value: plans.filter(p => p.active).length, icon: CheckCircle, color: 'text-emerald-400' },
-    { label: 'Exam Categories', value: examCategories.length, icon: BookOpen, color: 'text-blue-400' },
-    { label: 'Total Credits Pool', value: examCategories.reduce((acc, cat) => acc + cat.credits, 0), icon: Database, color: 'text-amber-400' },
-  ];
+  // Load plans from API
+  useEffect(() => {
+    loadPlans();
+  }, []);
 
-  // CRUD Operations for Plans
-  const addPlan = () => {
-    const newPlan = {
-      id: Date.now(),
-      name: formData.name,
-      icon: 'Rocket',
-      price: parseInt(formData.price),
-      credits: parseInt(formData.credits),
-      features: formData.features.filter(f => f.trim() !== ''),
-      color: 'from-purple-400 to-pink-500',
-      bg: 'bg-purple-500/10',
-      popular: formData.popular,
-      active: true
-    };
-    setPlans([...plans, newPlan]);
-    resetForm();
+  const loadPlans = async () => {
+    try {
+      setLoading(true);
+      const response = await subscriptionService.getPlans();
+      setPlans(response.plans || []);
+    } catch (error) {
+      console.error('Error loading plans:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updatePlan = () => {
-    setPlans(plans.map(plan => 
-      plan.id === editingItem.id ? {
-        ...plan,
+  const addPlan = async () => {
+    try {
+      const planData = {
+        name: formData.name,
+        price: parseInt(formData.price),
+        credits: parseInt(formData.credits),
+        features: formData.features.filter(f => f.trim() !== ''),
+        popular: formData.popular,
+        color: 'from-purple-400 to-pink-500',
+        icon: 'Rocket'
+      };
+      const response = await subscriptionService.createPlan(planData);
+      if (response.success) {
+        setPlans([...plans, response.plan]);
+        resetForm();
+      }
+    } catch (error) {
+      console.error('Error adding plan:', error);
+    }
+  };
+
+  const updatePlan = async () => {
+    try {
+      const planData = {
         name: formData.name,
         price: parseInt(formData.price),
         credits: parseInt(formData.credits),
         features: formData.features.filter(f => f.trim() !== ''),
         popular: formData.popular
-      } : plan
+      };
+      const response = await subscriptionService.updatePlan(editingItem.id, planData);
+      if (response.success) {
+        setPlans(plans.map(p => p.id === editingItem.id ? response.plan : p));
+        resetForm();
+      }
+    } catch (error) {
+      console.error('Error updating plan:', error);
+    }
+  };
+
+  const deletePlan = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this plan?')) return;
+    try {
+      const response = await subscriptionService.deletePlan(id);
+      if (response.success) {
+        setPlans(plans.filter(p => p.id !== id));
+        loadPlans();
+      }
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+    }
+  };
+
+  const togglePlanStatus = async (id) => {
+    try {
+      const response = await subscriptionService.togglePlanStatus(id);
+      if (response.success) {
+        setPlans(plans.map(p => 
+          p.id === id ? { ...p, isActive: response.isActive } : p
+        ));
+        loadPlans();
+      }
+    } catch (error) {
+      console.error('Error toggling plan:', error);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({ name: '', price: '', credits: '', features: [''], popular: false });
+    setEditingItem(null);
+    setShowModal(false);
+  };
+
+  const resetExamForm = () => {
+    setExamFormData({ name: '', credits: '', exams: '', status: 'active' });
+    setEditingItem(null);
+    setShowModal(false);
+  };
+
+  const openEditPlan = (plan) => {
+    setEditingItem(plan);
+    setFormData({
+      name: plan.name,
+      price: plan.price?.toString() || '',
+      credits: plan.credits?.toString() || '',
+      features: plan.features || [''],
+      popular: plan.popular || false
+    });
+    setModalType('plan');
+    setShowModal(true);
+  };
+
+  const openEditExam = (exam) => {
+    setModalType('exam');
+    setEditingItem(exam);
+    setExamFormData({
+      name: exam.name,
+      credits: exam.credits.toString(),
+      exams: exam.exams.toString(),
+      status: exam.status
+    });
+    setShowModal(true);
+  };
+
+  const handleFeatureChange = (index, value) => {
+    const newFeatures = [...formData.features];
+    newFeatures[index] = value;
+    setFormData({ ...formData, features: newFeatures });
+  };
+
+  const addFeatureField = () => {
+    setFormData({ ...formData, features: [...formData.features, ''] });
+  };
+
+  const removeFeatureField = (index) => {
+    const newFeatures = formData.features.filter((_, i) => i !== index);
+    setFormData({ ...formData, features: newFeatures });
+  };
+
+  const toggleExamStatus = (id) => {
+    setExamCategories(examCategories.map(cat => 
+      cat.id === id ? { ...cat, status: cat.status === 'active' ? 'inactive' : 'active' } : cat
     ));
-    resetForm();
   };
 
-  const deletePlan = (id) => {
-    setPlans(plans.filter(plan => plan.id !== id));
+  const deleteExamCategory = (id) => {
+    if (!window.confirm('Are you sure you want to delete this category?')) return;
+    setExamCategories(examCategories.filter(cat => cat.id !== id));
   };
 
-  const togglePlanStatus = (id) => {
-    setPlans(plans.map(plan => 
-      plan.id === id ? { ...plan, active: !plan.active } : plan
-    ));
-  };
-
-  // CRUD Operations for Exam Categories
   const addExamCategory = () => {
     const newExam = {
       id: Date.now(),
@@ -164,68 +213,24 @@ export default function SubscriptionManager() {
     resetExamForm();
   };
 
-  const deleteExamCategory = (id) => {
-    setExamCategories(examCategories.filter(cat => cat.id !== id));
-  };
+  // Stats
+  const stats = [
+    { label: 'Total Plans', value: plans.length, icon: Crown, color: 'text-purple-400' },
+    { label: 'Active Plans', value: plans.filter(p => p.isActive !== false).length, icon: CheckCircle, color: 'text-emerald-400' },
+    { label: 'Total Credits', value: plans.reduce((sum, p) => sum + (p.credits || 0), 0), icon: Database, color: 'text-amber-400' },
+    { label: 'Popular Plans', value: plans.filter(p => p.popular && p.isActive !== false).length, icon: Star, color: 'text-yellow-400' },
+  ];
 
-  const toggleExamStatus = (id) => {
-    setExamCategories(examCategories.map(cat => 
-      cat.id === id ? { ...cat, status: cat.status === 'active' ? 'inactive' : 'active' } : cat
-    ));
-  };
-
-  // Form Helpers
-  const resetForm = () => {
-    setFormData({ name: '', price: '', credits: '', features: [''], popular: false });
-    setEditingItem(null);
-    setShowModal(false);
-  };
-
-  const resetExamForm = () => {
-    setExamFormData({ name: '', credits: '', exams: '', status: 'active' });
-    setEditingItem(null);
-    setShowModal(false);
-  };
-
-  const handleFeatureChange = (index, value) => {
-    const newFeatures = [...formData.features];
-    newFeatures[index] = value;
-    setFormData({ ...formData, features: newFeatures });
-  };
-
-  const addFeatureField = () => {
-    setFormData({ ...formData, features: [...formData.features, ''] });
-  };
-
-  const removeFeatureField = (index) => {
-    const newFeatures = formData.features.filter((_, i) => i !== index);
-    setFormData({ ...formData, features: newFeatures });
-  };
-
-  const openEditPlan = (plan) => {
-    setModalType('plan');
-    setEditingItem(plan);
-    setFormData({
-      name: plan.name,
-      price: plan.price.toString(),
-      credits: plan.credits.toString(),
-      features: plan.features,
-      popular: plan.popular
-    });
-    setShowModal(true);
-  };
-
-  const openEditExam = (exam) => {
-    setModalType('exam');
-    setEditingItem(exam);
-    setExamFormData({
-      name: exam.name,
-      credits: exam.credits.toString(),
-      exams: exam.exams.toString(),
-      status: exam.status
-    });
-    setShowModal(true);
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex flex-col items-center gap-4">
+          <RefreshCw size={40} className="text-blue-400 animate-spin" />
+          <p className="text-gray-400">Loading plans...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -252,6 +257,7 @@ export default function SubscriptionManager() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            onClick={loadPlans}
             className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors border border-white/5"
           >
             <RefreshCw size={16} className="text-gray-400" />
@@ -296,7 +302,7 @@ export default function SubscriptionManager() {
           }`}
         >
           <Layers size={16} />
-          Subscription Plans
+          Subscription Plans ({plans.length})
         </motion.button>
         <motion.button
           whileHover={{ scale: 1.02 }}
@@ -309,11 +315,11 @@ export default function SubscriptionManager() {
           }`}
         >
           <Award size={16} />
-          Exam Category Credit Fixer
+          Exam Category Credit Fixer ({examCategories.length})
         </motion.button>
       </div>
 
-      {/* Tab Content */}
+      {/* Content - Plans Tab */}
       <AnimatePresence mode="wait">
         {activeTab === 'plans' ? (
           <motion.div
@@ -332,9 +338,9 @@ export default function SubscriptionManager() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => {
-                  setModalType('plan');
                   setEditingItem(null);
                   setFormData({ name: '', price: '', credits: '', features: [''], popular: false });
+                  setModalType('plan');
                   setShowModal(true);
                 }}
                 className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-white text-sm font-medium hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-300 flex items-center gap-2"
@@ -344,104 +350,114 @@ export default function SubscriptionManager() {
               </motion.button>
             </div>
 
-            {/* Plans Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {plans.map((plan, index) => {
-                const Icon = iconMap[plan.icon] || Zap;
-                return (
-                  <motion.div
-                    key={plan.id}
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    whileHover={{ y: -8, transition: { type: 'spring', stiffness: 300 } }}
-                    className="relative group"
-                  >
-                    <GlassCard 
-                      className={`p-6 border transition-all duration-300 hover:shadow-2xl ${
-                        plan.active 
-                          ? 'border-white/10 hover:border-purple-500/30 hover:shadow-purple-500/10'
-                          : 'border-red-500/20 opacity-60 hover:border-red-500/40'
-                      }`}
+            {plans.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="p-6 bg-white/5 rounded-full w-fit mx-auto mb-4">
+                  <Database size={48} className="text-gray-500" />
+                </div>
+                <p className="text-gray-400">No subscription plans found</p>
+                <p className="text-sm text-gray-500 mt-1">Click "Add Plan" to create your first plan</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {plans.map((plan, index) => {
+                  const Icon = iconMap[plan.icon] || Zap;
+                  const isActive = plan.isActive !== false;
+                  return (
+                    <motion.div
+                      key={plan.id || index}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      whileHover={{ y: -8, transition: { type: 'spring', stiffness: 300 } }}
+                      className="relative group"
                     >
-                      {!plan.active && (
-                        <div className="absolute top-3 right-3 px-2 py-1 bg-red-500/20 rounded-lg border border-red-500/20">
-                          <span className="text-xs text-red-400 font-medium">Inactive</span>
-                        </div>
-                      )}
-                      
-                      {plan.popular && plan.active && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full">
-                          <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1">
-                            <Star size={10} /> Most Popular
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <div className={`p-3 ${plan.bg} rounded-xl w-fit mb-3`}>
-                            <Icon size={24} className={`text-${plan.color.split('-')[1]}-400`} />
+                      <GlassCard 
+                        className={`p-6 border transition-all duration-300 hover:shadow-2xl ${
+                          isActive 
+                            ? 'border-white/10 hover:border-purple-500/30 hover:shadow-purple-500/10'
+                            : 'border-red-500/30 opacity-70 hover:border-red-500/50 bg-red-500/[0.02]'
+                        }`}
+                      >
+                        {!isActive && (
+                          <div className="absolute top-3 right-3 px-3 py-1 bg-red-500/30 rounded-lg border border-red-500/30">
+                            <span className="text-xs font-bold text-red-400 uppercase tracking-wider">Inactive</span>
                           </div>
-                          <h3 className="text-xl font-bold text-white">{plan.name}</h3>
-                        </div>
-                      </div>
-
-                      <div className="mb-4">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-bold text-white">LKR {plan.price}</span>
-                          <span className="text-xs text-gray-400">/month</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Sparkles size={12} className="text-amber-400" />
-                          <span className="text-xs text-gray-400">{plan.credits} credits included</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 mb-6">
-                        {plan.features.map((feature, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-sm">
-                            <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
-                            <span className="text-sm text-gray-300">{feature}</span>
+                        )}
+                        
+                        {plan.popular && isActive && (
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full">
+                            <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1">
+                              <Star size={10} /> Most Popular
+                            </span>
                           </div>
-                        ))}
-                      </div>
+                        )}
 
-                      <div className="flex items-center gap-2">
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => togglePlanStatus(plan.id)}
-                          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
-                            plan.active
-                              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/20'
-                              : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20'
-                          }`}
-                        >
-                          {plan.active ? 'Active' : 'Inactive'}
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => openEditPlan(plan)}
-                          className="p-2.5 bg-white/5 rounded-xl hover:bg-white/10 transition-colors border border-white/5"
-                        >
-                          <Edit size={16} className="text-gray-400" />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => deletePlan(plan.id)}
-                          className="p-2.5 bg-red-500/10 rounded-xl hover:bg-red-500/20 transition-colors border border-red-500/10"
-                        >
-                          <Trash2 size={16} className="text-red-400" />
-                        </motion.button>
-                      </div>
-                    </GlassCard>
-                  </motion.div>
-                );
-              })}
-            </div>
+                        <div className={`flex items-start justify-between mb-4 ${!isActive ? 'opacity-50' : ''}`}>
+                          <div>
+                            <div className="p-3 bg-white/5 rounded-xl w-fit mb-3">
+                              <Icon size={24} className={`${isActive ? 'text-purple-400' : 'text-gray-500'}`} />
+                            </div>
+                            <h3 className="text-xl font-bold text-white">{plan.name}</h3>
+                          </div>
+                        </div>
+
+                        <div className={`mb-4 ${!isActive ? 'opacity-50' : ''}`}>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-3xl font-bold text-white">LKR {plan.price}</span>
+                            <span className="text-xs text-gray-400">/month</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Sparkles size={12} className="text-amber-400" />
+                            <span className="text-xs text-gray-400">{plan.credits} credits included</span>
+                          </div>
+                        </div>
+
+                        <div className={`space-y-2 mb-6 ${!isActive ? 'opacity-50' : ''}`}>
+                          {plan.features?.map((feature, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-sm">
+                              <CheckCircle size={14} className={`${isActive ? 'text-emerald-400' : 'text-gray-500'} flex-shrink-0`} />
+                              <span className={isActive ? 'text-gray-300' : 'text-gray-500'}>{feature}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => togglePlanStatus(plan.id)}
+                            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
+                              isActive
+                                ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/20'
+                                : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20'
+                            }`}
+                          >
+                            {isActive ? 'Active' : 'Inactive'}
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => openEditPlan(plan)}
+                            className="p-2.5 bg-white/5 rounded-xl hover:bg-white/10 transition-colors border border-white/5"
+                          >
+                            <Edit size={16} className="text-gray-400" />
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => deletePlan(plan.id)}
+                            className="p-2.5 bg-red-500/10 rounded-xl hover:bg-red-500/20 transition-colors border border-red-500/10"
+                          >
+                            <Trash2 size={16} className="text-red-400" />
+                          </motion.button>
+                        </div>
+                      </GlassCard>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
           </motion.div>
         ) : (
           <motion.div
@@ -472,11 +488,10 @@ export default function SubscriptionManager() {
               </motion.button>
             </div>
 
-            {/* Exam Categories Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {examCategories.map((category, index) => (
                 <motion.div
-                  key={category.id}
+                  key={category.id || index}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
