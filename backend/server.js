@@ -25,7 +25,8 @@ app.use('/api/exams', examRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes); 
 app.use('/api/subscription-management', subscriptionRoutes);
-app.use('/api/tutors', tutorProfileRoutes); 
+app.use('/api/tutors', tutorProfileRoutes); // 
+app.use('/api/student', require('./routes/StudentProfilePageroutes'));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
