@@ -27,6 +27,7 @@ class TutorProfilePageController {
             return res.status(500).json({ success: false, error: error.message });
         }
     }
+    
 
     // 3. Get Bank Cards
     async getBankCards(req, res) {

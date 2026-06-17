@@ -29,24 +29,7 @@ class TutorProfileServices {
 
         return { success: true, message: 'Profile updated successfully' };
     }
-
-    // සම්පූර්ණ Tutor Account එක සහ අදාළ Bank Cards සේරම Delete කිරීම
-    async deleteTutorAccount(uid) {
-        const userRef = db.collection('users').doc(uid);
-
-        // 💡 Firestore වල sub-collections (bankCards) කෙලින්ම මැකෙන්නේ නැති නිසා ඒවා එකින් එක delete කරගන්නවා
-        const cardsSnapshot = await userRef.collection('bankCards').get();
-        const batch = db.batch();
-        cardsSnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        await batch.commit(); // ඔක්කොම කාඩ් ටික එක පාර මැකුවා
-
-        // දැන් ප්‍රධාන User Document එක delete කරනවා
-        await userRef.delete();
-
-        return { success: true, message: 'Account and associated data deleted successfully.' };
-    }
+    
 
     // Bank card වැඩ ටික කලින් තිබ්බා වගේමයි...
     async getBankCards(uid) {
