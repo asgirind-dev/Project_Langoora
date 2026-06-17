@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate as useReactNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, ArrowRight, Play, Star, Users, BookOpen, Award, Mic,
-  BarChart2, Globe, Shield, Clock, CheckCircle, TrendingUp, Zap, ChevronRight
+  BarChart2, Globe, Shield, Clock, CheckCircle, TrendingUp, Zap, ChevronRight, Languages
 } from 'lucide-react';
 import { examCategories, topTutors, featuredExams, testimonials, subscriptionPlans } from '../../data/mockData';
 import Button from '../../components/ui/Button';
@@ -26,7 +26,7 @@ const stagger = {
 };
 
 export default function LandingPage() {
-  const navigate = useNavigate();
+  const navigate = useReactNavigate();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTestimonial, setActiveTestimonial] = useState(0);
@@ -67,96 +67,164 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="text-white overflow-x-hidden">
-      {/* Hero */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
-        <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#060d1f] via-[#0a1628] to-[#060d1f]" />
-          <motion.div
-            animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.5, 0.3] }}
-            transition={{ duration: 8, repeat: Infinity }}
-            className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl"
-          />
-          <motion.div
-            animate={{ scale: [1, 1.15, 1], opacity: [0.2, 0.4, 0.2] }}
-            transition={{ duration: 10, repeat: Infinity, delay: 2 }}
-            className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-cyan-500/20 rounded-full blur-3xl"
-          />
-          <motion.div
-            animate={{ scale: [1, 1.2, 1], opacity: [0.15, 0.3, 0.15] }}
-            transition={{ duration: 12, repeat: Infinity, delay: 4 }}
-            className="absolute top-1/2 right-1/3 w-64 h-64 bg-blue-400/15 rounded-full blur-3xl"
-          />
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:60px_60px]" />
+    <div className="text-white overflow-x-hidden bg-[#040814]">
+      
+      {/* ================= HERO SECTION (CRISTALIZED JAPANESE & KOREAN THEME) ================= */}
+      <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-28 pb-16">
+        
+        {/* Background Layer with Dual Culture Split Visuals */}
+        <div className="absolute inset-0 z-0">
+          <div className="absolute inset-0 bg-gradient-to-b from-[#060d1f]/40 via-[#0a1628]/90 to-[#040814]" />
+          
+          {/* Japan Aesthetic Component (Left Side Backdrop) */}
+          <div className="absolute top-0 left-0 w-full md:w-1/2 h-full opacity-15 md:opacity-20 pointer-events-none mix-blend-lighten">
+            <img 
+              src="https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=1000&q=80" 
+              alt="Tokyo Background" 
+              className="w-full h-full object-cover object-center filter grayscale contrast-125"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#060d1f] via-transparent to-transparent" />
+          </div>
+
+          {/* Korea Aesthetic Component (Right Side Backdrop) */}
+          <div className="absolute top-0 right-0 w-full md:w-1/2 h-full opacity-15 md:opacity-20 pointer-events-none mix-blend-lighten">
+            <img 
+              src="https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=1000&q=80" 
+              alt="Seoul Background" 
+              className="w-full h-full object-cover object-center filter grayscale contrast-125"
+            />
+            <div className="absolute inset-0 bg-gradient-to-l from-[#060d1f] via-transparent to-transparent" />
+          </div>
+
+          {/* Glowing Ambient Neon Orbs */}
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-red-600/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px]" />
+          
+          {/* Cyber Grid Overlay */}
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:40px_40px]" />
         </div>
 
+        {/* Traditional Cultural Elements Background Watermarks */}
+        <div className="absolute top-24 left-12 opacity-5 text-7xl font-bold hidden xl:block select-none font-serif text-red-500">日本語</div>
+        <div className="absolute bottom-24 right-12 opacity-5 text-7xl font-bold hidden xl:block select-none font-serif text-blue-500">한국어</div>
+
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          
+          {/* Tagline Badge */}
           <motion.div
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-sm mb-8"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-red-500/10 to-blue-500/10 border border-white/10 text-gray-300 text-sm mb-6 backdrop-blur-md"
           >
-            <Zap size={14} className="text-blue-400" />
-            Sri Lanka's #1 Language Exam Platform
+            <Languages size={14} className="text-red-400" />
+            <span className="text-red-400 font-semibold">JLPT</span> & <span className="text-blue-400 font-semibold">EPS-TOPIK</span> Specialized Prep Hub
           </motion.div>
 
+          {/* Main Hero Header */}
           <motion.h1
             initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }}
-            className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight mb-6"
+            className="text-4xl sm:text-6xl lg:text-7xl font-extrabold leading-tight tracking-tight mb-6"
           >
-            Ace Your <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-300 bg-clip-text text-transparent">Language Exam</span>
-            <br />With Confidence
+            Pass Your <span className="bg-gradient-to-r from-red-400 via-purple-400 to-blue-400 bg-clip-text text-transparent">Japanese & Korean</span>
+            <br />Exams on the First Attempt!
           </motion.h1>
 
+          {/* Subtitle description */}
           <motion.p
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-xl text-gray-300 max-w-2xl mx-auto mb-10 leading-relaxed"
+            className="text-lg sm:text-xl text-gray-300 max-w-3xl mx-auto mb-10 leading-relaxed"
           >
-            Authentic mock exams, expert tutors, and intelligent analytics — purpose-built for JLPT, EPS-TOPIK, IELTS, HSK, GRE & more.
+            Sri Lanka's premier specialized simulator. Master the **JLPT (N5 - N1)** and **EPS-TOPIK** with real past-paper formats, active time tracking, and native audio listening rooms.
           </motion.p>
 
+          {/* Dynamic Dual Target Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-12">
+            
+            {/* Japan Track Card */}
+            <motion.div 
+              initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.3 }}
+              className="relative group overflow-hidden rounded-2xl border border-red-500/20 bg-gradient-to-br from-black/40 to-red-950/10 backdrop-blur-md p-6 text-left hover:border-red-500/40 transition-all duration-300"
+            >
+              <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-red-600/10 rounded-full blur-xl group-hover:bg-red-600/20 transition-all" />
+              <div className="flex items-center gap-4 mb-3">
+                <span className="text-4xl filter drop-shadow-[0_4px_12px_rgba(239,68,68,0.3)]">🇯🇵</span>
+                <div>
+                  <h3 className="text-xl font-bold text-white group-hover:text-red-300 transition-colors">JLPT Portal</h3>
+                  <p className="text-xs text-red-400 tracking-wider font-semibold">N5 • N4 • N3 • N2 • N1</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-400 mb-4">Complete vocabulary banks, kanji test simulators, and native speech listening audio clips.</p>
+              <button onClick={() => navigate('/marketplace?category=JLPT')} className="inline-flex items-center gap-1.5 text-xs font-bold text-red-400 hover:text-red-300 transition-colors">
+                Explore Japan Papers <ChevronRight size={14} />
+              </button>
+            </motion.div>
+
+            {/* Korea Track Card */}
+            <motion.div 
+              initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.3 }}
+              className="relative group overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-br from-black/40 to-blue-950/10 backdrop-blur-md p-6 text-left hover:border-blue-500/40 transition-all duration-300"
+            >
+              <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-600/10 rounded-full blur-xl group-hover:bg-blue-600/20 transition-all" />
+              <div className="flex items-center gap-4 mb-3">
+                <span className="text-4xl filter drop-shadow-[0_4px_12px_rgba(59,130,246,0.3)]">🇰🇷</span>
+                <div>
+                  <h3 className="text-xl font-bold text-white group-hover:text-blue-300 transition-colors">EPS-TOPIK Hub</h3>
+                  <p className="text-xs text-blue-400 tracking-wider font-semibold">CBT / UBT METHOD</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-400 mb-4">Industry-specific question banks, reading matrices, and authentic labor-department level audio guides.</p>
+              <button onClick={() => navigate('/marketplace?category=EPS-TOPIK')} className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors">
+                Explore Korean Papers <ChevronRight size={14} />
+              </button>
+            </motion.div>
+
+          </div>
+
+          {/* Call to Actions */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.3 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10"
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14"
           >
-            <Button variant="primary" size="xl" onClick={() => navigate('/auth/register')}>
-              Start Free Today <ArrowRight size={20} />
+            <Button variant="primary" size="xl" className="shadow-lg shadow-purple-500/20" onClick={() => navigate('/auth/register')}>
+              Create Free Account <ArrowRight size={20} />
             </Button>
             <Button variant="secondary" size="xl" onClick={() => navigate('/marketplace')}>
-              <Play size={18} className="text-blue-400" /> Browse Exams
+              <Play size={18} className="text-purple-400" /> Enter Live Test Room
             </Button>
           </motion.div>
 
+          {/* Quick Search Panel */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }}
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.5 }}
             className="relative max-w-2xl mx-auto mb-16"
           >
-            <div className="relative bg-white/5 border border-white/15 rounded-2xl p-1.5 flex items-center gap-3">
+            <div className="relative bg-white/5 border border-white/10 rounded-2xl p-1.5 flex items-center gap-3 backdrop-blur-lg">
               <Search size={20} className="ml-3 text-gray-400 flex-shrink-0" />
               <input
                 type="text"
-                placeholder="Search JLPT, IELTS, EPS-TOPIK, GRE..."
+                placeholder="Search specific levels (e.g., JLPT N4, EPS Reading, IELTS)..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="flex-1 bg-transparent text-white placeholder-gray-400 text-sm focus:outline-none py-2"
               />
-              <Button variant="primary" size="md" onClick={() => navigate(`/marketplace?q=${searchQuery}`)}>
+              <Button variant="primary" size="md" className="bg-gradient-to-r from-red-600 to-blue-600 border-none hover:opacity-90" onClick={() => navigate(`/marketplace?q=${searchQuery}`)}>
                 Search
               </Button>
             </div>
             <div className="flex items-center justify-center gap-4 mt-3 text-xs text-gray-500">
-              {['JLPT N2', 'EPS-TOPIK', 'IELTS Band 7', 'GRE 320+'].map(tag => (
-                <button key={tag} onClick={() => navigate(`/marketplace?q=${tag}`)} className="hover:text-blue-400 transition-colors">{tag}</button>
+              {['JLPT N5', 'JLPT N4', 'EPS-TOPIK Reading', 'Listening Pack'].map(tag => (
+                <button key={tag} onClick={() => navigate(`/marketplace?q=${tag}`)} className="hover:text-purple-400 transition-colors font-medium">{tag}</button>
               ))}
             </div>
           </motion.div>
 
+          {/* Metrics Displays */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.5 }}
+            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.6 }}
             className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto"
           >
             {stats.map((stat, i) => (
-              <GlassCard key={i} className="p-4 text-center">
-                <stat.icon size={20} className="text-blue-400 mx-auto mb-2" />
+              <GlassCard key={i} className="p-4 text-center border-white/5 bg-white/[0.02]">
+                <stat.icon size={20} className="text-purple-400 mx-auto mb-2" />
                 <div className="text-2xl font-bold text-white">{stat.value}</div>
                 <div className="text-xs text-gray-400">{stat.label}</div>
               </GlassCard>
@@ -164,6 +232,8 @@ export default function LandingPage() {
           </motion.div>
         </div>
       </section>
+
+      {/* ======================= REST OF THE SECTIONS ======================= */}
 
       {/* Exam Categories */}
       <section className="py-24 relative">
@@ -272,7 +342,7 @@ export default function LandingPage() {
               <h2 className="text-4xl font-bold mb-2">Top Tutors</h2>
               <p className="text-gray-400">Certified experts helping thousands of students pass every year</p>
             </div>
-          <Button variant="outline" onClick={handleTutorOnboarding}>Become a Tutor <ChevronRight size={16} /></Button>                </motion.div>
+            <Button variant="outline" onClick={handleTutorOnboarding}>Become a Tutor <ChevronRight size={16} /></Button>                </motion.div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
             {topTutors.map((tutor, i) => (
               <motion.div key={tutor.id} {...stagger} transition={{ duration: 0.4, delay: i * 0.1 }}>
@@ -418,6 +488,7 @@ export default function LandingPage() {
           </motion.div>
         </div>
       </section>
+
     </div>
   );
 }
