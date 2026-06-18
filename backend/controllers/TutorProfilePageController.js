@@ -15,7 +15,7 @@ class TutorProfilePageController {
         }
     }
 
-    // 2. Update Profile (including Profile Pic)
+    // 2. Update Profile
     async updateTutorProfile(req, res) {
         try {
             const { uid } = req.params;
@@ -32,18 +32,15 @@ class TutorProfilePageController {
     async deleteTutorAccount(req, res) {
         try {
             const { uid } = req.params;
-            
-            // Forwarding the validated UID directly to the profile services layer
             const result = await tutorService.deleteTutorAccount(uid);
             
-            // If the service fails internally, respond with a 400 Bad Request instead of breaking with a 500 status
             if (!result.success) {
                 return res.status(400).json(result);
             }
             
             return res.status(200).json(result);
         } catch (error) {
-            console.error("🔥 CRITICAL BACKEND ERROR IN CONTROLLER:", error); 
+            console.error(" CRITICAL BACKEND ERROR IN CONTROLLER:", error); 
             return res.status(500).json({ success: false, error: error.message });
         }
     }
@@ -68,7 +65,7 @@ class TutorProfilePageController {
             const newCard = await tutorService.addBankCard(uid, cardData);
             return res.status(201).json({ success: true, data: newCard });
         } catch (error) {
-            // Catch service validation exceptions and return a clean 400 Bad Request instead of an unhandled 500 error
+            // FIXED: Catches service validation exceptions (like digit count errors) and passes a clean 400 Bad Request
             return res.status(400).json({ success: false, error: error.message });
         }
     }
