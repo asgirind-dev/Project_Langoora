@@ -7,7 +7,7 @@ import Navbar from '../../components/layout/Navbar';
 import Footer from '../../components/layout/Footer';
 import Button from '../../components/ui/Button';
 
-// Backend එකෙන් එන string icon එක Lucide component එකකට map කරන grid එක
+
 const iconMap = {
   Zap: Zap,
   Rocket: Rocket,
@@ -27,13 +27,13 @@ export default function PricingPage() {
     const fetchPlans = async () => {
       try {
         setLoading(true);
-        // Backend API Endpoint Loop එකෙන් dynamic data ඇදීම
-        const res = await axios.get('http://localhost:5000/api/subscription-management/plans');
-        setPlans(res.data);
-      } catch (e) { 
-        console.error("Error loading subscription plans from backend:", e); 
-      } finally { 
-        setLoading(false); 
+       
+        const response = await axios.get('http://localhost:5000/api/subscription-management/plans');
+        setPlans(response.data);
+      } catch (error) {
+        console.error("Error loading plans:", error);
+      } finally {
+        setLoading(false);
       }
     };
     fetchPlans();
@@ -44,101 +44,97 @@ export default function PricingPage() {
       <Navbar />
       
       <section className="pt-32 pb-20 px-4 relative overflow-hidden">
-        {/* Decorative background glow arrays */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[500px] pointer-events-none z-0">
-          <div className="absolute top-[-10%] left-[30%] w-[350px] h-[350px] bg-blue-600/10 rounded-full blur-[100px]" />
-        </div>
-
         <div className="max-w-6xl mx-auto relative z-10">
           <motion.div 
             initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }}
+            animate={{ opacity: 1, y: 0 }} 
             className="text-center mb-16"
           >
-            <h1 className="text-4xl sm:text-5xl font-extrabold mb-6 tracking-tight">Choose Your Plan</h1>
-            <p className="text-gray-400 text-lg max-w-xl mx-auto font-light">
-              Select the perfect credit configuration plan to maximize your exam performance metrics.
+            <h1 className="text-4xl sm:text-5xl font-extrabold mb-4 tracking-tight">
+              Choose Your Plan
+            </h1>
+            <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+              Choose the plan that best suits you to make your learning journey more successful.
             </p>
           </motion.div>
 
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 gap-3">
               <RefreshCw className="animate-spin text-blue-500" size={36} />
-              <p className="text-xs text-gray-500 font-mono">Fetching active tiers...</p>
+              <p className="text-gray-400 text-sm">Loading plans...</p>
+            </div>
+          ) : plans.length === 0 ? (
+            <div className="text-center py-24 text-gray-400">
+              <p>No plans are currently included.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {plans.map((plan) => {
-                const IconComponent = iconMap[plan.icon] || Zap;
-                
-                return (
-                  <motion.div 
-                    key={plan.id || plan._id}
-                    whileHover={{ y: -6 }}
-                    className={`relative bg-[#0b1221]/60 backdrop-blur-md border ${
-                      plan.popular ? 'border-blue-500' : 'border-white/10'
-                    } rounded-3xl p-8 flex flex-col shadow-2xl hover:border-blue-500/40 transition-all duration-300`}
-                  >
-                    {/* POPULAR SPEC Badge */}
-                    {plan.popular && (
-                      <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-[11px] font-bold px-4 py-1 rounded-full shadow-lg z-10 tracking-wider uppercase">
-                        MOST POPULAR
-                      </div>
-                    )}
-
-                    {/* Card Header Profile */}
-                    <div className="flex items-center gap-4 mb-6 mt-2">
-                      <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
-                        <IconComponent className="text-blue-400" size={24} />
-                      </div>
-                      <h3 className="text-2xl font-bold capitalize tracking-wide">{plan.name}</h3>
-                    </div>
-
-                    {/* Pricing Node */}
-                    <div className="mb-6">
-                      <span className="text-4xl sm:text-5xl font-extrabold text-white">
-                        LKR {plan.price?.toLocaleString()}
-                      </span>
-                      <span className="text-gray-400 text-sm font-light ml-1">/mo</span>
-                    </div>
-
-                    {/* Dynamic Credit Counter Badge */}
-                    {plan.credits && (
-                      <div className="bg-amber-500/10 text-amber-400 text-xs font-semibold px-4 py-2 rounded-xl w-fit mb-6 flex items-center gap-2 border border-amber-500/20">
-                        <Star size={12} className="fill-amber-400/20" /> {plan.credits} System Credits Included
-                      </div>
-                    )}
-
-                    {/* Dynamic Structural Features */}
-                    <ul className="space-y-4 mb-8 flex-grow">
-                      {plan.features?.map((feature, idx) => (
-                        <li key={idx} className="flex items-start gap-3 text-sm text-gray-300 font-light">
-                          <CheckCircle size={16} className="text-emerald-400 mt-0.5 flex-shrink-0" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    {/* Form Action Routing */}
-                    <Button 
-                      variant={plan.popular ? "primary" : "outline"} 
-                      size="lg" 
-                      fullWidth 
-                      onClick={() => navigate('/auth/register')}
-                      className={`rounded-xl font-bold ${
-                        plan.popular ? "bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/15" : "border-white/10 hover:bg-white/5"
+              {plans
+               
+                .filter(plan => plan.active === true) 
+                .map((plan) => {
+                  const IconComponent = iconMap[plan.icon] || Zap;
+                  const isPopular = plan.popular || false;
+                  
+                  return (
+                    <motion.div 
+                      key={plan._id}
+                      whileHover={{ y: -6 }}
+                      className={`relative bg-[#0b1221]/60 backdrop-blur-md border rounded-3xl p-8 flex flex-col shadow-2xl transition-all duration-300 ${
+                        isPopular ? 'border-blue-500 shadow-blue-500/10' : 'border-white/10'
                       }`}
                     >
-                      Choose {plan.name} <ArrowRight size={16} className="ml-2" />
-                    </Button>
-                  </motion.div>
-                );
-              })}
+                      {isPopular && (
+                        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-[11px] font-bold px-4 py-1 rounded-full shadow-lg z-10 tracking-wider uppercase">
+                          MOST POPULAR
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-4 mb-6 mt-2">
+                        <div className={`p-3 rounded-2xl ${isPopular ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-blue-500/10 border border-blue-500/20'}`}>
+                          <IconComponent className={isPopular ? 'text-cyan-400' : 'text-blue-400'} size={24} />
+                        </div>
+                        <h3 className="text-2xl font-bold capitalize tracking-wide text-white">{plan.name}</h3>
+                      </div>
+
+                      <div className="mb-4">
+                        <span className="text-4xl sm:text-5xl font-extrabold text-white">
+                          LKR {Number(plan.price).toLocaleString()}
+                        </span>
+                        <span className="text-gray-400 text-sm font-light ml-1">/mo</span>
+                      </div>
+
+                      <div className="mb-2">
+                        <span className="text-sm text-gray-400">
+                          <span className="text-amber-400 font-semibold">{plan.credits || 0}</span> credits ඇතුළත් වේ
+                        </span>
+                      </div>
+
+                      <ul className="space-y-4 mb-8 flex-grow mt-4">
+                        {plan.features && plan.features.map((feature, idx) => (
+                          <li key={idx} className="flex items-start gap-3 text-sm text-gray-300 font-light">
+                            <CheckCircle size={16} className={`${isPopular ? 'text-cyan-400' : 'text-emerald-400'} mt-0.5 flex-shrink-0`} />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <Button 
+                        variant={isPopular ? "primary" : "outline"} 
+                        size="lg" 
+                        fullWidth 
+                        onClick={() => navigate('/auth/register')}
+                        className={isPopular ? "shadow-lg shadow-blue-500/20" : ""}
+                      >
+                        Choose {plan.name} <ArrowRight size={16} className="ml-2" />
+                      </Button>
+                    </motion.div>
+                  );
+                })}
             </div>
           )}
         </div>
       </section>
-      
       <Footer />
     </div>
   );

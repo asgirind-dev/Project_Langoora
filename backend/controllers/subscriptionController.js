@@ -4,10 +4,13 @@ const subscriptionService = require('../services/subscriptionService');
 // 1. SUBSCRIPTION PLANS CONTROLLER
 // ==========================================
 
+
 exports.getPlans = async (req, res) => {
   try {
     const plans = await subscriptionService.getAllPlans();
-    res.status(200).json(plans);
+    // මේ filter එකෙන් active ඒවා විතරක් Landing Page එකට යනවා
+    const activePlans = plans.filter(plan => plan.active === true);
+    res.status(200).json(activePlans);
   } catch (error) {
     res.status(500).json({ message: "Plans fetch error", error: error.message });
   }
@@ -25,7 +28,6 @@ exports.createPlan = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ල මිස් වෙලා තිබුණේ මචන්:
 exports.updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -36,7 +38,6 @@ exports.updatePlan = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් මිස් වෙලා තිබුණේ:
 exports.deletePlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -72,7 +73,6 @@ exports.createCategory = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -83,7 +83,6 @@ exports.updateCategory = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
 exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
