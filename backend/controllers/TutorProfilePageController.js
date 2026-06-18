@@ -19,7 +19,7 @@ class TutorProfilePageController {
     async updateTutorProfile(req, res) {
         try {
             const { uid } = req.params;
-            const profileData = req.body; // මෙතනට profilePic URL එකත් ඇතුලත් වෙන්න ඕනේ
+            const profileData = req.body; // Expects profile fields along with the profilePic URL string
 
             const result = await tutorService.updateTutorProfile(uid, profileData);
             return res.status(200).json(result);
@@ -27,9 +27,29 @@ class TutorProfilePageController {
             return res.status(500).json({ success: false, error: error.message });
         }
     }
+
+    // 3. Delete Tutor Account
+    async deleteTutorAccount(req, res) {
+        try {
+            const { uid } = req.params;
+            
+            // Forwarding the validated UID directly to the profile services layer
+            const result = await tutorService.deleteTutorAccount(uid);
+            
+            // If the service fails internally, respond with a 400 Bad Request instead of breaking with a 500 status
+            if (!result.success) {
+                return res.status(400).json(result);
+            }
+            
+            return res.status(200).json(result);
+        } catch (error) {
+            console.error("🔥 CRITICAL BACKEND ERROR IN CONTROLLER:", error); 
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    }
     
 
-    // 3. Get Bank Cards
+    // 4. Get Bank Cards
     async getBankCards(req, res) {
         try {
             const { uid } = req.params;
@@ -40,7 +60,7 @@ class TutorProfilePageController {
         }
     }
 
-    // 4. Add Bank Card
+    // 5. Add Bank card
     async addBankCard(req, res) {
         try {
             const { uid } = req.params;
@@ -48,11 +68,12 @@ class TutorProfilePageController {
             const newCard = await tutorService.addBankCard(uid, cardData);
             return res.status(201).json({ success: true, data: newCard });
         } catch (error) {
-            return res.status(500).json({ success: false, error: error.message });
+            // Catch service validation exceptions and return a clean 400 Bad Request instead of an unhandled 500 error
+            return res.status(400).json({ success: false, error: error.message });
         }
     }
 
-    // 5. Delete Bank Card
+    // 6. Delete Bank Card
     async deleteBankCard(req, res) {
         try {
             const { uid, cardId } = req.params;

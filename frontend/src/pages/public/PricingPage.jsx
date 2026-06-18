@@ -106,7 +106,7 @@ export default function PricingPage() {
 
                       <div className="mb-2">
                         <span className="text-sm text-gray-400">
-                          <span className="text-amber-400 font-semibold">{plan.credits || 0}</span> credits ඇතුළත් වේ
+                          <span className="text-amber-400 font-semibold">{plan.credits || 0}</span> credits 
                         </span>
                       </div>
 
@@ -135,7 +135,6 @@ export default function PricingPage() {
           )}
         </div>
       </section>
-      <Footer />
     </div>
   );
 }

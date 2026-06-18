@@ -31,6 +31,7 @@ import UserManagementPage from "../pages/admin/UserManagementPage";
 import AdminRevenuePage from "../pages/admin/AdminRevenuePage";
 import AuditLogsPage from "../pages/admin/AuditLogsPage";
 import SystemSecurity from "../pages/admin/SystemSecurity";
+import SystemSettings from "../pages/admin/SystemSettings"; 
 
 // Tutor Pages
 import TutorDashboard from "../pages/tutor/TutorDashboard";
@@ -63,9 +64,6 @@ import SubscriptionManager from "../pages/finance_admin/SubscriptionManager";
 import TutorPayoutsPage from "../pages/finance_admin/TutorPayoutsPage";
 import TransactionLedger from "../pages/finance_admin/TransactionLedger";
 
-// ==========================================
-// CENTRALIZED ROUTING GATEWAY ENTRY POINT
-// ==========================================
 export default function AppRoutes() {
   return (
     <AuthProvider>
@@ -80,7 +78,6 @@ export default function AppRoutes() {
             <Route path="forgot-password" element={<ForgotPasswordPage />} />
             <Route path="complete-profile" element={<CompleteProfile />} />
 
-            {/* Under Review Security Block */}
             <Route
               path="under-review"
               element={
@@ -110,7 +107,7 @@ export default function AppRoutes() {
             }
           />
 
-          {/* 3. Student Segment Workspace*/}
+          {/* 3. Student Segment Workspace */}
           <Route path="/student" element={<ProtectedRoute allowedRoles={['student']}><StudentLayout /></ProtectedRoute>}>
             <Route index element={<StudentDashboard />} />
             <Route path="exams" element={<MyExamsPage />} />
@@ -122,7 +119,7 @@ export default function AppRoutes() {
             <Route path="*" element={<Navigate to="/student" replace />} />
           </Route>
 
-          {/* 4. Tutor Segment Workspace*/}
+          {/* 4. Tutor Segment Workspace */}
           <Route path="/tutor" element={<ProtectedRoute allowedRoles={['tutor']}><TutorLayout /></ProtectedRoute>}>
             <Route index element={<TutorDashboard />} />
             <Route path="exams" element={<TutorExamsPage />} />
@@ -134,7 +131,7 @@ export default function AppRoutes() {
             <Route path="*" element={<Navigate to="/tutor" replace />} />
           </Route>
 
-          {/* 5. System Administration Control Center*/}
+          {/* 5. System Administration Control Center */}
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout /></ProtectedRoute>}>
             <Route index element={<AdminDashboard />} />
             <Route path="users" element={<UserManagementPage />} />
@@ -142,10 +139,11 @@ export default function AppRoutes() {
             <Route path="revenue" element={<AdminRevenuePage />} />
             <Route path="logs" element={<AuditLogsPage />} />
             <Route path="security" element={<SystemSecurity />} />
+            <Route path="settings" element={<SystemSettings />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Route>
 
-          {/* 6. Academic Moderation & Validation Desk*/}
+          {/* 6. Academic Moderation & Validation Desk */}
           <Route path="/validator" element={<ProtectedRoute allowedRoles={['validator']}><ValidatorLayout /></ProtectedRoute>}>
             <Route index element={<AcademicValidatorDashboard />} />
             
@@ -170,8 +168,8 @@ export default function AppRoutes() {
             <Route path="*" element={<Navigate to="/validator" replace />} />
           </Route>
 
-         {/* 7. Finance Administration Control Center*/}
-           <Route path="/finance-admin" element={<ProtectedRoute allowedRoles={['finance_admin', 'finance']}><FinanceAdminLayout /></ProtectedRoute>}>
+          {/* 7. Finance Administration Control Center */}
+          <Route path="/finance-admin" element={<ProtectedRoute allowedRoles={['finance_admin', 'finance']}><FinanceAdminLayout /></ProtectedRoute>}>
             <Route index element={<FinanceDashboard />} />
             
             <Route path="subscriptions" element={
@@ -195,7 +193,7 @@ export default function AppRoutes() {
             <Route path="*" element={<Navigate to="/finance-admin" replace />} />
           </Route>
 
-          {/* 8. Public Facing Content & Common Views (MUST BE AT THE VERY BOTTOM) */}
+          {/* 8. Public Facing Content & Common Views */}
           <Route element={<PublicLayout />}>
             <Route path="/" element={<LandingPage />} />
             <Route path="/pricing" element={<PricingPage />} />

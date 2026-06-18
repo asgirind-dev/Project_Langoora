@@ -1,14 +1,11 @@
-const subscriptionService = require('../services/subscriptionService');
+const subscriptionService = require('../services/SubscriptionService');
 
 // ==========================================
 // 1. SUBSCRIPTION PLANS CONTROLLER
 // ==========================================
-
-
 exports.getPlans = async (req, res) => {
   try {
     const plans = await subscriptionService.getAllPlans();
-    // මේ filter එකෙන් active ඒවා විතරක් Landing Page එකට යනවා
     const activePlans = plans.filter(plan => plan.active === true);
     res.status(200).json(activePlans);
   } catch (error) {
@@ -51,7 +48,6 @@ exports.deletePlan = async (req, res) => {
 // ==========================================
 // 2. EXAM CATEGORY CONTROLLER
 // ==========================================
-
 exports.getCategories = async (req, res) => {
   try {
     const categories = await subscriptionService.getAllCategories();

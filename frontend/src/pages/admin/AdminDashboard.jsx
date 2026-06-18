@@ -18,19 +18,18 @@ const revenueData = [
   { month: 'Jun', revenue: 2980000 },
 ];
 
+// 🚀 REALISTIC EXAM DISTRIBUTION FOR YOUR PLATFORM SCOPE
 const examDistribution = [
-  { name: 'JLPT', value: 38, color: '#3b82f6' },
-  { name: 'EPS-TOPIK', value: 22, color: '#06b6d4' },
-  { name: 'IELTS', value: 20, color: '#10b981' },
-  { name: 'HSK', value: 10, color: '#f59e0b' },
-  { name: 'Others', value: 10, color: '#6b7280' },
+  { name: 'JLPT (N1 - N5)', value: 55, color: '#3b82f6' },  // Main focus layer
+  { name: 'EPS-TOPIK', value: 30, color: '#06b6d4' },
+  { name: 'TOPIK I', value: 15, color: '#10b981' },
 ];
 
 export default function AdminDashboard() {
   const [pendingTutors, setPendingTutors] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch real-time pending tutors from Firestore to sync dashboard tracking parameters
+  // Fetch real-time pending tutors from Firestore
   const fetchPendingTutors = async () => {
     try {
       const q = query(collection(db, 'users'), where('role', '==', 'tutor'), where('status', '==', 'pending'));
@@ -52,15 +51,22 @@ export default function AdminDashboard() {
     try {
       await updateDoc(doc(db, 'users', id), { status: newStatus });
       setPendingTutors(prev => prev.filter(t => t.id !== id));
-      alert(`Tutor state runtime synced as ${newStatus}!`);
+      alert(`Tutor status updated successfully to ${newStatus}!`);
     } catch (err) {
       console.error("Error processing state transformation:", err);
     }
   };
 
+  const safeStats = {
+    totalUsers: adminStats?.totalUsers ? adminStats.totalUsers.toLocaleString() : '0',
+    activeStudents: adminStats?.activeStudents ? adminStats.activeStudents.toLocaleString() : '0',
+    activeTutors: adminStats?.activeTutors ? adminStats.activeTutors.toLocaleString() : '0',
+    totalExams: adminStats?.totalExams ? adminStats.totalExams.toLocaleString() : '0',
+  };
+
   return (
     <div className="space-y-8">
-      {/* Aligned Header Section */}
+      {/* --- UNIFORM HEADER SECTION --- */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center justify-between">
           <div>
@@ -70,21 +76,21 @@ export default function AdminDashboard() {
           {pendingTutors.length > 0 && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/15 border border-amber-500/30 rounded-xl">
               <AlertCircle size={16} className="text-amber-400" />
-              <span className="text-amber-300 text-sm font-medium">{pendingTutors.length} pending approvals</span>
+              <span className="text-amber-300 text-sm font-medium">{pendingTutors.length} Pending Approvals</span>
             </div>
           )}
         </div>
       </motion.div>
 
-      {/* Aligned Performance Metrics Grid */}
+      {/* --- PERFORMANCE METRICS GRID --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {[
-          { label: 'Total Users', value: adminStats.totalUsers.toLocaleString(), icon: Users, color: 'text-blue-400' },
-          { label: 'Active Students', value: adminStats.activeStudents.toLocaleString(), icon: Users, color: 'text-cyan-400' },
-          { label: 'Active Tutors', value: adminStats.activeTutors, icon: UserCheck, color: 'text-emerald-400' },
-          { label: 'Total Exams', value: adminStats.totalExams.toLocaleString(), icon: BookOpen, color: 'text-amber-400' },
-          { label: 'Revenue Vector', value: 'LKR 18.4M', icon: DollarSign, color: 'text-green-400' },
-          { label: 'Pending Approvals', value: pendingTutors.length, icon: AlertCircle, color: 'text-amber-400' },
+          { label: 'Total Users', value: safeStats.totalUsers, icon: Users, color: 'text-blue-400' },
+          { label: 'Active Students', value: safeStats.activeStudents, icon: Users, color: 'text-cyan-400' },
+          { label: 'Active Tutors', value: safeStats.activeTutors, icon: UserCheck, color: 'text-emerald-400' },
+          { label: 'Total Exams', value: safeStats.totalExams, icon: BookOpen, color: 'text-amber-400' },
+          { label: 'Total Revenue', value: 'LKR 18.4M', icon: DollarSign, color: 'text-green-400' },
+          { label: 'Pending Tutors', value: pendingTutors.length, icon: AlertCircle, color: 'text-amber-400' },
         ].map((s, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <GlassCard className="p-4 border-white/10">
@@ -96,8 +102,9 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* Analytics Charts Layer */}
+      {/* --- ANALYTICS CHARTS LAYER --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Revenue Area Chart */}
         <GlassCard className="lg:col-span-2 p-6 border-white/10">
           <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
             <Activity size={18} className="text-blue-400" /> Platform Revenue Matrix
@@ -110,15 +117,16 @@ export default function AdminDashboard() {
                   <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                 </linearGradient>
               </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
-                <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={v => [`LKR ${v.toLocaleString()}`, 'Revenue']} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
+              <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={v => [`LKR ${v?.toLocaleString() ?? 0}`, 'Revenue']} />
               <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2.5} fill="url(#adminRevGrad)" />
             </AreaChart>
           </ResponsiveContainer>
         </GlassCard>
 
+        {/* Tailored Exam Allocation Pie Chart */}
         <GlassCard className="p-6 border-white/10">
           <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
             <BookOpen size={18} className="text-cyan-400" /> Exam Allocation Distribution
@@ -130,18 +138,18 @@ export default function AdminDashboard() {
                   <Cell key={i} fill={e.color} />
                 ))}
               </Pie>
-              <Legend iconSize={10} wrapperStyle={{ fontSize: '12px', color: '#9ca3af' }} />
+              <Legend iconSize={10} wrapperStyle={{ fontSize: '11px', color: '#9ca3af' }} />
               <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '12px' }} />
             </PieChart>
           </ResponsiveContainer>
         </GlassCard>
       </div>
 
-      {/* Action Gate: Real-time Pending Tutor Verification Block */}
+      {/* --- LIVE TUTOR AUTHORIZATION GATE --- */}
       <GlassCard className="p-6 border-white/10">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-            <UserCheck size={18} className="text-amber-400" /> Live Tutor Authorization Gate
+            <UserCheck size={18} className="text-amber-400" /> Live Tutor Verification Gate
             <Badge color="amber">{pendingTutors.length}</Badge>
           </h3>
         </div>
@@ -175,30 +183,30 @@ export default function AdminDashboard() {
         </div>
       </GlassCard>
 
-      {/* Registry Transactions Log Table */}
+      {/* --- CLEAN RESTRUCTURED TRANSACTIONS LOG TABLE --- */}
       <GlassCard className="p-6 border-white/10">
         <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
-          <Activity size={18} className="text-blue-400" /> System Transaction Registry
+          <Activity size={18} className="text-blue-400" /> Recent Transactions Registry
         </h3>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {['Registry ID', 'Identity Parameter', 'Target Exam Cluster', 'Financial Vol', 'Timestamp', 'Status State'].map(h => (
+                {['Transaction ID', 'Student Name', 'Enrolled Exam', 'Amount', 'Date', 'Status'].map(h => (
                   <th key={h} className="text-left text-xs font-medium text-gray-500 pb-3 pr-4">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {recentTransactions.map(t => (
-                <tr key={t.id} className="hover:bg-white/3 transition-colors">
-                  <td className="py-3 pr-4 text-xs text-blue-400 font-mono select-all">{t.id}</td>
-                  <td className="py-3 pr-4 text-sm text-gray-300">{t.user}</td>
-                  <td className="py-3 pr-4 text-sm text-gray-300">{t.exam}</td>
-                  <td className="py-3 pr-4 text-sm font-semibold text-white">LKR {t.amount.toLocaleString()}</td>
-                  <td className="py-3 pr-4 text-xs text-gray-500">{t.date}</td>
+              {recentTransactions && recentTransactions.map(t => (
+                <tr key={t?.id ?? Math.random()} className="hover:bg-white/3 transition-colors">
+                  <td className="py-3 pr-4 text-xs text-blue-400 font-mono select-all">{t?.id ?? 'N/A'}</td>
+                  <td className="py-3 pr-4 text-sm text-gray-300">{t?.user ?? 'Unknown'}</td>
+                  <td className="py-3 pr-4 text-sm text-gray-300">{t?.exam ?? 'Unknown'}</td>
+                  <td className="py-3 pr-4 text-sm font-semibold text-white">LKR {t?.amount ? t.amount.toLocaleString() : '0'}</td>
+                  <td className="py-3 pr-4 text-xs text-gray-500">{t?.date ?? 'N/A'}</td>
                   <td>
-                    <Badge color={t.status === 'completed' ? 'green' : t.status === 'pending' ? 'yellow' : 'red'}>{t.status}</Badge>
+                    <Badge color={t?.status === 'completed' ? 'green' : t?.status === 'pending' ? 'yellow' : 'red'}>{t?.status ?? 'pending'}</Badge>
                   </td>
                 </tr>
               ))}
