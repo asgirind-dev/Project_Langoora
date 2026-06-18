@@ -1,13 +1,13 @@
-const subscriptionService = require('../services/subscriptionService');
+const subscriptionService = require('../services/SubscriptionService');
 
 // ==========================================
 // 1. SUBSCRIPTION PLANS CONTROLLER
 // ==========================================
-
 exports.getPlans = async (req, res) => {
   try {
     const plans = await subscriptionService.getAllPlans();
-    res.status(200).json(plans);
+    const activePlans = plans.filter(plan => plan.active === true);
+    res.status(200).json(activePlans);
   } catch (error) {
     res.status(500).json({ message: "Plans fetch error", error: error.message });
   }
@@ -50,7 +50,6 @@ exports.deletePlan = async (req, res) => {
 // ==========================================
 // 2. EXAM CATEGORY CONTROLLER
 // ==========================================
-
 exports.getCategories = async (req, res) => {
   try {
     const categories = await subscriptionService.getAllCategories();

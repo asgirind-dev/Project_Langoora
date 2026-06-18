@@ -1,4 +1,4 @@
-const studentService = require('../services/StudentProfilePageservices');
+const studentService = require('../services/StudentProfilePageServices'); 
 
 class StudentProfilePageController {
     // 1. Get Profile
@@ -17,13 +17,7 @@ class StudentProfilePageController {
         if (!profile) {
             return res.status(200).json({ success: true, data: {} }); 
         }
-        
-        return res.status(200).json({ success: true, data: profile });
-    } catch (error) {
-        console.error("Controller Error:", error);
-        return res.status(500).json({ success: false, error: error.message });
     }
-}
 
     
     async updateStudentProfile(req, res) {
