@@ -14,7 +14,6 @@ const studyPlannerRoutes = require('./routes/studyPlannerRoutes');
 
 
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
-const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
 
 const app = express();
