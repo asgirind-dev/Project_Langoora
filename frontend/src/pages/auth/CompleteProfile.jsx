@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Phone, Calendar, User, Mail, ArrowRight } from 'lucide-react';
+import { Phone, Calendar, User, Mail, ArrowRight, AlertCircle } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 
@@ -8,17 +8,12 @@ export default function CompleteProfile() {
   const location = useLocation();
   const navigate = useNavigate();
 
-
   const metadata = location.state?.metadata || {};
   const { uid, email, name } = metadata;
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({
-    phone: '',
-    dob: ''
-  });
-
+  const [form, setForm] = useState({ phone: '', dob: '' });
 
   useEffect(() => {
     if (!uid || !email) {
@@ -32,19 +27,45 @@ export default function CompleteProfile() {
 
   const handleInputChange = (field) => (e) => {
     setForm(p => ({ ...p, [field]: e.target.value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: null }));
+    }
   };
 
   const validate = () => {
     const e = {};
-    if (!form.phone) e.phone = 'Phone number is required for verification';
-    if (!form.dob) e.dob = 'Date of birth is required';
+    
+    // Sri Lankan Phone Configuration Validation
+    const slPhoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+    if (!form.phone) {
+      e.phone = 'Phone number is required for validation matrix tracking';
+    } else if (!slPhoneRegex.test(form.phone.trim().replace(/\s+/g, ''))) {
+      e.phone = 'Please drop a valid mobile setup connector (+947 / 07)';
+    }
+
+    // Age Boundary Limit Validation (15 Years Old)
+    if (!form.dob) {
+      e.dob = 'Date of birth calculation target required';
+    } else {
+      const selectedDate = new Date(form.dob);
+      const limitDate = new Date();
+      limitDate.setFullYear(limitDate.getFullYear() - 15);
+      if (selectedDate > new Date()) {
+        e.dob = 'Birthday configurations cannot be inside future parameters';
+      } else if (selectedDate > limitDate) {
+        e.dob = 'System access architecture strictly requires age 15+ limit';
+      }
+    }
     return e;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const errs = validate();
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    if (Object.keys(errs).length > 0) { 
+      setErrors({ ...errs, globalAlert: "Required profile data structure properties missing or incorrectly formatted." }); 
+      return; 
+    }
 
     setLoading(true);
     setErrors({});
@@ -54,9 +75,7 @@ export default function CompleteProfile() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          uid,
-          email,
-          name,
+          uid, email, name,
           phone: form.phone,
           dob: form.dob,
           role: 'student'
@@ -75,8 +94,7 @@ export default function CompleteProfile() {
       window.location.href = '/student'; 
 
     } catch (err) {
-      console.error("Profile completion sequence failure:", err);
-      setErrors({ server: err.message || 'Submitting configuration failed.' });
+      setErrors({ server: err.message || 'Submitting architecture failed.' });
     } finally {
       setLoading(false);
     }
@@ -89,28 +107,24 @@ export default function CompleteProfile() {
         Hey {name?.split(' ')[0]}, we just need a few more essential details to finalize your Student Account.
       </p>
 
+      {/* Top Warning Profile Banner Notification Area */}
+      {errors.globalAlert && (
+        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 p-3.5 rounded-xl text-xs mb-5 flex items-start gap-2">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span>{errors.globalAlert}</span>
+        </div>
+      )}
+
       {errors.server && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3.5 rounded-xl text-xs mb-5">
-          {errors.server}
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3.5 rounded-xl text-xs mb-5 flex items-start gap-2">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span>{errors.server}</span>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Full Name (From Google)"
-          icon={User}
-          value={name || ''}
-          disabled
-          className="opacity-60 bg-white/5 cursor-not-allowed"
-        />
-
-        <Input
-          label="Email Address (From Google)"
-          icon={Mail}
-          value={email || ''}
-          disabled
-          className="opacity-60 bg-white/5 cursor-not-allowed"
-        />
+        <Input label="Full Name (From Google)" icon={User} value={name || ''} disabled className="opacity-60 bg-white/5 cursor-not-allowed" />
+        <Input label="Email Address (From Google)" icon={Mail} value={email || ''} disabled className="opacity-60 bg-white/5 cursor-not-allowed" />
 
         <Input 
           label="Phone Number" 

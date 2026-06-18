@@ -5,21 +5,18 @@ const { db, auth } = require('../config/firebase');
  */
 const getAllUsers = async (req, res) => {
   try {
-    // Fetch registered users
     const usersSnapshot = await db.collection('users').get();
     const registeredUsers = [];
     usersSnapshot.forEach(doc => {
       registeredUsers.push({ id: doc.id, ...doc.data() });
     });
 
-    // Fetch pre-authorized staff invitations
     const preAuthSnapshot = await db.collection('pre_authorized_staff').get();
     const preAuthUsers = [];
     preAuthSnapshot.forEach(doc => {
       preAuthUsers.push({ id: doc.id, ...doc.data(), status: 'invited', activityCount: 0 });
     });
 
-    // Combine and sort by joined date
     const combinedUsers = [...preAuthUsers, ...registeredUsers].sort((a, b) => {
       const dateA = a.joined ? new Date(a.joined) : new Date(0);
       const dateB = b.joined ? new Date(b.joined) : new Date(0);
@@ -45,7 +42,6 @@ const provisionStaffNode = async (req, res) => {
       return res.status(400).json({ success: false, message: 'All fields are mandatory.' });
     }
 
-    // Check if user already exists in standard profiles
     const userDoc = await db.collection('users').doc(formattedEmail).get();
     const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
 
@@ -63,7 +59,6 @@ const provisionStaffNode = async (req, res) => {
       privileges: privileges || []
     };
 
-    // Save invitation blueprint inside secure Firestore collection
     await db.collection('pre_authorized_staff').doc(formattedEmail).set(newStaffNode);
 
     return res.status(201).json({ success: true, user: { id: formattedEmail, ...newStaffNode, status: 'invited', activityCount: 0 } });
@@ -82,21 +77,17 @@ const toggleUserLifecycle = async (req, res) => {
     const { currentStatus, email } = req.body;
 
     if (currentStatus === 'invited') {
-      // Revoke an outstanding invite
       await db.collection('pre_authorized_staff').doc(email).delete();
       return res.status(200).json({ success: true, action: 'revoked' });
     }
 
     const targetStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
-    
-    // 1. Update Firestore state
     await db.collection('users').doc(uid).update({ status: targetStatus });
 
-    // 2. Firebase Auth Account Management (Block/Unblock access level)
     try {
       await auth.updateUser(uid, { disabled: targetStatus === 'suspended' });
     } catch (authErr) {
-      console.warn(`Auth disabled state sync omitted (User may not have registered in Auth yet): ${authErr.message}`);
+      console.warn(`Auth disabled state sync omitted: ${authErr.message}`);
     }
 
     return res.status(200).json({ success: true, action: 'toggled', targetStatus });
@@ -129,9 +120,40 @@ const updatePrivileges = async (req, res) => {
   }
 };
 
+/**
+ * 5. 🔒 PERMANENT DELETE WORKFLOW (Hard Delete - Auth + Firestore Sync)
+ */
+const deleteUserNode = async (req, res) => {
+  try {
+    const { uid } = req.params;
+    const { email, currentStatus } = req.body;
+
+    if (currentStatus === 'invited') {
+      await db.collection('pre_authorized_staff').doc(email).delete();
+      return res.status(200).json({ success: true, message: "Invitation deleted cleanly from staging area." });
+    }
+
+    // Delete Firestore profile mapping block
+    await db.collection('users').doc(uid).delete();
+
+    // Trigger Firebase Authentication Node Purge
+    try {
+      await auth.deleteUser(uid);
+    } catch (authErr) {
+      console.warn(`Auth deletion deferred or user didn't register: ${authErr.message}`);
+    }
+
+    return res.status(200).json({ success: true, message: "User account dropped cleanly from database layers." });
+  } catch (error) {
+    console.error('Purge transaction failure:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to drop user node from database servers.' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   provisionStaffNode,
   toggleUserLifecycle,
-  updatePrivileges
+  updatePrivileges,
+  deleteUserNode 
 };

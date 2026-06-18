@@ -1,17 +1,28 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, ArrowRight, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Mail, ArrowRight, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email) return;
+    setError('');
+
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!email) {
+      setError('Email address is required to dispatch recovery configurations.');
+      return;
+    } else if (!emailRegex.test(email)) {
+      setError('Please provide a legitimate, verified structure layout email address.');
+      return;
+    }
+
     setLoading(true);
     await new Promise(r => setTimeout(r, 1200));
     setSent(true);
@@ -40,6 +51,15 @@ export default function ForgotPasswordPage() {
     <div>
       <h2 className="text-3xl font-bold text-white mb-2">Reset your password</h2>
       <p className="text-gray-400 mb-8">Enter your email and we'll send you a reset link</p>
+
+      {/* Top Banner Warning Notification */}
+      {error && (
+        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3.5 rounded-xl mb-5 flex items-start gap-2">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-5">
         <Input
           label="Email Address"
@@ -47,7 +67,7 @@ export default function ForgotPasswordPage() {
           placeholder="you@example.com"
           icon={Mail}
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={e => { setEmail(e.target.value); setError(''); }}
         />
         <Button type="submit" variant="primary" size="lg" fullWidth disabled={loading || !email}>
           {loading ? 'Sending...' : <>Send Reset Link <ArrowRight size={18} /></>}
