@@ -8,8 +8,6 @@ import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 
 export default function ContentDisputesPage() {
-  // 1. MOCK DATA ARRAY: Real-world structure representing student "Flags"
-  // This allows frontend compilation testing before building full backend integration pipelines.
   const [disputes, setDisputes] = useState([
     {
       id: "disp_001",

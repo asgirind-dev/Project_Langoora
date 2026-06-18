@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Search, Users, UserCheck, UserX, Mail, Shield, CheckCircle, X, 
   UserPlus, Building, ShieldAlert, Loader, Radio, Zap, Activity, Globe,
-  AlertCircle, Check, Ban, Trash2 // 👈 Trash2 Icon එක ගත්තා මචන්
+  AlertCircle, Check, Ban, Trash2, AlertTriangle
 } from 'lucide-react';
 
 import GlassCard from '../../components/ui/GlassCard';
@@ -48,6 +48,10 @@ export default function UserManagementPage() {
   const [isPrivilegeModalOpen, setIsPrivilegeModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
+  // Custom UI Interactive States
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  const [confirmDeleteModal, setConfirmDeleteModal] = useState({ show: false, uid: null, email: null, currentStatus: null });
+
   const [createForm, setCreateForm] = useState({
     name: '',
     email: '',
@@ -59,6 +63,11 @@ export default function UserManagementPage() {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const showNotification = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
+
   const fetchAllUsersAndPreAuth = async () => {
     try {
       setLoading(true);
@@ -67,10 +76,12 @@ export default function UserManagementPage() {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
-        setUsers(response.data.users);
+        // Exclude soft-deleted nodes from interface streams
+        setUsers(response.data.users.filter(u => u.status !== 'deleted'));
       }
     } catch (error) {
       console.error("Error synchronizing storage directory registry:", error);
+      showNotification("Failed to fetch central user repository streams.", "error");
     } finally {
       setLoading(false);
     }
@@ -84,30 +95,40 @@ export default function UserManagementPage() {
       if (response.data.success) {
         if (response.data.action === 'revoked') {
           setUsers(prev => prev.filter(u => u.id !== uid));
+          showNotification("Staff validation invitation revoked successfully.", "error");
         } else {
           setUsers(prev => prev.map(u => u.id === uid ? { ...u, status: response.data.targetStatus } : u));
+          const msg = response.data.targetStatus === 'suspended' ? "User profile suspended access parameters." : "User profile fully activated.";
+          showNotification(msg, response.data.targetStatus === 'suspended' ? 'error' : 'success');
         }
       }
     } catch (error) { 
       console.error("Lifecycle runtime transformation failed:", error); 
+      showNotification("Failed to sync account transformation lifecycle.", "error");
     }
   };
 
-  // 🚀 HARD DELETE OPERATIONS SYNCHRONIZATION HOOK
-  const handleDeleteUser = async (uid, currentStatus, email) => {
-    const confirmDelete = window.confirm("Are you absolutely sure you want to permanently delete this user profile? This action will completely drop the node from central records.");
-    if (!confirmDelete) return;
+  // Triggers Custom UI Soft Delete confirmation overlay
+  const triggerDeleteConfirmation = (uid, currentStatus, email) => {
+    setConfirmDeleteModal({ show: true, uid, email, currentStatus });
+  };
+
+  // Safe Soft Delete Commit Method matching node architecture specifications
+  const handleConfirmSoftDelete = async () => {
+    const { uid, currentStatus, email } = confirmDeleteModal;
+    if (!uid) return;
 
     try {
-      const response = await api.delete(`/users/${uid}`, {
-        data: { email, currentStatus }
-      });
+      // 🎯 Soft Delete Integration: Updates status flag context to 'deleted' inside lifecycle pipeline
+      const response = await api.put(`/users/${uid}/lifecycle`, { currentStatus: 'active', forcedTargetStatus: 'deleted', email });
       if (response.data.success) {
         setUsers(prev => prev.filter(u => u.id !== uid));
+        setConfirmDeleteModal({ show: false, uid: null, email: null, currentStatus: null });
+        showNotification("User profile dropped to deleted storage context successfully.", "error");
       }
     } catch (error) {
-      console.error("Purge failure matrix:", error);
-      alert("Failed to securely drop the user node from systems.");
+      console.error("Soft purge matrix crashed:", error);
+      showNotification("Failed to securely tag node to soft-deleted state.", "error");
     }
   };
 
@@ -122,9 +143,11 @@ export default function UserManagementPage() {
       if (response.data.success) {
         setUsers(prev => prev.map(u => u.id === selectedUser.id ? selectedUser : u));
         setIsPrivilegeModalOpen(false);
+        showNotification("Security token capability access scopes committed clean.", "success");
       }
     } catch (error) { 
       console.error("Failed to commit capability profiles:", error); 
+      showNotification("Failed to finalize staff permissions matrix update.", "error");
     }
   };
 
@@ -151,6 +174,7 @@ export default function UserManagementPage() {
         setUsers(prev => [response.data.user, ...prev]);
         setIsCreateModalOpen(false);
         setCreateForm({ name: '', email: '', role: 'validator', institution: 'LNBTI', languageScope: 'Japanese', privileges: [] });
+        showNotification("Staff provisioning lifecycle executed. Invitation dispatched.", "success");
       }
     } catch (error) {
       setFormError(error.response?.data?.message || "Failed to create user.");
@@ -190,17 +214,94 @@ export default function UserManagementPage() {
   });
 
   return (
-    <div className="space-y-6 p-2 selection:bg-blue-500/30">
+    <div className="space-y-6 p-2 selection:bg-blue-500/30 relative">
       
+      {/* Dynamic Slide-in Toast Notification */}
+      <AnimatePresence>
+        {toast.show && (
+          <motion.div
+            initial={{ opacity: 0, x: 50, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl max-w-sm ${
+              toast.type === 'success' 
+                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-emerald-950/20' 
+                : 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-rose-950/20'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl border ${
+              toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20'
+            }`}>
+              {toast.type === 'success' ? <CheckCircle size={18} className="text-emerald-400" /> : <AlertCircle size={18} className="text-rose-400" />}
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-bold uppercase tracking-wider opacity-60">Identity Hub</p>
+              <p className="text-sm font-medium mt-0.5 leading-tight">{toast.message}</p>
+            </div>
+            <button onClick={() => setToast(p => ({ ...p, show: false }))} className="text-gray-400 hover:text-white p-1">
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Red Confirmation Modal for Soft Deletion */}
+      <AnimatePresence>
+        {confirmDeleteModal.show && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm bg-[#0f1629] border border-rose-500/30 rounded-2xl p-6 shadow-2xl text-left"
+            >
+              <div className="flex items-center gap-3 text-rose-400 mb-4">
+                <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">
+                  <AlertTriangle size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Soft Purge Account</h3>
+                  <p className="text-xs text-gray-400">Directory Registry Alteration</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-300 mb-6 leading-relaxed">
+                Are you sure you want to flag this user node as deleted? Their active login session state parameters will instantly drop from workspace views.
+              </p>
+
+              <div className="flex justify-end gap-2">
+                <Button 
+                  type="button" 
+                  variant="secondary" 
+                  size="sm"
+                  className="text-xs border border-white/5 bg-white/5 hover:bg-white/10"
+                  onClick={() => setConfirmDeleteModal({ show: false, uid: null, email: null, currentStatus: null })}
+                >
+                  Cancel
+                </Button>
+                <button
+                  type="button"
+                  onClick={handleConfirmSoftDelete}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl shadow-lg transition-colors"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-      <h1 className="text-3xl font-bold text-white">
-          User Management Hub
-      </h1>
-      <p className="text-gray-400 mt-1">
-          Manage student directories, verify corporate tutors, and configure access permissions for system staff
-      </p>
+          <h1 className="text-3xl font-bold text-white tracking-tight">
+            User Management Hub
+          </h1>
+          <p className="text-gray-400 mt-1 text-sm">
+            Manage student directories, verify corporate tutors, and configure access permissions for system staff
+          </p>
         </motion.div>
         
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end select-none">
@@ -208,7 +309,7 @@ export default function UserManagementPage() {
           <Button 
             variant="primary" 
             onClick={() => setIsCreateModalOpen(true)}
-            className="group flex items-center gap-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:shadow-blue-500/20 shadow-md text-xs font-semibold tracking-wide py-2.5 px-4 rounded-xl text-white transition-all"
+            className="group flex items-center gap-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:shadow-blue-500/20 shadow-md text-xs font-bold tracking-wide py-2.5 px-4 rounded-xl text-white transition-all"
           >
             <UserPlus size={15} className="group-hover:scale-110 transition-transform" /> 
             <span>Add Staff Member</span>
@@ -217,21 +318,21 @@ export default function UserManagementPage() {
       </div>
 
       {/* --- METRICS GRID --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
         {[
-          { label: 'Total Students', value: users.filter(u => u.role === 'student').length, icon: Users, color: 'text-blue-500 bg-blue-500/10 border-blue-500/20' },
-          { label: 'Active Tutors', value: users.filter(u => u.role === 'tutor').length, icon: UserCheck, color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20' },
-          { label: 'System Staff', value: users.filter(u => u.role === 'validator' || u.role === 'finance').length, icon: Shield, color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
-          { label: 'Suspended Accounts', value: users.filter(u => u.status === 'suspended').length, icon: UserX, color: 'text-rose-500 bg-rose-500/10 border-rose-500/20' },
+          { label: 'Total Students', value: users.filter(u => u.role === 'student').length, icon: Users, color: 'text-blue-500 bg-blue-500/5 border-blue-500/10' },
+          { label: 'Active Tutors', value: users.filter(u => u.role === 'tutor').length, icon: UserCheck, color: 'text-indigo-500 bg-indigo-500/5 border-indigo-500/10' },
+          { label: 'System Staff', value: users.filter(u => u.role === 'validator' || u.role === 'finance').length, icon: Shield, color: 'text-amber-500 bg-amber-500/5 border-amber-500/10' },
+          { label: 'Suspended Accounts', value: users.filter(u => u.status === 'suspended').length, icon: UserX, color: 'text-rose-500 bg-rose-500/5 border-rose-500/10' },
         ].map((s, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-            <GlassCard className="p-4 flex items-center gap-4 bg-white dark:bg-slate-900/40 border border-slate-100 dark:border-white/5 rounded-2xl shadow-sm hover:shadow-md transition-all">
+            <GlassCard className="p-4 flex items-center gap-4 bg-white dark:bg-slate-900/40 border border-slate-100 dark:border-white/5 rounded-2xl shadow-sm hover:scale-[1.01] transition-all">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${s.color}`}>
                 <s.icon size={20} />
               </div>
               <div>
                 <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">{loading ? '...' : s.value}</div>
-                <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{s.label}</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-0.5">{s.label}</div>
               </div>
             </GlassCard>
           </motion.div>
@@ -280,7 +381,7 @@ export default function UserManagementPage() {
           </div>
         </div>
 
-        {/* --- MAIN CORE DATA TABLE --- */}
+        {/* --- MAIN DATA TABLE --- */}
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900/10">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400 text-sm">
@@ -315,7 +416,7 @@ export default function UserManagementPage() {
                           {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white tracking-wide group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{u.name || 'Anonymous User'}</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white tracking-wide group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{u.name || 'Anonymous User'}</p>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{u.email}</p>
                           <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded text-[10px] font-medium text-slate-600 dark:text-slate-400">
                             <Building size={10} /> {u.institution || 'Independent Affiliate'}
@@ -344,13 +445,13 @@ export default function UserManagementPage() {
                     </td>
 
                     <td className="p-4">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide capitalize whitespace-nowrap ${
                         u.status === 'active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400' : 
                         u.status === 'invited' ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/10 dark:text-blue-400' : 
                         u.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400' : 
                         'bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-400'
                       }`}>
-                        {u.status?.toLowerCase()}
+                        {u.status}
                       </span>
                     </td>
 
@@ -358,7 +459,7 @@ export default function UserManagementPage() {
 
                     <td className="p-4 text-center">
                       <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">{u.activityCount || 0}</span>
-                      <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">
+                      <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">
                         {u.role === 'tutor' ? 'Exams Authored' : u.role === 'validator' ? 'Audits' : u.role === 'finance' ? 'Ledgers' : 'Exams Taken'}
                       </span>
                     </td>
@@ -368,7 +469,7 @@ export default function UserManagementPage() {
                         {(u.role === 'validator' || u.role === 'finance' || u.role === 'admin') && (
                           <Button 
                             variant="secondary" 
-                            className="px-2.5 py-1.5 text-xs font-medium border border-blue-500/30 text-blue-600 dark:text-blue-400 flex items-center gap-1.5 bg-blue-500/5 hover:bg-blue-500/10 rounded-xl transition-all"
+                            className="px-2.5 py-1.5 text-xs font-bold border border-blue-500/30 text-blue-600 dark:text-blue-400 flex items-center gap-1.5 bg-blue-500/5 hover:bg-blue-500/10 rounded-xl transition-all"
                             onClick={() => openPrivilegeModal(u)}
                           >
                             <Shield size={12} /> Permissions
@@ -381,7 +482,7 @@ export default function UserManagementPage() {
                         <Button 
                           variant={u.status === 'suspended' ? 'success' : 'danger'} 
                           size="sm" 
-                          className={`text-xs font-semibold py-1.5 px-3 rounded-xl flex items-center gap-1 text-white shadow-sm transition-all duration-200 ${
+                          className={`text-xs font-bold py-1.5 px-3 rounded-xl flex items-center gap-1 text-white shadow-sm transition-all duration-200 ${
                             u.status === 'suspended' ? 'bg-emerald-600 hover:bg-emerald-500' : u.status === 'invited' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-rose-600 hover:bg-rose-500'
                           }`}
                           onClick={() => toggleSuspend(u.id, u.status, u.email)}
@@ -390,12 +491,12 @@ export default function UserManagementPage() {
                           <span className="hidden sm:inline">{u.status === 'suspended' ? 'ACTIVATE' : u.status === 'invited' ? 'REVOKE' : 'SUSPEND'}</span>
                         </Button>
 
-                        {/* 🚀 PERMANENT SYSTEM NODE PURGE ACTION BUTTON */}
+                        {/* Triggering Custom UI Modal instead of structural drop method */}
                         <Button 
                           variant="danger" 
                           size="sm" 
                           className="p-2 border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all"
-                          onClick={() => handleDeleteUser(u.id, u.status, u.email)}
+                          onClick={() => triggerDeleteConfirmation(u.id, u.status, u.email)}
                         >
                           <Trash2 size={13} />
                         </Button>
@@ -431,43 +532,43 @@ export default function UserManagementPage() {
                     </div>
                   )}
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Staff Full Name</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Staff Full Name</label>
                     <input 
                       type="text" required placeholder="e.g., Kavindu Perera"
                       value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Official Corporate Email</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Official Corporate Email</label>
                     <input 
                       type="email" required placeholder="e.g., validator@lnbti.com"
                       value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">System Role</label>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">System Role</label>
                       <select
                         value={createForm.role} onChange={e => setCreateForm(p => ({ ...p, role: e.target.value, privileges: [] }))}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none"
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none cursor-pointer"
                       >
                         <option value="validator">Academic Validator</option>
                         <option value="finance">Finance Admin</option>
                       </select>
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       {createForm.role === 'validator' ? (
                         <>
-                          <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Language Scope</label>
+                          <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Language Scope</label>
                           <select
                             value={createForm.languageScope} onChange={e => setCreateForm(p => ({ ...p, languageScope: e.target.value }))}
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none"
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none cursor-pointer"
                           >
                             <option value="Japanese">Japanese Language</option>
                             <option value="Korean">Korean Language</option>
@@ -475,7 +576,7 @@ export default function UserManagementPage() {
                         </>
                       ) : (
                         <>
-                          <label className="text-xs font-semibold text-slate-400 uppercase">Affiliation</label>
+                          <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Affiliation</label>
                           <input 
                             type="text" disabled value="LNBTI Operations"
                             className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2.5 text-slate-400 text-sm cursor-not-allowed"
@@ -485,8 +586,9 @@ export default function UserManagementPage() {
                     </div>
                   </div>
 
+                  {/* 🎯 Updated: Interactive Premium Privilege Selectors */}
                   <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-white/5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1">
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1">
                       <Zap size={13} className="text-amber-500"/> Assign Action Permissions
                     </label>
                     <div className="space-y-2 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
@@ -495,16 +597,18 @@ export default function UserManagementPage() {
                         return (
                           <div 
                             key={p.key} onClick={() => handleToggleFormPrivilege(p.key)}
-                            className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                              isChecked ? 'bg-blue-500/[0.04] border-blue-500/40' : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10'
+                            className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
+                              isChecked 
+                                ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 shadow-sm' 
+                                : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 text-gray-400 hover:border-white/20'
                             }`}
                           >
-                            <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
+                            <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300 dark:border-white/10'}`}>
                               {isChecked && <Check size={11} className="text-white" />}
                             </div>
                             <div>
-                              <div className={`text-xs font-semibold ${isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
-                              <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">{p.desc}</div>
+                              <div className={`text-xs font-bold ${isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-1">{p.desc}</div>
                             </div>
                           </div>
                         );
@@ -513,8 +617,8 @@ export default function UserManagementPage() {
                   </div>
 
                   <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setIsCreateModalOpen(false)}>Cancel</Button>
-                    <Button type="submit" variant="success" size="sm" disabled={isSubmitting} className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 rounded-xl shadow-sm">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setIsCreateModalOpen(false)} className="text-xs">Cancel</Button>
+                    <Button type="submit" variant="success" size="sm" disabled={isSubmitting} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm">
                       {isSubmitting ? 'Provisioning...' : 'Authorize User'}
                     </Button>
                   </div>
@@ -544,12 +648,12 @@ export default function UserManagementPage() {
                 </div>
 
                 {selectedUser.role === 'validator' && (
-                  <div className="mb-4 space-y-1">
-                    <label className="text-xs font-semibold text-slate-500 uppercase">Modify Assigned Language Scope</label>
+                  <div className="mb-4 space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Modify Assigned Language Scope</label>
                     <select
                       value={selectedUser.languageScope}
                       onChange={e => setSelectedUser(prev => ({ ...prev, languageScope: e.target.value }))}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none cursor-pointer"
                     >
                       <option value="Japanese">Japanese Language Only</option>
                       <option value="Korean">Korean Language Only</option>
@@ -564,14 +668,16 @@ export default function UserManagementPage() {
                       <div 
                         key={p.key} onClick={() => handleToggleExistingPrivilege(p.key)}
                         className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                          isChecked ? 'bg-indigo-500/[0.04] border-indigo-500/40' : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10'
+                          isChecked 
+                            ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300 shadow-sm' 
+                            : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 text-gray-400 hover:border-white/20'
                         }`}
                       >
-                        <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-indigo-50 border-indigo-500' : 'border-slate-300'}`}>
+                        <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${isChecked ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-white/10'}`}>
                           {isChecked && <Check size={11} className="text-white" />}
                         </div>
                         <div>
-                          <div className={`text-xs font-semibold ${isChecked ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
+                          <div className={`text-xs font-bold ${isChecked ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
                           <div className="text-[11px] text-slate-500 mt-1 leading-normal">{p.desc}</div>
                         </div>
                       </div>
@@ -580,8 +686,8 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
-                  <Button variant="ghost" size="sm" onClick={() => setIsPrivilegeModalOpen(false)}>Close</Button>
-                  <Button variant="success" size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 rounded-xl shadow-sm" onClick={savePrivileges}>Save Configuration</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setIsPrivilegeModalOpen(false)} className="text-xs">Close</Button>
+                  <Button variant="success" size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 font-bold px-4 py-2 rounded-xl text-xs shadow-sm" onClick={savePrivileges}>Save Configuration</Button>
                 </div>
               </GlassCard>
             </motion.div>

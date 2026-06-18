@@ -236,8 +236,6 @@ export const AuthProvider = ({ children }) => {
           console.error("Background session sync failed:", error);
         }
       } else {
-        // 🔒 🚀 FIX HERE: යූසර් ඇත්තටම 'user' ඩේටා එකක් localStorage එකේ නැත්නම් විතරක් (ඒ කියන්නේ වැරදි ලොගින් එකක් නොවී, ඇත්තටම ලොග් අවුට් වුණ වෙලාවක විතරක්) මේක රන් වෙන්න දෙනවා.
-        // මේකෙන් තමයි වැරදි ලොගින් එකකදී මුළු පේජ් එකම හිස් වෙලා යන එක නවත්වන්නේ!
         if (!localStorage.getItem('user')) {
           localStorage.removeItem('token');
           setUser(null);

@@ -1,4 +1,4 @@
-const { db, auth } = require('./config/firebase'); // 💡 auth එකත් Import කරගත්තා
+const { db, auth } = require('./config/firebase'); // auth එකත් Import කරගත්තා
 
 const seedAdmin = async () => {
   try {
@@ -13,7 +13,7 @@ const seedAdmin = async () => {
     } catch (authError) {
       // If user does not exist, code will drop here (auth/user-not-found)
       if (authError.code === 'auth/user-not-found') {
-        // 🔒 Securely provision the user node inside Firebase Auth layer first
+        // Securely provision the user node inside Firebase Auth layer first
         userRecord = await auth.createUser({
           email: adminEmail,
           password: adminPassword,
@@ -26,8 +26,7 @@ const seedAdmin = async () => {
       }
     }
 
-    // Now, synchronize and save/update the profile structure inside Firestore
-    // 💡 .add() වෙනුවට .doc(uid).set() පාවිච්චි කරලා ID දෙක සමාන කළා
+
     const userProfileRef = db.collection('users').doc(userRecord.uid);
     const userDoc = await userProfileRef.get();
 

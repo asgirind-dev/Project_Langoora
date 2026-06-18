@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { User, Mail, Phone, Calendar, MapPin, Edit3, Save, Camera, Award, Building, CreditCard, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { User, Mail, Phone, Calendar, MapPin, Edit3, Save, Camera, Award, Building, CreditCard, Trash2, AlertTriangle, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext'; 
 
 import GlassCard from '../../components/ui/GlassCard';
@@ -8,21 +9,32 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
+// Firebase Re-authentication Instance 
+import { auth } from '../../firebaseConfig';
+import { EmailAuthProvider, reauthenticateWithCredential, deleteUser } from 'firebase/auth';
+
 const API_BASE_URL = 'http://localhost:5000/api/student';
 
 export default function StudentProfilePage() {
-  const { user } = useAuth(); 
+  const { user, logout } = useAuth(); 
+  const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  
+  const [profilePic, setProfilePic] = useState(null);
+
+  // Form Initial State
   const [form, setForm] = useState({
     name: '', email: '', phone: '', dob: '', city: '',
     targetExam: 'JLPT N5', targetDate: '',
     bankName: '', accountNo: '', accountHolder: '',
   });
 
-  const [profilePic, setProfilePic] = useState(null);
+  // ACCOUNT TERMINATION STATES 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const calculateDaysLeft = (targetDateStr) => {
     if (!targetDateStr) return null;
@@ -42,7 +54,7 @@ export default function StudentProfilePage() {
         if (result.success && result.data) {
           const data = result.data;
           setForm({
-            name: data.name || user.name || 'Student',
+            name: data.name || user.name || '',
             email: user.email || '',
             phone: data.phone || '',
             dob: data.dob || '',
@@ -101,6 +113,12 @@ export default function StudentProfilePage() {
     const file = e.target.files[0];
     const uid = user?.uid || user?.id;
     if (!file || !uid) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("The image is too large. Max allowed storage limit is 2MB.");
+      return;
+    }
+    
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onloadend = async () => {
@@ -117,6 +135,56 @@ export default function StudentProfilePage() {
     };
   };
 
+  // 3. MUTATE REGISTRY DATA WITH SECURITY PATTERNS
+  const handleProfileSave = async () => {
+    const uid = user?.uid || user?.id;
+    if (!uid) return;
+
+    // A. Validation Interceptions
+    if (form.name.trim().length < 3) {
+      alert("Please specify a valid full name (Minimum 3 alphabetic characters required).");
+      return;
+    }
+
+    const cleanPhone = form.phone.replace(/\s+/g, '').replace(/-/g, '');
+    const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+    if (!phoneRegex.test(cleanPhone)) {
+      alert("Invalid Phone Number configuration. Use structural SL format (07XXXXXXXX).");
+      return;
+    }
+
+    if (form.accountNo) {
+      const cleanAcc = form.accountNo.replace(/\s+/g, '').replace(/-/g, '');
+      if (cleanAcc.length < 9 || cleanAcc.length > 15 || !/^\d+$/.test(cleanAcc)) {
+        alert("Invalid Account Number. Bank accounts must contain between 9 and 15 numeric digits.");
+        return;
+      }
+    }
+
+    setErrors({});
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/${uid}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      const result = await response.json();
+      if (result.success) {
+        setEditing(false);
+        alert("Success! Your student profile configurations have been locked inside the DB.");
+      }
+    } catch (error) {
+      alert("Network exception error. Please review pipeline links.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 4. PURGE CREDIT CARD OR BANK PAYOUT MAPPING
+  const handleRemoveBankDetails = async () => {
+    const uid = user?.uid || user?.id;
+    if (!window.confirm("Are you sure you want to completely erase your linked bank statement?")) return;
   const handleRemoveBankDetails = async () => {
     const uid = user?.uid || user?.id;
     if (!window.confirm("Remove your bank card information?")) return;
@@ -124,14 +192,69 @@ export default function StudentProfilePage() {
     try {
       await fetch(`${API_BASE_URL}/${uid}/bank-details`, { method: 'DELETE' });
       setForm(p => ({ ...p, bankName: '', accountNo: '', accountHolder: '' }));
-    } finally { setLoading(false); }
+      alert("Linked bank details deleted successfully.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 5. UNIFIED ACCOUNT TERMINATION CONTROL (Danger Zone Workflow)
+  const handleConfirmDeleteAccount = async (e) => {
+    e.preventDefault();
+    if (!confirmPassword) {
+      setDeleteError("Please declare your current account entry password.");
+      return;
+    }
+
+    setDeleteLoading(true);
+    setDeleteError('');
+
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Authentication state pipeline missing. Re-login.");
+
+      const credential = EmailAuthProvider.credential(currentUser.email, confirmPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      const token = await currentUser.getIdToken();
+      const uid = user?.uid || user?.id;
+
+      // Custom node express server core deletion dispatcher route link
+      const response = await fetch(`${API_BASE_URL}/${uid}/delete-account`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || "Backend verification registry abort exception.");
+
+      await deleteUser(currentUser);
+      alert("Your student profile has been entirely deleted from Langoora databases.");
+      setShowDeleteModal(false);
+      if (logout) await logout();
+      navigate('/');
+
+    } catch (error) {
+      console.error(error);
+      if (error.code === 'auth/wrong-password' || error.message.includes('invalid-credential')) {
+        setDeleteError("Incorrect credentials. The password matching schema failed.");
+      } else {
+        setDeleteError(error.message || "An unhandled execution failure stopped the termination block.");
+      }
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   return (
     <div className="space-y-8 max-w-4xl relative pb-12">
       {loading && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center text-white backdrop-blur-sm">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="fixed inset-0 bg-black/60 z-50 flex flex-col items-center justify-center text-white backdrop-blur-sm">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="font-mono text-xs tracking-widest">PROCESSING SECURE ENDPOINT DATA STREAM...</p>
         </div>
       )}
 
@@ -163,6 +286,8 @@ export default function StudentProfilePage() {
       </GlassCard>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        {/* Personal Details Layout block */}
         <GlassCard className="p-6">
           <div className="flex justify-between items-center mb-5">
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -173,9 +298,31 @@ export default function StudentProfilePage() {
             </Button>
           </div>
           <div className="space-y-4">
-            <Input label="Full Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} icon={User} disabled={!editing} />
-            <Input label="Phone" type="number" value={form.phone || ''} onChange={e => { setForm(p => ({ ...p, phone: e.target.value })); if(errors.phone) setErrors(p => ({...p, phone: null})); }} icon={Phone} disabled={!editing} placeholder="07XXXXXXXX" />
-            {errors.phone && <p className="text-red-500 text-xs">{errors.phone}</p>}
+            <Input 
+              label="Full Name" 
+              value={form.name} 
+              onChange={e => {
+                const val = e.target.value.replace(/[^a-zA-Z\s.]/g, ''); // Non-alphabetic live filter block
+                setForm(p => ({ ...p, name: val }));
+              }} 
+              icon={User} 
+              disabled={!editing} 
+            />
+            <div>
+              <Input label="Email Address" value={form.email} icon={Mail} disabled={true} className="opacity-60 cursor-not-allowed" />
+              <p className="text-[11px] text-gray-500 mt-1 pl-1">Email identification nodes are unalterable.</p>
+            </div>
+            <Input 
+              label="Phone Number" 
+              value={form.phone} 
+              onChange={e => {
+                const val = e.target.value.replace(/[^0-9+]/g, ''); // Numeric phone pattern filter lock
+                setForm(p => ({ ...p, phone: val }));
+              }} 
+              icon={Phone} 
+              placeholder="e.g. +94771234567" 
+              disabled={!editing} 
+            />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Date of Birth" type="date" value={form.dob} onChange={e => setForm(p => ({ ...p, dob: e.target.value }))} icon={Calendar} disabled={!editing} />
               <Input label="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} icon={MapPin} disabled={!editing} />
