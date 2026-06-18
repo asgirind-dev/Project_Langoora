@@ -8,7 +8,7 @@ class TutorProfileServices {
         return doc.data();
     }
 
-    
+    // 2. Secure Profile Update (Prevents overwriting existing unrelated data fields)
     async updateTutorProfile(uid, profileData) {
         const userRef = db.collection('users').doc(uid);
         
@@ -24,7 +24,7 @@ class TutorProfileServices {
 
         const updatePayload = {};
 
-        
+        // Data fields reside as flat Root attributes, mapping filtered inputs directly onto the request payload
         if (profileData.name) updatePayload.name = profileData.name;
         if (profileData.phone) updatePayload.phone = profileData.phone;
         if (profileData.address) updatePayload.address = profileData.address;
@@ -32,7 +32,7 @@ class TutorProfileServices {
         if (profileData.qualifications) updatePayload.qualifications = profileData.qualifications;
         if (profileData.university) updatePayload.university = profileData.university;
 
-        
+        // Perform Firestore update only if the constructed payload contains valid modified pairs
         if (Object.keys(updatePayload).length > 0) {
             await userRef.update(updatePayload);
         }
@@ -40,12 +40,34 @@ class TutorProfileServices {
         return { success: true, message: 'Profile updated successfully' };
     }
 
-    
+    // 3. Delete Tutor Account (FIXED: Added missing code logic and brackets)
     async deleteTutorAccount(uid) {
         try {
             const userRef = db.collection('users').doc(uid);
 
+            // 1. Delete all bank cards inside sub-collection safely
+            const cardsSnapshot = await userRef.collection('bankCards').get();
+            
+            // Execute batch write transaction only if the sub-collection contains document references
+            if (!cardsSnapshot.empty) {
+                const batch = db.batch();
+                cardsSnapshot.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+            }
+
+            // 2. Delete the main tutor profile document
+            await userRef.delete();
+
+            return { success: true, message: 'Tutor data deleted successfully from database' };
+        } catch (error) {
+            // Forward the standard database runtime exception up to the matching Controller execution thread
+            throw new Error(`Firebase DB Error: ${error.message}`);
+        }
+    }
     
+    // 4. Get Bank Cards
     async getBankCards(uid) {
         const cardsSnapshot = await db.collection('users').doc(uid).collection('bankCards').get();
         const cards = [];
@@ -53,6 +75,7 @@ class TutorProfileServices {
         return cards;
     }
     
+    // 5. Add Bank Card
     async addBankCard(uid, cardData) {
         const cardsRef = db.collection('users').doc(uid).collection('bankCards');
         
@@ -65,7 +88,6 @@ class TutorProfileServices {
         const { bankName, accountNo, accountHolder } = cardData;
 
         // 2. Card Number Validation (Ensures strict numerical compliance between 12 and 19 characters)
-        // Standard rule set designed for cross-matching common banking system structures. Strips spaces/dashes first.
         const cleanAccountNo = accountNo.replace(/\s+/g, '').replace(/-/g, '');
         const isOnlyDigits = /^\d+$/.test(cleanAccountNo);
 
@@ -88,6 +110,7 @@ class TutorProfileServices {
         return { id: newCardRef.id, ...secureCardData };
     }
     
+    // 6. Delete Bank Card
     async deleteBankCard(uid, cardId) {
         const cardRef = db.collection('users').doc(uid).collection('bankCards').doc(cardId);
         await cardRef.delete();
