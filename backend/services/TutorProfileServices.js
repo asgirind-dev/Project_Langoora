@@ -8,7 +8,6 @@ class TutorProfileServices {
         return doc.data();
     }
 
-    
     async updateTutorProfile(uid, profileData) {
         const userRef = db.collection('users').doc(uid);
         
@@ -24,7 +23,6 @@ class TutorProfileServices {
 
         const updatePayload = {};
 
-        
         if (profileData.name) updatePayload.name = profileData.name;
         if (profileData.phone) updatePayload.phone = profileData.phone;
         if (profileData.address) updatePayload.address = profileData.address;
@@ -32,7 +30,6 @@ class TutorProfileServices {
         if (profileData.qualifications) updatePayload.qualifications = profileData.qualifications;
         if (profileData.university) updatePayload.university = profileData.university;
 
-        
         if (Object.keys(updatePayload).length > 0) {
             await userRef.update(updatePayload);
         }
@@ -40,12 +37,17 @@ class TutorProfileServices {
         return { success: true, message: 'Profile updated successfully' };
     }
 
-    
+    // මෙන්න මේ ෆන්ක්ෂන් එක තමයි හැදුවේ මචං
     async deleteTutorAccount(uid) {
         try {
             const userRef = db.collection('users').doc(uid);
+            await userRef.delete();
+            return { success: true, message: 'Tutor account deleted successfully' };
+        } catch (error) {
+            throw new Error('Failed to delete tutor account: ' + error.message);
+        }
+    }
 
-    
     async getBankCards(uid) {
         const cardsSnapshot = await db.collection('users').doc(uid).collection('bankCards').get();
         const cards = [];
@@ -65,7 +67,6 @@ class TutorProfileServices {
         const { bankName, accountNo, accountHolder } = cardData;
 
         // 2. Card Number Validation (Ensures strict numerical compliance between 12 and 19 characters)
-        // Standard rule set designed for cross-matching common banking system structures. Strips spaces/dashes first.
         const cleanAccountNo = accountNo.replace(/\s+/g, '').replace(/-/g, '');
         const isOnlyDigits = /^\d+$/.test(cleanAccountNo);
 
@@ -79,7 +80,7 @@ class TutorProfileServices {
 
         const secureCardData = {
             bankName,
-            accountNo: maskedAccountNo, // Encrypted/masked representation persisted directly to db collections
+            accountNo: maskedAccountNo, 
             accountHolder,
             createdAt: new Date()
         };
