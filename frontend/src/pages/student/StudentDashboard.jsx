@@ -1,9 +1,13 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { TrendingUp, BookOpen, Clock, Flame, Crown, ArrowRight, Play } from 'lucide-react';
+import { 
+  TrendingUp, BookOpen, Clock, Flame, Crown, ArrowRight, Target, 
+  Award, Play, CalendarDays, CheckCircle2, Circle, Lock, Coins 
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -20,6 +24,69 @@ const recentExams = [
 export default function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  // 🚀 STUDY PLANNER WIDGET STATES
+  const [todayPlans, setTodayPlans] = useState([]);
+  const [isPlannerLocked, setIsPlannerLocked] = useState(false);
+  const [plannerLoading, setPlannerLoading] = useState(true);
+
+  const studentId = user?.uid || user?.id;
+
+  // ==========================================
+  // 🔄 FETCH TODAY'S BLUEPRINTS FOR MINI WIDGET
+  // ==========================================
+  useEffect(() => {
+    const fetchTodayPlans = async () => {
+      if (!studentId) return;
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://localhost:5000/api/planner/dashboard', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await response.json();
+
+        if (response.status === 403 || result.isLocked) {
+          setIsPlannerLocked(true);
+        } else if (result.success) {
+          const todayStr = new Date().toISOString().split('T')[0];
+          const filtered = (result.plans || []).filter(p => p.scheduled_date === todayStr);
+          setTodayPlans(filtered);
+          setIsPlannerLocked(false);
+        }
+      } catch (error) {
+        console.error("Dashboard planner widget sync failure:", error);
+      } finally {
+        setPlannerLoading(false);
+      }
+    };
+
+    fetchTodayPlans();
+  }, [studentId]);
+
+  // ==========================================
+  // 📝 QUICK TOGGLE STATUS FROM WIDGET
+  // ==========================================
+  const handleToggleWidgetStatus = async (planId, currentStatus) => {
+    const nextStatus = currentStatus === 'completed' ? 'pending' : 'completed';
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5000/api/planner/${planId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setTodayPlans(prev => prev.map(p => p.id === planId ? { ...p, status: nextStatus } : p));
+      }
+    } catch (error) {
+      console.error("Widget interactive modifier error:", error);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -83,9 +150,7 @@ export default function StudentDashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} domain={[50, 100]} />
-              <Tooltip
-                contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }}
-              />
+              <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} />
               <Area type="monotone" dataKey="target" stroke="#06b6d4" strokeWidth={2} fill="url(#targetGrad)" strokeDasharray="5 5" name="Target" />
               <Area type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2.5} fill="url(#scoreGrad)" name="Score" />
             </AreaChart>
@@ -144,32 +209,66 @@ export default function StudentDashboard() {
           </div>
         </GlassCard>
 
-        {/* Subscription Card */}
-        <GlassCard className="p-6 bg-gradient-to-br from-blue-900/30 to-cyan-900/20 border-blue-500/20">
-          <div className="flex items-center gap-2 mb-4">
-            <Crown size={20} className="text-amber-400" />
-            <h3 className="text-lg font-semibold text-white">Pro Plan</h3>
-          </div>
-          <div className="mb-5">
-            <div className="flex justify-between text-xs mb-2">
-              <span className="text-gray-400">Monthly exams used</span>
-              <span className="text-white font-medium">24 / ∞</span>
+        {/* 📅 --- LIVE STUDY PLANNER DASHBOARD INTERACTIVE WIDGET --- */}
+        <GlassCard className="p-6 border-white/5 relative flex flex-col justify-between overflow-hidden">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <CalendarDays size={18} className="text-blue-400" /> Today's Blueprints
+              </h3>
+              <Button variant="ghost" size="xs" className="text-xs text-blue-400 p-0" onClick={() => navigate('/student/planner')}>
+                Manage <ArrowRight size={12} />
+              </Button>
             </div>
-            <div className="h-2 bg-white/10 rounded-full">
-              <div className="h-full w-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full" />
-            </div>
-          </div>
-          <div className="space-y-2 mb-5">
-            {['Unlimited mock exams', 'Advanced analytics', 'All exam categories'].map(f => (
-              <div key={f} className="flex items-center gap-2 text-sm text-gray-300">
-                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
-                {f}
+
+            {/* Premium Gated Security Layer UI */}
+            {isPlannerLocked ? (
+              <div className="py-8 text-center flex flex-col items-center justify-center h-full">
+                <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-400 mb-3 animate-pulse">
+                  <Lock size={16} />
+                </div>
+                <p className="text-xs text-gray-400 font-medium max-w-[200px] leading-relaxed">
+                  Study Planner features are locked. Upgrade to premium plan to access workflows.
+                </p>
               </div>
-            ))}
+            ) : plannerLoading ? (
+              <p className="text-xs text-gray-500 animate-pulse py-6 text-center">Syncing schedule items...</p>
+            ) : todayPlans.length === 0 ? (
+              <div className="text-center py-10 text-xs text-gray-500">
+                🎉 No core tasks scheduled for today. Take a quick mock exam!
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-[170px] overflow-y-auto pr-0.5">
+                <AnimatePresence>
+                  {todayPlans.map((plan) => (
+                    <motion.div 
+                      key={plan.id}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-2.5 rounded-xl border flex items-center gap-3 transition-all ${
+                        plan.status === 'completed' ? 'bg-emerald-500/[0.01] border-emerald-500/10 text-gray-500' : 'bg-white/5 border-white/5 text-white'
+                      }`}
+                    >
+                      <button 
+                        onClick={() => handleToggleWidgetStatus(plan.id, plan.status)}
+                        className={`transition-colors focus:outline-none shrink-0 ${plan.status === 'completed' ? 'text-emerald-400' : 'text-gray-400 hover:text-white'}`}
+                      >
+                        {plan.status === 'completed' ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                      </button>
+                      <span className={`text-xs font-medium truncate ${plan.status === 'completed' ? 'line-through text-gray-600' : 'text-gray-200'}`}>
+                        {plan.title}
+                      </span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
-          <Button variant="primary" size="sm" fullWidth onClick={() => navigate('/student/subscription')}>
-            <Crown size={14} /> Upgrade to Elite
-          </Button>
+
+          <div className="mt-4 pt-3 border-t border-white/5 text-[10px] text-gray-500 font-medium flex items-center justify-between">
+            <span>Module status: Locked to timezone</span>
+            <span className="text-blue-500 font-bold uppercase tracking-wider">Live DB Sync</span>
+          </div>
         </GlassCard>
       </div>
 
@@ -188,12 +287,19 @@ export default function StudentDashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-white line-clamp-2 leading-snug mb-1">{exam.title}</p>
                     <p className="text-xs text-gray-400">{exam.tutor}</p>
+                    
+                    {/* 🟢 --- DYNAMIC CREDIT INTERACTION ALIGNED WITH MARKETPLACE --- */}
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-blue-400 font-semibold text-sm">
-                        LKR {exam?.price !== undefined && exam?.price !== null ? exam.price.toLocaleString() : '0'}
-                      </span>
-                      <Badge color="blue">{exam.level}</Badge>
+                      <div className="flex items-center gap-1">
+                        <Coins size={13} className="text-amber-400" />
+                        <span className="text-sm font-bold text-amber-400">
+                          {exam?.credits !== undefined && exam?.credits !== null ? exam.credits : '0'}
+                        </span>
+                        <span className="text-[10px] text-gray-400">Credits</span>
+                      </div>
+                      <Badge color="blue">{exam.level || exam.difficulty}</Badge>
                     </div>
+
                   </div>
                 </div>
               </GlassCard>

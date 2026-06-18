@@ -57,7 +57,7 @@ import ExamTakePage from '../pages/student/ExamTakePage';
 import PerformancePage from "../pages/student/PerformancePage";
 import StudentProfilePage from '../pages/student/StudentProfilePage';
 import SettingsPage from '../pages/student/SettingsPage';
-
+import StudyPlannerPage from '../pages/student/StudyPlannerPage';
 // Finance Admin Layout & Pages
 import FinanceDashboard from "../pages/finance_admin/FinanceDashboard";
 import SubscriptionManager from "../pages/finance_admin/SubscriptionManager";
@@ -111,6 +111,7 @@ export default function AppRoutes() {
           <Route path="/student" element={<ProtectedRoute allowedRoles={['student']}><StudentLayout /></ProtectedRoute>}>
             <Route index element={<StudentDashboard />} />
             <Route path="exams" element={<MyExamsPage />} />
+            <Route path="planner" element={<StudyPlannerPage />} />
             <Route path="performance" element={<PerformancePage />} />
             <Route path="subscription" element={<SubscriptionPage />} />
             <Route path="marketplace" element={<MarketplacePage />} />
