@@ -8,13 +8,15 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
-// Backend API URL
+
 const API_BASE_URL = 'http://localhost:5000/api/student';
 
 export default function StudentProfilePage() {
   const { user } = useAuth(); 
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  
   
   // Form State
   const [form, setForm] = useState({
@@ -75,28 +77,49 @@ export default function StudentProfilePage() {
     fetchStudentData();
   }, [user]);
 
-  // 2. SAVE PROFILE DATA
+  
+
+  // ==========================================
+  // 2. SAVE PERSONAL & GOALS & BANK DETAILS
+  // ==========================================
   const handleProfileSave = async () => {
-    const uid = user?.uid || user?.id;
-    if (!uid) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/${uid}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-      const result = await response.json();
-      if (result.success) {
-        setEditing(false);
-        alert("Success! Your student profile settings have been securely saved.");
-      }
-    } catch (error) {
-      alert("Network failure. Please verify your connection.");
-    } finally {
-      setLoading(false);
+  const uid = user?.uid || user?.id;
+  if (!uid) return;
+
+  let newErrors = {};
+  const phoneRegex = /^[0-9]{9}$/; 
+  const accountRegex = /^[0-9]{9,15}$/; 
+
+  // Validation
+  if (!phoneRegex.test(form.phone)) newErrors.phone = "Phone number must be exactly 9 digits";
+  if (!accountRegex.test(form.accountNo)) newErrors.accountNo = "Account number must be 9-15 digits";
+
+  
+  if (Object.keys(newErrors).length > 0) {
+    setErrors(newErrors);
+    return; 
+  }
+
+  
+  setErrors({});
+  setLoading(true);
+  try {
+    const response = await fetch(`${API_BASE_URL}/${uid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form)
+    });
+    const result = await response.json();
+    if (result.success) {
+      setEditing(false);
+      alert("Success! Your profile settings have been securely saved.");
     }
-  };
+  } catch (error) {
+    alert("Network failure. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // 3. PROFILE PICTURE UPLOAD
   const handleProfilePicChange = async (e) => {
@@ -187,8 +210,29 @@ export default function StudentProfilePage() {
           </h3>
           <div className="space-y-4">
             <Input label="Full Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} icon={User} disabled={!editing} />
-            <Input label="Email Address" value={form.email} icon={Mail} disabled={true} className="opacity-60 cursor-not-allowed" />
-            <Input label="Phone" type="tel" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} icon={Phone} disabled={!editing} />
+            
+            {/* Email Field - Permanently Disabled */}
+            <div>
+              <Input label="Email Address" value={form.email} icon={Mail} disabled={true} className="opacity-60 cursor-not-allowed" />
+              <p className="text-[11px] text-gray-500 mt-1 pl-1">Email address cannot be changed.</p>
+            </div>
+
+            <div className="flex flex-col">
+  <Input 
+    label="Phone" 
+    type="number" 
+    value={form.phone || ''} 
+    onChange={e => {
+       const val = e.target.value;
+       setForm(p => ({ ...p, phone: val }));
+       if(errors.phone) setErrors(p => ({...p, phone: null}));
+    }} 
+    icon={Phone} 
+    disabled={!editing} 
+    placeholder="07XXXXXXXX" 
+  />
+  {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+</div>
             <div className="grid grid-cols-2 gap-4">
               <Input label="Date of Birth" type="date" value={form.dob} onChange={e => setForm(p => ({ ...p, dob: e.target.value }))} icon={Calendar} disabled={!editing} />
               <Input label="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} icon={MapPin} disabled={!editing} />
@@ -225,31 +269,94 @@ export default function StudentProfilePage() {
         </GlassCard>
       </div>
 
-      {/* BANK DETAILS */}
-      <GlassCard className="p-6">
-        <div className="flex justify-between items-center mb-5">
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-            <CreditCard size={18} className="text-emerald-400" /> Bank Details
-          </h3>
-          {form.accountNo && !editing && (
-            <Button variant="danger" size="xs" onClick={handleRemoveBankDetails} className="bg-red-500/20 text-red-400">
-              <Trash2 size={12} /> Remove Account
-            </Button>
-          )}
-        </div>
-        {!form.accountNo && !editing ? (
-          <div className="text-center py-6 border border-dashed border-white/10 rounded-2xl bg-white/3">
-            <Building size={32} className="text-gray-500 mx-auto mb-2" />
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>+ Add Bank Details</Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Input label="Bank Name" value={form.bankName} onChange={e => setForm(p => ({ ...p, bankName: e.target.value }))} disabled={!editing} />
-            <Input label="Account Number" value={form.accountNo} onChange={e => setForm(p => ({ ...p, accountNo: e.target.value }))} disabled={!editing} />
-            <Input label="Account Holder" value={form.accountHolder} onChange={e => setForm(p => ({ ...p, accountHolder: e.target.value }))} disabled={!editing} />
-          </div>
-        )}
-      </GlassCard>
+      {/* BANK DETAILS CARD */}
+      {/* ==========================================
+    BANK DETAILS CARD (ADD / REMOVE MODES)
+    ========================================== */}
+<GlassCard className="p-6">
+  <div className="flex justify-between items-center mb-5">
+    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+      <CreditCard size={18} className="text-emerald-400" /> Bank Details
+    </h3>
+    
+    {}
+    {form.accountNo && !editing && (
+      <Button 
+        variant="danger" 
+        size="xs" 
+        onClick={handleRemoveBankDetails} 
+        className="flex items-center gap-1 bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/30"
+      >
+        <Trash2 size={12} /> Remove Account
+      </Button>
+    )}
+  </div>
+  
+  {}
+  {!form.accountNo && !editing ? (
+    <div className="text-center py-6 border border-dashed border-white/10 rounded-2xl bg-white/3">
+      <Building size={32} className="text-gray-500 mx-auto mb-2" />
+      <p className="text-sm text-gray-400 mb-4">No bank account details added yet.</p>
+      <Button 
+        variant="secondary" 
+        size="sm" 
+        onClick={() => setEditing(true)} 
+        className="mx-auto"
+      >
+        + Add Bank Details
+      </Button>
+    </div>
+  ) : (
+    
+    <div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Input 
+          label="Bank Name" 
+          value={form.bankName} 
+          onChange={e => setForm(p => ({ ...p, bankName: e.target.value }))} 
+          icon={Building} 
+          disabled={!editing} 
+          placeholder="e.g. Commercial Bank" 
+        />
+
+<div className="flex flex-col"> 
+  <Input 
+    label="Account Number" 
+    type="number" 
+    value={form.accountNo || ''} 
+    onChange={e => { 
+      setForm(p => ({...p, accountNo: e.target.value}));
+      if(errors.accountNo) setErrors(p => ({...p, accountNo: null})); 
+    }} 
+    icon={CreditCard} 
+    disabled={!editing} 
+  />
+  {errors.accountNo && <p className="text-red-500 text-xs mt-1">{errors.accountNo}</p>}
+</div>
+        <Input 
+          label="Account Holder" 
+          value={form.accountHolder} 
+          onChange={e => setForm(p => ({ ...p, accountHolder: e.target.value }))} 
+          icon={User} 
+          disabled={!editing} 
+          placeholder="Name on Card/Passbook" 
+        />
+      </div>
+      
+      
+      {editing && (
+        <p className="text-xs text-amber-400 mt-3 animate-pulse">
+          ⚠️ Please click the "Save" button at the top of the profile to lock in your bank changes.
+        </p>
+      )}
+    </div>
+  )}
+  
+  <p className="text-xs text-gray-500 mt-3">
+    Bank details are used securely for internal processing, rewards, and tuition payouts.
+  </p>
+</GlassCard>
+
     </div>
   );
 }

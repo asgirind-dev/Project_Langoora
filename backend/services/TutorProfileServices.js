@@ -8,7 +8,7 @@ class TutorProfileServices {
         return doc.data();
     }
 
-    // 2. Secure Profile Update (Prevents overwriting existing unrelated data fields)
+    
     async updateTutorProfile(uid, profileData) {
         const userRef = db.collection('users').doc(uid);
         
@@ -24,7 +24,7 @@ class TutorProfileServices {
 
         const updatePayload = {};
 
-        // Data fields reside as flat Root attributes, mapping filtered inputs directly onto the request payload
+        
         if (profileData.name) updatePayload.name = profileData.name;
         if (profileData.phone) updatePayload.phone = profileData.phone;
         if (profileData.address) updatePayload.address = profileData.address;
@@ -32,7 +32,7 @@ class TutorProfileServices {
         if (profileData.qualifications) updatePayload.qualifications = profileData.qualifications;
         if (profileData.university) updatePayload.university = profileData.university;
 
-        // Perform Firestore update only if the constructed payload contains valid modified pairs
+        
         if (Object.keys(updatePayload).length > 0) {
             await userRef.update(updatePayload);
         }
@@ -44,29 +44,6 @@ class TutorProfileServices {
     async deleteTutorAccount(uid) {
         try {
             const userRef = db.collection('users').doc(uid);
-
-            // 1. Delete all bank cards inside sub-collection safely
-            const cardsSnapshot = await userRef.collection('bankCards').get();
-            
-            // Execute batch write transaction only if the sub-collection contains document references
-            if (!cardsSnapshot.empty) {
-                const batch = db.batch();
-                cardsSnapshot.forEach(doc => {
-                    batch.delete(doc.ref);
-                });
-                await batch.commit();
-            }
-
-            // 2. Delete the main tutor profile document
-            await userRef.delete();
-
-            return { success: true, message: 'Tutor data deleted successfully from database' };
-        } catch (error) {
-            // Forward the standard database runtime exception up to the matching Controller execution thread
-            throw new Error(`Firebase DB Error: ${error.message}`);
-        }
-    }
-    
 
     
     async getBankCards(uid) {

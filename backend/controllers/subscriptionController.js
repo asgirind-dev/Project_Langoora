@@ -25,6 +25,7 @@ exports.createPlan = async (req, res) => {
   }
 };
 
+
 exports.updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -34,6 +35,7 @@ exports.updatePlan = async (req, res) => {
     res.status(500).json({ message: "Plan update error", error: error.message });
   }
 };
+
 
 exports.deletePlan = async (req, res) => {
   try {
@@ -69,6 +71,7 @@ exports.createCategory = async (req, res) => {
   }
 };
 
+
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -78,6 +81,7 @@ exports.updateCategory = async (req, res) => {
     res.status(500).json({ message: "Category update error", error: error.message });
   }
 };
+
 
 exports.deleteCategory = async (req, res) => {
   try {

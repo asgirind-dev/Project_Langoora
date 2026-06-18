@@ -19,7 +19,7 @@ class TutorProfilePageController {
     async updateTutorProfile(req, res) {
         try {
             const { uid } = req.params;
-            const profileData = req.body; // Expects profile fields along with the profilePic URL string
+            const profileData = req.body; 
 
             const result = await tutorService.updateTutorProfile(uid, profileData);
             return res.status(200).json(result);
