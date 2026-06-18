@@ -1,0 +1,10 @@
+const express = require('express');
+const router = express.Router();
+const plannerController = require('../controllers/studyPlannerController');
+const { protect } = require('../middleware/authMiddleware');
+router.use(protect);
+router.get('/dashboard', plannerController.getDashboardData);
+router.post('/add', plannerController.createNewTask);
+router.put('/:planId', plannerController.updateTask);
+router.delete('/:planId', plannerController.deleteTask);
+module.exports = router;
