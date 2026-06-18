@@ -9,7 +9,7 @@ const navItems = [
   { label: 'Performance', path: '/performance', icon: BarChart2 },
   { label: 'Subscription', path: '/subscription', icon: Crown },
   { label: 'Profile', path: '/profile', icon: User },
-  { label: 'Settings', path: '/settings', icon: Settings },
+  
 ];
 
 export default function StudentLayout() {

@@ -1,24 +1,15 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { TrendingUp, BookOpen, Clock, Flame, Crown, ArrowRight, Target, Award, Play } from 'lucide-react';
+import { TrendingUp, BookOpen, Clock, Flame, Crown, ArrowRight, Play } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import CircularProgress from '../../components/ui/CircularProgress';
 import { studentPerformanceData, sectionScores, featuredExams } from '../../data/mockData';
-
-const radarData = [
-  { section: 'Grammar', score: 78 },
-  { section: 'Vocab', score: 85 },
-  { section: 'Listen', score: 70 },
-  { section: 'Reading', score: 88 },
-  { section: 'Writing', score: 65 },
-];
 
 const recentExams = [
   { id: 1, title: 'JLPT N2 Grammar Section', score: 78, total: 100, date: '2024-06-08', status: 'passed', time: '45 min' },
@@ -198,9 +189,8 @@ export default function StudentDashboard() {
                     <p className="text-sm font-medium text-white line-clamp-2 leading-snug mb-1">{exam.title}</p>
                     <p className="text-xs text-gray-400">{exam.tutor}</p>
                     <div className="flex items-center justify-between mt-2">
-                      {/* FIXED LINE: Safely checks for price and provides default 0 if it's undefined */}
                       <span className="text-blue-400 font-semibold text-sm">
-                        LKR {exam?.price ? exam.price.toLocaleString() : '0'}
+                        LKR {exam?.price !== undefined && exam?.price !== null ? exam.price.toLocaleString() : '0'}
                       </span>
                       <Badge color="blue">{exam.level}</Badge>
                     </div>

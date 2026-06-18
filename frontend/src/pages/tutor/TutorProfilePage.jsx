@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Mail, Phone, GraduationCap, MapPin, Save, Camera, Edit3, Building, CreditCard, Trash2, Plus, AlertTriangle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { User, Mail, Phone, GraduationCap, MapPin, Save, Camera, Edit3, Building, CreditCard, Trash2, Plus, AlertTriangle, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
-// Storage import retained for profile picture handling
-import { storage } from '../../firebaseConfig'; 
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// Required instances for Firebase Auth re-authentication
+import { auth } from '../../firebaseConfig';
+import { EmailAuthProvider, reauthenticateWithCredential, deleteUser } from 'firebase/auth';
 
-// Backend API URL
-const API_BASE_URL = 'http://localhost:5000/api/tutor';
+const API_BASE_URL = 'http://localhost:5000/api/tutors';
 
 export default function TutorProfilePage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth(); // Retrieving the logout method from the authentication context
+  const navigate = useNavigate();
   
   // States for Editing Modes
   const [editPersonal, setEditPersonal] = useState(false);
@@ -32,17 +33,20 @@ export default function TutorProfilePage() {
 
   // Bank Cards State
   const [bankCards, setBankCards] = useState([]);
-
-  // New Card Form State
   const [newCard, setNewCard] = useState({ bankName: '', accountNo: '', accountHolder: '' });
   const [showAddCard, setShowAddCard] = useState(false);
-
-  // Profile Picture State
   const [profilePic, setProfilePic] = useState(null);
 
-// ==========================================
-  // 1. FETCH PROFILE DATA FROM BACKEND API
   // ==========================================
+  // ACCOUNT DELETION STATES
+  // ==========================================
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  // 1. FETCH PROFILE DATA FROM BACKEND API
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -58,7 +62,6 @@ export default function TutorProfilePage() {
             name: data.name || user.name || '',
             email: user.email || '', 
             phone: data.phone || '',
-            // 💡 ලෙඩේ සුවකළා: privileges අස්සේ නෙමෙයි, කෙලින්ම root එකේ තියෙන ඩේටා ගන්නවා
             qualifications: data.qualifications || '', 
             university: data.university || '',         
             address: data.address || '',
@@ -85,135 +88,208 @@ export default function TutorProfilePage() {
     fetchTutorData();
   }, [user]);
 
-  // ==========================================
   // 2. BACKEND API MUTATION HANDLERS
-  // ==========================================
-
-  // Process selected image, convert to Base64 and upload via backend API
   const handleProfilePicChange = async (e) => {
     const file = e.target.files[0];
     if (!file || !user?.uid) return;
 
-    // Validate image file size (Enforce max 2MB limit)
     if (file.size > 2 * 1024 * 1024) {
-      alert("The selected image is too large. Please select a photo smaller than 2MB.");
+      alert("The selected image exceeds the 2MB size limit. Please choose a smaller photo.");
       return;
     }
 
-    // Convert raw image file to readable Base64 data string
     const reader = new FileReader();
     reader.readAsDataURL(file);
     
     reader.onloadend = async () => {
       const base64String = reader.result;
-
       try {
-        // Dispatch updated base64 image URL property directly to backend API
         const response = await fetch(`${API_BASE_URL}/${user.uid}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ profilePicUrl: base64String })
         });
-
         const result = await response.json();
-        
         if (result.success) {
-          setProfilePic(base64String); // Set target image live onto the client UI
+          setProfilePic(base64String);
           alert('Success! Your profile picture has been updated.');
         } else {
-          alert('Unable to update profile picture. Please try again or contact support.');
+          alert('We encountered an issue updating your profile picture. Please try again.');
         }
       } catch (error) {
         console.error("Upload Error:", error);
-        alert("Connection error. Please check your internet and try again.");
+        alert("Connection timed out. Please check your network and try again.");
       }
     };
   };
 
- // Persist Personal Info & Qualifications via PUT Request to Backend
+  // Save personal information with frontend security validation rules
   const handleSavePersonalInfo = async () => {
     if (!user?.uid) return;
+
+    // 1. Full Name Validation (Length Check)
+    if (form.name.trim().length < 3) {
+      alert("Please enter a valid name that is at least 3 characters long.");
+      return;
+    }
+
+    // 2. Phone Number Validation (Sri Lankan Mobile Number Regex Pattern)
+    const cleanPhone = form.phone.replace(/\s+/g, '').replace(/-/g, '');
+    const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+    
+    if (!phoneRegex.test(cleanPhone)) {
+      alert("Invalid Phone Number. Please enter a valid mobile number (e.g., 07xxxxxxxx or +947xxxxxxxx).");
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/${user.uid}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name,
           phone: form.phone,
           address: form.address,
-          // 🔒 වෙනස් කරන්න බැරි වුණත්, දැනට තියෙන පරණ ඩේටා ටික මැකිලා යන්නේ නැතුව ආරක්ෂිතව root fields විදිහටම යවනවා
           qualifications: form.qualifications, 
           university: form.university
         }),
       });
-
       const result = await response.json();
-
       if (result.success) {
         setEditPersonal(false);
-        alert('Success! Your profile settings have been securely saved.');
+        alert('Success! Your changes have been securely saved.');
       } else {
-        alert('Could not save updates. Please ensure all required fields are filled.');
+        alert(`Update Failed: ${result.error || 'Unable to update profile details right now.'}`);
       }
     } catch (error) {
       console.error("Error updating profile:", error);
-      alert('Network failure. Please verify your connection and click save again.');
+      alert('Network error. Unable to connect to the server. Please check your internet connection.');
     }
   };
 
-  // Add new payout method card via POST Request to Backend
+  // Add payout bank card with input formatting and field verification
   const handleAddCard = async (e) => {
     e.preventDefault();
     if (!newCard.bankName || !newCard.accountNo || !newCard.accountHolder || !user?.uid) return;
-    
+
+    // Frontend Validation: Strip whitespaces/hyphens and check digit counts
+    const cleanNo = newCard.accountNo.replace(/\s+/g, '').replace(/-/g, '');
+    const isOnlyDigits = /^\d+$/.test(cleanNo);
+
+    if (!isOnlyDigits || cleanNo.length < 12 || cleanNo.length > 19) {
+      alert("Invalid Account Number. Bank account numbers must only contain digits and be between 12 to 19 digits long.");
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/${user.uid}/cards`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newCard),
       });
-
+      
       const result = await response.json();
-
-      if (result.success) {
-        // Manually push new entry to local state since active listeners are detached
+      
+      if (response.ok && result.success) {
         setBankCards(prev => [...prev, result.data]);
         setNewCard({ bankName: '', accountNo: '', accountHolder: '' });
         setShowAddCard(false);
-        alert('Success! Your new bank card has been securely added.');
+        alert('Success! Your payout bank account has been securely linked.');
+      } else {
+        // Capture backend registration limit exceptions or field validation errors
+        alert(`Verification Failed: ${result.error || 'We could not link this account at this time.'}`);
       }
     } catch (error) {
       console.error("Error adding card:", error);
-      alert('Failed to add bank card. Please verify the numbers and try again.');
+      alert("Server connection failed. Please try again later.");
     }
   };
 
-  // Terminate registered bank card entry via DELETE Request to Backend
   const handleDeleteCard = async (id) => {
     if (!user?.uid) return;
-
-    if (window.confirm('Are you sure you want to permanently delete this bank card?')) {
+    if (window.confirm('Are you sure you want to permanently disconnect this bank account from your payouts?')) {
       try {
         const response = await fetch(`${API_BASE_URL}/${user.uid}/cards/${id}`, {
           method: 'DELETE',
         });
-
         const result = await response.json();
-
         if (result.success) {
-          // Filter entry out of state arrays to cleanly force live UI render update
           setBankCards(prev => prev.filter(card => card.id !== id));
-          alert('The selected bank card has been successfully removed.');
+          alert('The selected bank account has been successfully removed.');
         }
       } catch (error) {
         console.error("Error deleting card:", error);
-        alert('Unable to delete bank card. Please refresh the page and try again.');
       }
+    }
+  };
+
+  // ==========================================
+  // SAFE ACCOUNT DELETION HANDLER
+  // ==========================================
+  const handleConfirmDeleteAccount = async (e) => {
+    e.preventDefault();
+    if (!confirmPassword) {
+      setDeleteError("Please type your password to confirm account deletion.");
+      return;
+    }
+
+    setDeleteLoading(true);
+    setDeleteError('');
+
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Authentication session expired. Please sign in again.");
+
+      // 1. RE-AUTHENTICATE USER VIA FIREBASE
+      const credential = EmailAuthProvider.credential(currentUser.email, confirmPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // 1.5. Fetch Current Firebase Auth ID Token
+      const token = await currentUser.getIdToken();
+
+      // 2. DELETE FROM CUSTOM NODE.JS BACKEND
+      const backendResponse = await fetch(`${API_BASE_URL}/${user.uid}/delete-account`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        }
+      });
+
+      if (!backendResponse.ok) {
+        const errorData = await backendResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error occurred (Status code: ${backendResponse.status})`);
+      }
+
+      const backendResult = await backendResponse.json();
+
+      if (!backendResult.success) {
+        throw new Error(backendResult.error || "Failed to remove data from the main database.");
+      }
+
+      // 3. DELETE FROM FIREBASE AUTHENTICATION
+      await deleteUser(currentUser);
+
+      // 4. CLEAN UP CLIENT STATE & REDIRECT
+      alert("Your tutor profile and all associated files have been permanently deleted.");
+      setShowDeleteModal(false);
+      
+      if (logout) {
+        await logout(); 
+      }
+      navigate('/'); 
+
+    } catch (error) {
+      console.error("Account Deletion Error:", error);
+      if (error.code === 'auth/wrong-password' || error.message.includes('invalid-credential')) {
+        setDeleteError("Incorrect password. Please verify your credentials and try again.");
+      } else if (error.code === 'auth/too-many-requests') {
+        setDeleteError("Too many incorrect attempts. This feature has been temporarily locked for security. Please try again later.");
+      } else {
+        setDeleteError(error.message || "An unexpected system error occurred during profile termination.");
+      }
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -225,7 +301,7 @@ export default function TutorProfilePage() {
         <p className="text-gray-400">Manage your public profile, qualifications, and payout settings</p>
       </motion.div>
 
-      {/* Top Profile Card with Image Upload */}
+      {/* Top Profile Card */}
       <GlassCard className="p-6">
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
           <div className="relative group">
@@ -275,15 +351,37 @@ export default function TutorProfilePage() {
             </div>
             
             <div className="space-y-4">
-              <Input label="Full Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} icon={User} disabled={!editPersonal} />
-              
-              {/* Email Field - Permanently Disabled */}
+              {/* Sanitized Full Name Input - Regex filters out numbers and non-alphabetic punctuation symbols */}
+              <Input 
+                label="Full Name" 
+                value={form.name} 
+                onChange={e => {
+                  const val = e.target.value.replace(/[^a-zA-Z\s.]/g, '');
+                  setForm(p => ({ ...p, name: val }));
+                }} 
+                icon={User} 
+                disabled={!editPersonal} 
+              />
+
               <div>
                 <Input label="Email Address" value={form.email} icon={Mail} disabled={true} className="opacity-60 cursor-not-allowed" />
-                <p className="text-[11px] text-gray-500 mt-1 pl-1">Email address cannot be changed as it is linked to your login account.</p>
+                <p className="text-[11px] text-gray-500 mt-1 pl-1">Email address cannot be changed.</p>
               </div>
 
-              <Input label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} icon={Phone} disabled={!editPersonal} />
+              {/* Sanitized Phone Input - Restricts values strictly to numeric and the plus '+' sign symbol up to 12 digits max length */}
+              <Input 
+                label="Phone" 
+                value={form.phone} 
+                onChange={e => {
+                  const val = e.target.value.replace(/[^0-9+]/g, '');
+                  setForm(p => ({ ...p, phone: val }));
+                }} 
+                icon={Phone} 
+                maxLength={12}
+                placeholder="e.g., 0771234567"
+                disabled={!editPersonal} 
+              />
+
               <Input label="Address" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} icon={MapPin} disabled={!editPersonal} />
             </div>
           </div>
@@ -308,11 +406,7 @@ export default function TutorProfilePage() {
             </div>
             
             <div className="space-y-4">
-              {/* 🔒 Permanently Disabled Fields - වෙනස් කරන්න බැහැ, පෙන්වන්න විතරයි */}
-              <div>
-                <Input label="Qualifications" value={form.qualifications} icon={GraduationCap} disabled={true} className="opacity-60 cursor-not-allowed" />
-              </div>
-              
+              <Input label="Qualifications" value={form.qualifications} icon={GraduationCap} disabled={true} className="opacity-60 cursor-not-allowed" />
               <div>
                 <Input label="University / Institution" value={form.university} icon={Building} disabled={true} className="opacity-60 cursor-not-allowed" />
                 <p className="text-[11px] text-gray-500 mt-1 pl-1">Qualifications cannot be edited after registration.</p>
@@ -332,12 +426,14 @@ export default function TutorProfilePage() {
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
               <CreditCard size={18} className="text-emerald-400" /> Bank Accounts for Payouts
             </h3>
-            <Button variant="primary" size="sm" onClick={() => setShowAddCard(!showAddCard)}>
-              <Plus size={14} className="mr-1" /> Add New Card
-            </Button>
+            
+            {bankCards.length === 0 && (
+              <Button variant="primary" size="sm" onClick={() => setShowAddCard(!showAddCard)}>
+                <Plus size={14} className="mr-1" /> Add New Card
+              </Button>
+            )}
           </div>
 
-          {/* Add New Card Form Accordion */}
           <AnimatePresence>
             {showAddCard && (
               <motion.form 
@@ -347,18 +443,47 @@ export default function TutorProfilePage() {
                 onSubmit={handleAddCard}
                 className="mb-6 p-4 bg-white/5 border border-white/10 rounded-xl grid grid-cols-1 md:grid-cols-3 gap-4 items-end"
               >
-                <Input label="Bank Name" value={newCard.bankName} onChange={e => setNewCard(p => ({ ...p, bankName: e.target.value }))} icon={Building} required />
-                <Input label="Account Number" value={newCard.accountNo} onChange={e => setNewCard(p => ({ ...p, accountNo: e.target.value }))} icon={CreditCard} required />
-                <Input label="Account Holder" value={newCard.accountHolder} onChange={e => setNewCard(p => ({ ...p, accountHolder: e.target.value }))} icon={User} required />
+                <Input 
+                  label="Bank Name" 
+                  value={newCard.bankName} 
+                  onChange={e => setNewCard(p => ({ ...p, bankName: e.target.value }))} 
+                  icon={Building} 
+                  placeholder="e.g., BOC, Sampath Bank"
+                  required 
+                />
+                
+                <div>
+                  <Input 
+                    label="Card / Account Number" 
+                    value={newCard.accountNo} 
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9\s-]/g, '');
+                      setNewCard(p => ({ ...p, accountNo: val }));
+                    }} 
+                    icon={CreditCard} 
+                    placeholder="12 to 19 digits"
+                    maxLength={23} 
+                    required 
+                  />
+                </div>
+
+                <Input 
+                  label="Account Holder Name" 
+                  value={newCard.accountHolder} 
+                  onChange={e => setNewCard(p => ({ ...p, accountHolder: e.target.value }))} 
+                  icon={User} 
+                  placeholder="As shown on card"
+                  required 
+                />
+                
                 <div className="md:col-span-3 flex justify-end gap-2 mt-2">
                   <Button type="button" variant="secondary" size="sm" onClick={() => setShowAddCard(false)}>Cancel</Button>
-                  <Button type="submit" variant="success" size="sm">Save Card</Button>
+                  <Button type="submit" variant="success" size="sm">Verify & Save Card</Button>
                 </div>
               </motion.form>
             )}
           </AnimatePresence>
 
-          {/* Cards List Display */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {bankCards.map((card) => (
               <div key={card.id} className="p-4 bg-white/5 border border-white/10 rounded-xl flex justify-between items-center hover:border-white/20 transition-all">
@@ -366,7 +491,7 @@ export default function TutorProfilePage() {
                   <p className="text-sm font-semibold text-white flex items-center gap-2">
                     <Building size={14} className="text-gray-400" /> {card.bankName}
                   </p>
-                  <p className="text-xs text-gray-400 font-mono">Acc No: {card.accountNo}</p>
+                  <p className="text-sm text-emerald-400 font-mono tracking-wider">{card.accountNo}</p>
                   <p className="text-xs text-gray-500">Holder: {card.accountHolder}</p>
                 </div>
                 <button 
@@ -386,10 +511,115 @@ export default function TutorProfilePage() {
               </div>
             )}
           </div>
+        </GlassCard>
 
-          <p className="text-xs text-gray-500 mt-4">Bank details are used for payout processing. All information is securely encrypted and stored.</p>
+        {/* Danger Zone */}
+        <GlassCard className="p-6 md:col-span-2 border border-red-500/20 bg-red-950/10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-red-400 flex items-center gap-2">
+                <AlertTriangle size={20} /> Danger Zone
+              </h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Permanently delete your tutor account and remove all registered data, certificates, and bank account setups. This action cannot be undone.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmPassword('');
+                setDeleteError('');
+                setShowDeleteModal(true);
+              }}
+              className="px-4 py-2 bg-red-600/20 hover:bg-red-600 border border-red-500/40 text-red-200 text-sm font-medium rounded-xl transition-all self-start sm:self-center"
+            >
+              Delete Account
+            </button>
+          </div>
         </GlassCard>
       </div>
+
+      {/* SECURITY CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-[#0f1629] border border-red-500/30 rounded-2xl p-6 shadow-2xl overflow-hidden text-left"
+            >
+              <div className="flex items-center gap-3 text-red-400 mb-4">
+                <div className="p-2 bg-red-500/10 rounded-xl">
+                  <ShieldAlert size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">Security Verification</h3>
+                  <p className="text-xs text-gray-400">Confirm authentication required</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-300 mb-4 leading-relaxed">
+                To complete this critical operation, please re-enter your current account password below.
+              </p>
+
+              <form onSubmit={handleConfirmDeleteAccount} className="space-y-4">
+                <div className="relative">
+                  <Input 
+                    label="Current Password" 
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Enter your account password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-[38px] text-gray-400 hover:text-white"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+
+                {deleteError && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -5 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400 flex items-center gap-2"
+                  >
+                    <AlertTriangle size={14} className="flex-shrink-0" />
+                    <span>{deleteError}</span>
+                  </motion.div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button 
+                    type="button" 
+                    variant="secondary" 
+                    onClick={() => setShowDeleteModal(false)}
+                    disabled={deleteLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <button
+                    type="submit"
+                    disabled={deleteLoading}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-800/50 text-white font-medium text-sm rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2"
+                  >
+                    {deleteLoading ? (
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 size={14} />
+                    )}
+                    <span>{deleteLoading ? "Processing..." : "Permanently Delete"}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
