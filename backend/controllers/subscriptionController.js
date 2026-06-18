@@ -6,7 +6,8 @@ const subscriptionService = require('../services/SubscriptionService');
 exports.getPlans = async (req, res) => {
   try {
     const plans = await subscriptionService.getAllPlans();
-    res.status(200).json(plans);
+    const activePlans = plans.filter(plan => plan.active === true);
+    res.status(200).json(activePlans);
   } catch (error) {
     res.status(500).json({ message: "Plans fetch error", error: error.message });
   }

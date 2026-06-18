@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+ import { useState, useEffect } from 'react';
 import { useNavigate as useReactNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -286,7 +286,7 @@ export default function LandingPage() {
                       {exam.tag && <Badge color="amber">{exam.tag}</Badge>}
                     </div>
                     <div className="absolute bottom-3 right-3 text-right">
-                      {/* Credits ක්‍රමවේදය සඳහා ආරක්ෂිතව වෙනස් කරන ලදී */}
+                    
                       <div className="text-white font-bold text-lg flex items-center gap-1">
                         <Coins size={16} className="text-amber-400" />
                         {exam?.credits || 10} Credits
@@ -471,4 +471,4 @@ export default function LandingPage() {
 
     </div>
   );
-}
+} 
