@@ -19,7 +19,7 @@ class TutorProfilePageController {
     async updateTutorProfile(req, res) {
         try {
             const { uid } = req.params;
-            const profileData = req.body; // මෙතනට profilePic URL එකත් ඇතුලත් වෙන්න ඕනේ
+            const profileData = req.body; 
 
             const result = await tutorService.updateTutorProfile(uid, profileData);
             return res.status(200).json(result);

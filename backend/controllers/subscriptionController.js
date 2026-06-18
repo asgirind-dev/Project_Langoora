@@ -25,7 +25,7 @@ exports.createPlan = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ල මිස් වෙලා තිබුණේ මචන්:
+
 exports.updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -36,7 +36,7 @@ exports.updatePlan = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් මිස් වෙලා තිබුණේ:
+
 exports.deletePlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -72,7 +72,7 @@ exports.createCategory = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
+
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -83,7 +83,7 @@ exports.updateCategory = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
+
 exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;

@@ -8,13 +8,15 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
-// Backend API URL එක Tutor එකේ වගේම Standard කරා
+
 const API_BASE_URL = 'http://localhost:5000/api/student';
 
 export default function StudentProfilePage() {
   const { user } = useAuth(); 
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  
   
   // Form State
   const [form, setForm] = useState({
@@ -77,45 +79,49 @@ export default function StudentProfilePage() {
     fetchStudentData();
   }, [user]);
 
+  
+
   // ==========================================
   // 2. SAVE PERSONAL & GOALS & BANK DETAILS
   // ==========================================
   const handleProfileSave = async () => {
-    const uid = user?.uid || user?.id;
-    if (!uid) return;
+  const uid = user?.uid || user?.id;
+  if (!uid) return;
 
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/${uid}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name,
-          phone: form.phone,
-          dob: form.dob,
-          city: form.city,
-          targetExam: form.targetExam,
-          targetDate: form.targetDate,
-          bankName: form.bankName,
-          accountNo: form.accountNo,
-          accountHolder: form.accountHolder,
-        })
-      });
+  let newErrors = {};
+  const phoneRegex = /^[0-9]{9}$/; 
+  const accountRegex = /^[0-9]{9,15}$/; 
 
-      const result = await response.json();
-      if (result.success) {
-        setEditing(false);
-        alert("Success! Your student profile settings have been securely saved.");
-      } else {
-        alert("Could not save updates. Please try again.");
-      }
-    } catch (error) {
-      console.error("Profile update error:", error);
-      alert("Network failure. Please verify your connection.");
-    } finally {
-      setLoading(false);
+  // Validation
+  if (!phoneRegex.test(form.phone)) newErrors.phone = "Phone number must be exactly 9 digits";
+  if (!accountRegex.test(form.accountNo)) newErrors.accountNo = "Account number must be 9-15 digits";
+
+  
+  if (Object.keys(newErrors).length > 0) {
+    setErrors(newErrors);
+    return; 
+  }
+
+  
+  setErrors({});
+  setLoading(true);
+  try {
+    const response = await fetch(`${API_BASE_URL}/${uid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form)
+    });
+    const result = await response.json();
+    if (result.success) {
+      setEditing(false);
+      alert("Success! Your profile settings have been securely saved.");
     }
-  };
+  } catch (error) {
+    alert("Network failure. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ==========================================
   // 3. PROFILE PICTURE UPLOAD (BASE64 TUTOR STYLE)
@@ -263,7 +269,22 @@ export default function StudentProfilePage() {
               <p className="text-[11px] text-gray-500 mt-1 pl-1">Email address cannot be changed.</p>
             </div>
 
-            <Input label="Phone" type="tel" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} icon={Phone} disabled={!editing} placeholder="+94 7X XXX XXXX" />
+            <div className="flex flex-col">
+  <Input 
+    label="Phone" 
+    type="number" 
+    value={form.phone || ''} 
+    onChange={e => {
+       const val = e.target.value;
+       setForm(p => ({ ...p, phone: val }));
+       if(errors.phone) setErrors(p => ({...p, phone: null}));
+    }} 
+    icon={Phone} 
+    disabled={!editing} 
+    placeholder="07XXXXXXXX" 
+  />
+  {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+</div>
             <div className="grid grid-cols-2 gap-4">
               <Input label="Date of Birth" type="date" value={form.dob} onChange={e => setForm(p => ({ ...p, dob: e.target.value }))} icon={Calendar} disabled={!editing} />
               <Input label="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} icon={MapPin} disabled={!editing} placeholder="Colombo" />
@@ -321,7 +342,7 @@ export default function StudentProfilePage() {
       <CreditCard size={18} className="text-emerald-400" /> Bank Details
     </h3>
     
-    {/* Bank Account එකක් දැනටමත් තියෙනවා නම් සහ Edit Mode එකේ නෙමෙයි නම් විතරක් Remove Button එක පෙන්වනවා */}
+    {}
     {form.accountNo && !editing && (
       <Button 
         variant="danger" 
@@ -334,7 +355,7 @@ export default function StudentProfilePage() {
     )}
   </div>
   
-  {/* 1. බැංකු විස්තර නොමැති විට පෙන්වන "+ Add Bank Details" Mode එක */}
+  {}
   {!form.accountNo && !editing ? (
     <div className="text-center py-6 border border-dashed border-white/10 rounded-2xl bg-white/3">
       <Building size={32} className="text-gray-500 mx-auto mb-2" />
@@ -349,7 +370,7 @@ export default function StudentProfilePage() {
       </Button>
     </div>
   ) : (
-    /* 2. බැංකු විස්තර පවතින විට හෝ Edit කරන විට පෙන්වන Form එක */
+    
     <div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Input 
@@ -360,14 +381,21 @@ export default function StudentProfilePage() {
           disabled={!editing} 
           placeholder="e.g. Commercial Bank" 
         />
-        <Input 
-          label="Account Number" 
-          value={form.accountNo} 
-          onChange={e => setForm(p => ({ ...p, accountNo: e.target.value }))} 
-          icon={CreditCard} 
-          disabled={!editing} 
-          placeholder="e.g. 8010XXXXXX" 
-        />
+
+<div className="flex flex-col"> 
+  <Input 
+    label="Account Number" 
+    type="number" 
+    value={form.accountNo || ''} 
+    onChange={e => { 
+      setForm(p => ({...p, accountNo: e.target.value}));
+      if(errors.accountNo) setErrors(p => ({...p, accountNo: null})); 
+    }} 
+    icon={CreditCard} 
+    disabled={!editing} 
+  />
+  {errors.accountNo && <p className="text-red-500 text-xs mt-1">{errors.accountNo}</p>}
+</div>
         <Input 
           label="Account Holder" 
           value={form.accountHolder} 
@@ -378,7 +406,7 @@ export default function StudentProfilePage() {
         />
       </div>
       
-      {/* Edit Mode එකේ ඉන්නකොට මතක් කිරීමක් පෙන්වන්න */}
+      
       {editing && (
         <p className="text-xs text-amber-400 mt-3 animate-pulse">
           ⚠️ Please click the "Save" button at the top of the profile to lock in your bank changes.
