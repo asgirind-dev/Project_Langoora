@@ -3,37 +3,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios'; 
 import { 
   Search, Users, UserCheck, UserX, Mail, Shield, CheckCircle, X, 
-  UserPlus, Building, ShieldAlert, Loader, Radio, Zap, Activity, Globe 
+  UserPlus, Building, ShieldAlert, Loader, Radio, Zap, Activity, Globe,
+  AlertCircle, Check, Ban, Trash2 // 👈 Trash2 Icon එක ගත්තා මචන්
 } from 'lucide-react';
 
-// --- UI COMPONENTS IMPORTS ---
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
 import ThemeToggle from '../../components/ui/ThemeToggle'; 
-
-// --- THEME CONTEXT ---
 import { useTheme } from '../../context/ThemeContext'; 
 
-// Dynamic Privileges Matrix ordered by Functional Dashboard Frameworks
 const AVAILABLE_PRIVILEGES = [
-  // Academic Validator Framework Frameworks
-  { key: 'verify_tutors', role: 'validator', label: 'Tutor Verification Power', desc: 'Grants access to TutorVerificationPage.jsx to approve/reject external partner academy tutors.' },
-  { key: 'audit_exams', role: 'validator', label: 'Exam Quality Audit Power', desc: 'Grants access to ExamQualityAuditsPage.jsx to inspect question matrices and structures.' },
-  { key: 'resolve_disputes', role: 'validator', label: 'Resolve Content Disputes', desc: 'Grants access to ContentDisputePage.jsx to settle student arguments and rechecks.' },
+  { key: 'verify_tutors', role: 'validator', label: 'Tutor Verification Power', desc: 'Approve or reject external partner academy tutors.' },
+  { key: 'audit_exams', role: 'validator', label: 'Exam Quality Audit Power', desc: 'Inspect question matrices and structures for quality assurance.' },
+  { key: 'resolve_disputes', role: 'validator', label: 'Resolve Content Disputes', desc: 'Settle student arguments and recheck requests.' },
   
-  // Finance Admin Framework Frameworks
-  { key: 'manage_subscriptions', role: 'finance', label: 'Subscription Framework Manager', desc: 'Grants access to SubscriptionManager.jsx to modify packages, pricing, and active credit values.' },
-  { key: 'approve_payouts', role: 'finance', label: 'Tutor Payouts Approver', desc: 'Grants access to TutorPayoutsPage.jsx to validate accumulated tutor credits and release bank transfers.' },
-  { key: 'view_ledger', role: 'finance', label: 'Transaction Ledger Auditor', desc: 'Grants access to TransactionLedger.jsx to view full platform financial inflows and outflows.' }
+  { key: 'manage_subscriptions', role: 'finance', label: 'Subscription Framework Manager', desc: 'Modify packages, pricing, and active credit values.' },
+  { key: 'approve_payouts', role: 'finance', label: 'Tutor Payouts Approver', desc: 'Validate accumulated tutor credits and authorize bank transfers.' },
+  { key: 'view_ledger', role: 'finance', label: 'Transaction Ledger Auditor', desc: 'View full platform financial inflows and outflows ledger.' }
 ];
 
-// Configure Axios base instance for cleaner routing requests
 const api = axios.create({
   baseURL: 'http://localhost:5000/api'
 });
 
-// Axios Interceptor to automatically hook the Bearer token into headers before dispatching
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -56,7 +48,6 @@ export default function UserManagementPage() {
   const [isPrivilegeModalOpen, setIsPrivilegeModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  // Update Form State to support Validator & Finance + Language Scope Selection
   const [createForm, setCreateForm] = useState({
     name: '',
     email: '',
@@ -68,31 +59,25 @@ export default function UserManagementPage() {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 1. Fetch entire registry dataset via backend endpoint
-const fetchAllUsersAndPreAuth = async () => {
-  try {
-    setLoading(true);
-    
-    const token = localStorage.getItem('token'); 
-    const response = await axios.get('http://localhost:5000/api/users', {
-      headers: {
-        Authorization: `Bearer ${token}`
+  const fetchAllUsersAndPreAuth = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token'); 
+      const response = await axios.get('http://localhost:5000/api/users', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setUsers(response.data.users);
       }
-    });
-
-    if (response.data.success) {
-      setUsers(response.data.users);
+    } catch (error) {
+      console.error("Error synchronizing storage directory registry:", error);
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error("Error synchronizing storage directory registry:", error);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => { fetchAllUsersAndPreAuth(); }, []);
 
-  // 2. Adjust lifecycle status (Suspend / Unsuspend / Revoke Invite)
   const toggleSuspend = async (uid, currentStatus, email) => {
     try {
       const response = await api.put(`/users/${uid}/lifecycle`, { currentStatus, email });
@@ -108,7 +93,24 @@ const fetchAllUsersAndPreAuth = async () => {
     }
   };
 
-  // 3. Commit granular role privilege and capability matrices
+  // 🚀 HARD DELETE OPERATIONS SYNCHRONIZATION HOOK
+  const handleDeleteUser = async (uid, currentStatus, email) => {
+    const confirmDelete = window.confirm("Are you absolutely sure you want to permanently delete this user profile? This action will completely drop the node from central records.");
+    if (!confirmDelete) return;
+
+    try {
+      const response = await api.delete(`/users/${uid}`, {
+        data: { email, currentStatus }
+      });
+      if (response.data.success) {
+        setUsers(prev => prev.filter(u => u.id !== uid));
+      }
+    } catch (error) {
+      console.error("Purge failure matrix:", error);
+      alert("Failed to securely drop the user node from systems.");
+    }
+  };
+
   const savePrivileges = async () => {
     try {
       const response = await api.put(`/users/${selectedUser.id}/privileges`, {
@@ -126,7 +128,6 @@ const fetchAllUsersAndPreAuth = async () => {
     }
   };
 
-  // 4. Provision a new internal administrative staff node
   const handleProvisionUser = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -134,12 +135,12 @@ const fetchAllUsersAndPreAuth = async () => {
     const formattedEmail = createForm.email.toLowerCase().trim();
 
     if (!createForm.name.trim() || !formattedEmail) {
-      setFormError('Fields are mandatory.');
+      setFormError('All fields are mandatory.');
       setIsSubmitting(false);
       return;
     }
     if (users.some(u => u.email === formattedEmail)) {
-      setFormError('Email already exists in terminal records.');
+      setFormError('This email is already registered.');
       setIsSubmitting(false);
       return;
     }
@@ -152,8 +153,7 @@ const fetchAllUsersAndPreAuth = async () => {
         setCreateForm({ name: '', email: '', role: 'validator', institution: 'LNBTI', languageScope: 'Japanese', privileges: [] });
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.message || "Database connectivity failed.";
-      setFormError(errorMsg);
+      setFormError(error.response?.data?.message || "Failed to create user.");
     } finally { 
       setIsSubmitting(false); 
     }
@@ -190,84 +190,89 @@ const fetchAllUsersAndPreAuth = async () => {
   });
 
   return (
-    <div className="space-y-6 p-1 selection:bg-cyan-500/30">
+    <div className="space-y-6 p-2 selection:bg-blue-500/30">
       
-      {/* --- HEADER SECTION --- */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 relative">
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-mono tracking-widest uppercase px-2 py-0.5 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30 rounded font-semibold">Identity & Access Management</span>
-          </div>
-          <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-900 via-slate-700 to-slate-600 dark:from-white dark:via-slate-200 dark:to-slate-400 tracking-tight">
-            User Gateways
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-            Govern structural platform nodes, inject granular framework privileges, and authorize internal administrative staff.
-          </p>
+      {/* --- HEADER --- */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+      <h1 className="text-3xl font-bold text-white">
+          User Management Hub
+      </h1>
+      <p className="text-gray-400 mt-1">
+          Manage student directories, verify corporate tutors, and configure access permissions for system staff
+      </p>
         </motion.div>
         
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-3 select-none">
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end select-none">
           <ThemeToggle /> 
-          
           <Button 
             variant="primary" 
             onClick={() => setIsCreateModalOpen(true)}
-            className="group relative flex items-center gap-2 bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:opacity-90 shadow-lg text-xs font-semibold tracking-wide py-2.5 px-4 rounded-xl text-white"
+            className="group flex items-center gap-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:shadow-blue-500/20 shadow-md text-xs font-semibold tracking-wide py-2.5 px-4 rounded-xl text-white transition-all"
           >
-            <UserPlus size={14} className="group-hover:rotate-12 transition-transform" /> 
-            <span>PROVISION STAFF NODE</span>
+            <UserPlus size={15} className="group-hover:scale-110 transition-transform" /> 
+            <span>Add Staff Member</span>
           </Button>
         </motion.div>
       </div>
 
-      {/* --- METRICS COUNTERS GRID --- */}
+      {/* --- METRICS GRID --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Platform Active Students', value: users.filter(u => u.role === 'student').length, icon: Users, color: 'text-cyan-600 dark:text-cyan-400', glow: 'border-slate-200/80 dark:border-cyan-500/10' },
-          { label: 'Verified Institutional Tutors', value: users.filter(u => u.role === 'tutor').length, icon: UserCheck, color: 'text-indigo-600 dark:text-indigo-400', glow: 'border-slate-200/80 dark:border-indigo-500/10' },
-          { label: 'Internal System Users', value: users.filter(u => u.role === 'validator' || u.role === 'finance').length, icon: Shield, color: 'text-amber-600 dark:text-amber-400', glow: 'border-slate-200/80 dark:border-amber-500/10' },
-          { label: 'Suspended Terminals', value: users.filter(u => u.status === 'suspended').length, icon: UserX, color: 'text-rose-600 dark:text-rose-500', glow: 'border-slate-200/80 dark:border-rose-500/10' },
+          { label: 'Total Students', value: users.filter(u => u.role === 'student').length, icon: Users, color: 'text-blue-500 bg-blue-500/10 border-blue-500/20' },
+          { label: 'Active Tutors', value: users.filter(u => u.role === 'tutor').length, icon: UserCheck, color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20' },
+          { label: 'System Staff', value: users.filter(u => u.role === 'validator' || u.role === 'finance').length, icon: Shield, color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
+          { label: 'Suspended Accounts', value: users.filter(u => u.status === 'suspended').length, icon: UserX, color: 'text-rose-500 bg-rose-500/10 border-rose-500/20' },
         ].map((s, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-            <GlassCard className={`p-4 flex items-center gap-4 border bg-white dark:bg-slate-900/30 backdrop-blur-md hover:bg-slate-50/50 dark:hover:bg-white/[0.03] transition-all ${s.glow}`}>
-              <div className="w-11 h-11 bg-slate-100 dark:bg-slate-900/60 rounded-xl flex items-center justify-center border border-slate-200 dark:border-white/5">
-                <s.icon size={18} className={s.color} />
+          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+            <GlassCard className="p-4 flex items-center gap-4 bg-white dark:bg-slate-900/40 border border-slate-100 dark:border-white/5 rounded-2xl shadow-sm hover:shadow-md transition-all">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${s.color}`}>
+                <s.icon size={20} />
               </div>
               <div>
-                <div className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{loading ? '...' : s.value}</div>
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{s.label}</div>
+                <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">{loading ? '...' : s.value}</div>
+                <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{s.label}</div>
               </div>
             </GlassCard>
           </motion.div>
         ))}
       </div>
 
-      {/* --- FILTER SYSTEM --- */}
-      <GlassCard className="p-5 bg-white dark:bg-slate-950/20 border border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col gap-4 mb-6">
-          <input
-            type="text" 
-            placeholder="Query nodes by signature, corporate email, or institutional affiliation..."
-            value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-white/5 rounded-xl px-4 py-2.5 text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-cyan-500/60 font-mono shadow-inner"
-          />
+      {/* --- SEARCH FILTER CONTROLS --- */}
+      <GlassCard className="p-5 bg-white dark:bg-slate-950/20 border border-slate-200 dark:border-white/5 rounded-2xl shadow-xl">
+        <div className="flex flex-col gap-4 mb-5">
+          <div className="relative w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
+            <input
+              type="text" 
+              placeholder="Search by user name, official email, or institution..."
+              value={search} 
+              onChange={e => setSearch(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl pl-10 pr-10 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all placeholder:text-slate-400"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                <X size={14} />
+              </button>
+            )}
+          </div>
           
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-white/5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between pt-2 border-t border-slate-100 dark:border-white/5">
             <div className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-[10px] font-mono text-slate-500 uppercase mr-1 flex items-center gap-1 font-bold"><Activity size={10}/> Role Node:</span>
+              <span className="text-xs font-semibold text-slate-400 mr-2 flex items-center gap-1"><Activity size={12}/> Role Type:</span>
               {['all', 'student', 'tutor', 'validator', 'finance', 'admin'].map(r => (
                 <button key={r} onClick={() => setRoleFilter(r)}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-mono capitalize transition-all ${roleFilter === r ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/40 font-bold' : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400'}`}>
-                  {r === 'validator' ? 'Academic Validator' : r === 'finance' ? 'Finance Admin' : r}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium capitalize transition-all ${roleFilter === r ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20 font-semibold' : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-white/10'}`}>
+                  {r === 'validator' ? 'Validator' : r === 'finance' ? 'Finance' : r}
                 </button>
               ))}
             </div>
 
             <div className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-[10px] font-mono text-slate-500 uppercase mr-1 flex items-center gap-1 font-bold"><Radio size={10}/> Lifecycle:</span>
+              <span className="text-xs font-semibold text-slate-400 mr-2 flex items-center gap-1"><Radio size={12}/> Status:</span>
               {['all', 'active', 'invited', 'pending', 'suspended'].map(s => (
                 <button key={s} onClick={() => setStatusFilter(s)}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-mono capitalize transition-all ${statusFilter === s ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/40 font-bold' : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400'}`}>
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium capitalize transition-all ${statusFilter === s ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 font-semibold' : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-white/10'}`}>
                   {s}
                 </button>
               ))}
@@ -275,80 +280,86 @@ const fetchAllUsersAndPreAuth = async () => {
           </div>
         </div>
 
-        {/* --- MAIN REGISTRY TABLE --- */}
+        {/* --- MAIN CORE DATA TABLE --- */}
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900/10">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500 font-mono text-xs">
-              <Loader className="animate-spin text-cyan-500" size={20} />
-              <span className="tracking-widest animate-pulse">SYNCHRONIZING CENTRAL STORAGE REGISTRY...</span>
+            <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400 text-sm">
+              <Loader className="animate-spin text-blue-500" size={24} />
+              <span className="animate-pulse font-medium">Synchronizing Secure User Records...</span>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+              <AlertCircle size={36} className="text-slate-300 dark:text-slate-600 mb-2" />
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No Users Found</h3>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs">We couldn't find any user profiles matching your filters.</p>
             </div>
           ) : (
             <table className="w-full border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-white/5 bg-slate-100/80 dark:bg-white/[0.01] text-left text-[10px] font-mono tracking-wider text-slate-600 dark:text-slate-400 uppercase">
-                  <th className="p-4 font-bold">Personnel Information</th>
-                  <th className="p-4 font-bold">Scope Context</th>
-                  <th className="p-4 font-bold">Routing Authority</th>
-                  <th className="p-4 font-bold">Operational Lifecycle</th>
-                  <th className="p-4 font-bold">Timestamp</th>
-                  <th className="p-4 text-center font-bold">Metrics Index</th>
-                  <th className="p-4 text-right font-bold">Access Governance</th>
+                <tr className="border-b border-slate-200 dark:border-white/5 bg-slate-50/70 dark:bg-white/[0.01] text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  <th className="p-4">User Information</th>
+                  <th className="p-4">Language Scope</th>
+                  <th className="p-4">Role System</th>
+                  <th className="p-4">Account Lifecycle</th>
+                  <th className="p-4">Joined Date</th>
+                  <th className="p-4 text-center">Activity Matrix</th>
+                  <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200/70 dark:divide-white/5">
+              <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-slate-700 dark:text-slate-300">
                 {filtered.map(u => (
-                  <tr key={u.id} className="hover:bg-slate-50/80 dark:hover:bg-white/[0.01] transition-colors group">
+                  <tr key={u.id} className="hover:bg-slate-50/60 dark:hover:bg-white/[0.01] transition-all group">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-white/10 flex items-center justify-center text-cyan-700 dark:text-cyan-400 text-xs font-black shadow-sm group-hover:border-cyan-500/50">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 border border-slate-200/60 dark:border-white/10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-bold shadow-sm group-hover:border-blue-500/30 transition-all">
                           {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-slate-900 dark:text-white tracking-wide group-hover:text-cyan-700 dark:group-hover:text-cyan-400 transition-colors">{u.name || 'Anonymous Node'}</p>
-                          <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono mt-0.5 font-medium">{u.email}</p>
-                          <div className="inline-block mt-1 px-1.5 py-0.5 bg-blue-50 dark:bg-indigo-500/5 border border-blue-200 dark:border-indigo-500/10 rounded text-[9px] font-mono font-bold text-blue-700 dark:text-indigo-300">
-                            {u.institution || 'Independent Affiliate'}
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white tracking-wide group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{u.name || 'Anonymous User'}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{u.email}</p>
+                          <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded text-[10px] font-medium text-slate-600 dark:text-slate-400">
+                            <Building size={10} /> {u.institution || 'Independent Affiliate'}
                           </div>
                         </div>
                       </div>
                     </td>
 
                     <td className="p-4">
-                      <div className="flex items-center gap-1 text-[11px] font-mono text-slate-700 dark:text-slate-300">
-                        <Globe size={11} className="text-slate-400" />
-                        <span className="font-semibold">{u.languageScope || 'All'}</span>
+                      <div className="flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+                        <Globe size={13} className="text-slate-400" />
+                        <span>{u.languageScope || 'All'}</span>
                       </div>
                     </td>
 
                     <td className="p-4">
-                      <span className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wide border ${
-                        u.role === 'admin' ? 'bg-purple-500/10 text-purple-600 border-purple-500/20' :
-                        u.role === 'validator' ? 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' :
-                        u.role === 'finance' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
-                        u.role === 'tutor' ? 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20' :
-                        'bg-slate-500/10 text-slate-600 border-slate-500/20'
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border whitespace-nowrap ${
+                        u.role === 'admin' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20' :
+                        u.role === 'validator' ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20' :
+                        u.role === 'finance' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' :
+                        u.role === 'tutor' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' :
+                        'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20'
                       }`}>
-                        {u.role === 'validator' ? 'Academic Validator' : u.role === 'finance' ? 'Finance Admin' : u.role}
+                        {u.role === 'validator' ? 'Validator' : u.role === 'finance' ? 'Finance' : u.role}
                       </span>
                     </td>
 
                     <td className="p-4">
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold ${
-                        u.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400' : 
-                        u.status === 'invited' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400' : 
-                        u.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400' : 
-                        'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400'
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                        u.status === 'active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400' : 
+                        u.status === 'invited' ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/10 dark:text-blue-400' : 
+                        u.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400' : 
+                        'bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-400'
                       }`}>
-                        {u.status?.toUpperCase()}
+                        {u.status?.toLowerCase()}
                       </span>
                     </td>
 
-                    <td className="p-4 text-[11px] font-mono text-slate-600 dark:text-slate-400 font-medium">{u.joined || '---'}</td>
+                    <td className="p-4 text-xs font-medium text-slate-500 dark:text-slate-400">{u.joined || '---'}</td>
 
-                    <td className="p-4 text-center font-mono">
-                      <span className="block text-xs font-black text-slate-900 dark:text-slate-200">{u.activityCount || 0}</span>
-                      <span className="text-[8px] tracking-wide text-slate-500 uppercase font-bold">
-                        {u.role === 'tutor' ? 'Exams Authored' : u.role === 'validator' ? 'Quality Audits' : u.role === 'finance' ? 'Ledger Rows' : 'Exams Taken'}
+                    <td className="p-4 text-center">
+                      <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">{u.activityCount || 0}</span>
+                      <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">
+                        {u.role === 'tutor' ? 'Exams Authored' : u.role === 'validator' ? 'Audits' : u.role === 'finance' ? 'Ledgers' : 'Exams Taken'}
                       </span>
                     </td>
 
@@ -357,21 +368,36 @@ const fetchAllUsersAndPreAuth = async () => {
                         {(u.role === 'validator' || u.role === 'finance' || u.role === 'admin') && (
                           <Button 
                             variant="secondary" 
-                            className="px-2.5 py-1.5 text-[10px] font-mono border border-cyan-500/30 text-cyan-700 dark:text-cyan-400 flex items-center gap-1 bg-cyan-500/5 hover:bg-cyan-500/10 rounded-lg transition-all font-bold"
+                            className="px-2.5 py-1.5 text-xs font-medium border border-blue-500/30 text-blue-600 dark:text-blue-400 flex items-center gap-1.5 bg-blue-500/5 hover:bg-blue-500/10 rounded-xl transition-all"
                             onClick={() => openPrivilegeModal(u)}
                           >
-                            <Shield size={11} /> GOVERN
+                            <Shield size={12} /> Permissions
                           </Button>
                         )}
-                        <Button variant="ghost" size="sm" className="p-2 border border-slate-200 dark:border-white/5 bg-white dark:bg-transparent rounded-lg">
-                          <Mail size={12} className="text-slate-600 dark:text-slate-400" />
+                        <Button variant="ghost" size="sm" className="p-2 border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-transparent hover:bg-slate-100 rounded-xl">
+                          <Mail size={13} className="text-slate-500 dark:text-slate-400" />
                         </Button>
+                        
                         <Button 
                           variant={u.status === 'suspended' ? 'success' : 'danger'} 
-                          size="sm" className="text-[10px] font-mono py-1.5 rounded-lg text-white font-bold"
+                          size="sm" 
+                          className={`text-xs font-semibold py-1.5 px-3 rounded-xl flex items-center gap-1 text-white shadow-sm transition-all duration-200 ${
+                            u.status === 'suspended' ? 'bg-emerald-600 hover:bg-emerald-500' : u.status === 'invited' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-rose-600 hover:bg-rose-500'
+                          }`}
                           onClick={() => toggleSuspend(u.id, u.status, u.email)}
                         >
-                          {u.status === 'suspended' ? 'ACTIVATE' : u.status === 'invited' ? 'REVOKE' : 'SUSPEND'}
+                          {u.status === 'suspended' ? <Check size={12}/> : u.status === 'invited' ? <X size={12}/> : <Ban size={12}/>}
+                          <span className="hidden sm:inline">{u.status === 'suspended' ? 'ACTIVATE' : u.status === 'invited' ? 'REVOKE' : 'SUSPEND'}</span>
+                        </Button>
+
+                        {/* 🚀 PERMANENT SYSTEM NODE PURGE ACTION BUTTON */}
+                        <Button 
+                          variant="danger" 
+                          size="sm" 
+                          className="p-2 border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all"
+                          onClick={() => handleDeleteUser(u.id, u.status, u.email)}
+                        >
+                          <Trash2 size={13} />
                         </Button>
                       </div>
                     </td>
@@ -383,52 +409,52 @@ const fetchAllUsersAndPreAuth = async () => {
         </div>
       </GlassCard>
 
-      {/* --- MODAL DIALOGS: PROVISION INTERNAL SYSTEM STAFF NODES --- */}
+      {/* --- ADD STAFF MODAL --- */}
       <AnimatePresence>
         {isCreateModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/70 backdrop-blur-md">
-            <motion.div initial={{ scale: 0.97, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.97, opacity: 0 }}>
-              <GlassCard className="w-full max-w-lg p-6 bg-white dark:bg-[#070c19] border border-slate-300 dark:border-white/10 shadow-2xl relative">
-                <div className="flex justify-between items-center mb-5 border-b border-slate-200 dark:border-white/5 pb-4">
-                  <h3 className="text-sm font-bold font-mono text-slate-900 dark:text-white flex items-center gap-2 uppercase">
-                    <UserPlus className="text-cyan-600" size={16} /> Provision Internal System Node
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-md">
+            <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}>
+              <GlassCard className="w-full max-w-lg p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative">
+                <div className="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-white/5 pb-4">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <UserPlus className="text-blue-500" size={18} /> Add New Staff Node
                   </h3>
-                  <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-lg">
-                    <X size={16} />
+                  <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl">
+                    <X size={18} />
                   </button>
                 </div>
 
-                <form onSubmit={handleProvisionUser} className="space-y-4 font-sans">
+                <form onSubmit={handleProvisionUser} className="space-y-4">
                   {formError && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-[11px] font-mono p-3 rounded-xl flex items-center gap-2">
-                      <ShieldAlert size={14} /> {formError}
+                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs p-3 rounded-xl flex items-center gap-2 font-medium">
+                      <ShieldAlert size={15} /> {formError}
                     </div>
                   )}
 
                   <div className="space-y-1">
-                    <label className="text-[11px] font-mono text-slate-600 dark:text-slate-400 uppercase font-bold">Staff Full Name</label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Staff Full Name</label>
                     <input 
-                      type="text" required placeholder="e.g., Prof. Rojitha Sethsika"
+                      type="text" required placeholder="e.g., Kavindu Perera"
                       value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-white/5 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs font-mono shadow-inner focus:outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[11px] font-mono text-slate-600 dark:text-slate-400 uppercase font-bold">Official Corporate Email</label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Official Corporate Email</label>
                     <input 
-                      type="email" required placeholder="e.g., validator.se@lnbti.com"
+                      type="email" required placeholder="e.g., validator@lnbti.com"
                       value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-white/5 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs font-mono shadow-inner focus:outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[11px] font-mono text-slate-600 dark:text-slate-400 uppercase font-bold">System Role</label>
+                      <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">System Role</label>
                       <select
                         value={createForm.role} onChange={e => setCreateForm(p => ({ ...p, role: e.target.value, privileges: [] }))}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-white/5 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs font-mono"
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none"
                       >
                         <option value="validator">Academic Validator</option>
                         <option value="finance">Finance Admin</option>
@@ -438,47 +464,47 @@ const fetchAllUsersAndPreAuth = async () => {
                     <div className="space-y-1">
                       {createForm.role === 'validator' ? (
                         <>
-                          <label className="text-[11px] font-mono text-slate-600 dark:text-slate-400 uppercase font-bold">Language Scope Context</label>
+                          <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Language Scope</label>
                           <select
                             value={createForm.languageScope} onChange={e => setCreateForm(p => ({ ...p, languageScope: e.target.value }))}
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-white/5 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs font-mono"
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none"
                           >
-                            <option value="Japanese">Japanese Language Scope</option>
-                            <option value="Korean">Korean Language Scope</option>
+                            <option value="Japanese">Japanese Language</option>
+                            <option value="Korean">Korean Language</option>
                           </select>
                         </>
                       ) : (
                         <>
-                          <label className="text-[11px] font-mono text-slate-600 dark:text-slate-400 uppercase font-bold">Affiliated Institute</label>
+                          <label className="text-xs font-semibold text-slate-400 uppercase">Affiliation</label>
                           <input 
-                            type="text" disabled value="LNBTI Finance Operations"
-                            className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-white/5 rounded-xl px-3 py-2 text-slate-500 text-xs font-mono"
+                            type="text" disabled value="LNBTI Operations"
+                            className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2.5 text-slate-400 text-sm cursor-not-allowed"
                           />
                         </>
                       )}
                     </div>
                   </div>
 
-                  <div className="space-y-2 pt-3 border-t border-slate-200 dark:border-white/5">
-                    <label className="text-[11px] font-mono text-slate-700 dark:text-slate-300 uppercase block flex items-center gap-1 font-bold">
-                      <Zap size={11} className="text-cyan-600"/> Inject Functional Dashboard Frameworks
+                  <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-white/5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1">
+                      <Zap size={13} className="text-amber-500"/> Assign Action Permissions
                     </label>
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
                       {AVAILABLE_PRIVILEGES.filter(p => p.role === createForm.role).map((p) => {
                         const isChecked = createForm.privileges.includes(p.key);
                         return (
                           <div 
                             key={p.key} onClick={() => handleToggleFormPrivilege(p.key)}
                             className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                              isChecked ? 'bg-cyan-500/[0.04] border-cyan-500/50' : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-white/5'
+                              isChecked ? 'bg-blue-500/[0.04] border-blue-500/40' : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10'
                             }`}
                           >
-                            <div className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${isChecked ? 'bg-cyan-500 border-cyan-500' : 'border-slate-300'}`}>
-                              {isChecked && <CheckCircle size={10} className="text-white dark:text-slate-950" />}
+                            <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
+                              {isChecked && <Check size={11} className="text-white" />}
                             </div>
                             <div>
-                              <div className={`text-[11px] font-mono font-bold ${isChecked ? 'text-cyan-700 dark:text-cyan-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
-                              <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">{p.desc}</div>
+                              <div className={`text-xs font-semibold ${isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">{p.desc}</div>
                             </div>
                           </div>
                         );
@@ -486,10 +512,10 @@ const fetchAllUsersAndPreAuth = async () => {
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-white/5">
-                    <Button type="button" variant="ghost" size="sm" className="font-mono text-[10px]" onClick={() => setIsCreateModalOpen(false)}>ABORT</Button>
-                    <Button type="submit" variant="success" size="sm" disabled={isSubmitting} className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-mono text-[10px] tracking-widest px-4">
-                      {isSubmitting ? 'PROVISIONING...' : 'INITIALIZE NODE'}
+                  <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setIsCreateModalOpen(false)}>Cancel</Button>
+                    <Button type="submit" variant="success" size="sm" disabled={isSubmitting} className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 rounded-xl shadow-sm">
+                      {isSubmitting ? 'Provisioning...' : 'Authorize User'}
                     </Button>
                   </div>
                 </form>
@@ -499,31 +525,31 @@ const fetchAllUsersAndPreAuth = async () => {
         )}
       </AnimatePresence>
 
-      {/* --- PRIVILEGE ACCESS GOVERNANCE MODAL --- */}
+      {/* --- PRIVILEGE GOVERNANCE MODAL --- */}
       <AnimatePresence>
         {isPrivilegeModalOpen && selectedUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/70 backdrop-blur-md">
-            <motion.div initial={{ scale: 0.97, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.97, opacity: 0 }}>
-              <GlassCard className="w-full max-w-md p-6 bg-white dark:bg-[#070c19] border border-slate-300 dark:border-white/10 shadow-2xl relative">
-                <div className="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-white/5 pb-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-md">
+            <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}>
+              <GlassCard className="w-full max-w-md p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-white/5 pb-4">
                   <div>
-                    <h3 className="text-sm font-bold font-mono text-slate-900 dark:text-white flex items-center gap-2 uppercase">
-                      <Shield className="text-indigo-600" size={16} /> Dynamic Capability Configuration
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Shield className="text-indigo-500" size={18} /> Update Staff Privileges
                     </h3>
-                    <p className="text-[10px] font-mono text-slate-600 dark:text-slate-400 mt-1 uppercase tracking-wider font-bold">{selectedUser.name || 'Staff User'} • {selectedUser.role?.toUpperCase()}</p>
+                    <p className="text-xs font-semibold text-slate-400 mt-1 capitalize">{selectedUser.name || 'Staff User'} • {selectedUser.role}</p>
                   </div>
-                  <button onClick={() => setIsPrivilegeModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-lg">
-                    <X size={16} />
+                  <button onClick={() => setIsPrivilegeModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl">
+                    <X size={18} />
                   </button>
                 </div>
 
                 {selectedUser.role === 'validator' && (
                   <div className="mb-4 space-y-1">
-                    <label className="text-[10px] font-mono text-slate-500 uppercase font-bold">Modify Assigned Language Scope</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Modify Assigned Language Scope</label>
                     <select
                       value={selectedUser.languageScope}
                       onChange={e => setSelectedUser(prev => ({ ...prev, languageScope: e.target.value }))}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-white/5 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs font-mono"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none"
                     >
                       <option value="Japanese">Japanese Language Only</option>
                       <option value="Korean">Korean Language Only</option>
@@ -531,31 +557,31 @@ const fetchAllUsersAndPreAuth = async () => {
                   </div>
                 )}
 
-                <div className="space-y-2.5 mb-5 max-h-60 overflow-y-auto pr-1">
+                <div className="space-y-2.5 mb-5 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
                   {AVAILABLE_PRIVILEGES.filter(p => p.role === selectedUser.role).map((p) => {
                     const isChecked = selectedUser.privileges?.includes(p.key);
                     return (
                       <div 
                         key={p.key} onClick={() => handleToggleExistingPrivilege(p.key)}
                         className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                          isChecked ? 'bg-indigo-500/[0.04] border-indigo-500/50' : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-white/5'
+                          isChecked ? 'bg-indigo-500/[0.04] border-indigo-500/40' : 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10'
                         }`}
                       >
-                        <div className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${isChecked ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300'}`}>
-                          {isChecked && <CheckCircle size={10} className="text-white dark:text-slate-950" />}
+                        <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isChecked ? 'bg-indigo-50 border-indigo-500' : 'border-slate-300'}`}>
+                          {isChecked && <Check size={11} className="text-white" />}
                         </div>
                         <div>
-                          <div className={`text-[11px] font-mono font-bold ${isChecked ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
-                          <div className="text-[10px] text-slate-500 mt-1 leading-normal">{p.desc}</div>
+                          <div className={`text-xs font-semibold ${isChecked ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
+                          <div className="text-[11px] text-slate-500 mt-1 leading-normal">{p.desc}</div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-white/5">
-                  <Button variant="ghost" size="sm" className="font-mono text-[10px]" onClick={() => setIsPrivilegeModalOpen(false)}>CLOSE</Button>
-                  <Button variant="success" size="sm" className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-mono text-[10px] tracking-wider px-4 font-bold" onClick={savePrivileges}>COMMIT CONFIG</Button>
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
+                  <Button variant="ghost" size="sm" onClick={() => setIsPrivilegeModalOpen(false)}>Close</Button>
+                  <Button variant="success" size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 rounded-xl shadow-sm" onClick={savePrivileges}>Save Configuration</Button>
                 </div>
               </GlassCard>
             </motion.div>

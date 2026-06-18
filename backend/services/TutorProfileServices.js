@@ -8,13 +8,23 @@ class TutorProfileServices {
         return doc.data();
     }
 
-    // 2. Profile එක ආරක්ෂිතව Update කිරීම (ඩේටා මැකෙන්නේ නැත)
+    
     async updateTutorProfile(uid, profileData) {
         const userRef = db.collection('users').doc(uid);
         
+        // Phone Number Validation: Checked only if a phone number field is explicitly supplied
+        if (profileData.phone) {
+            const cleanPhone = profileData.phone.replace(/\s+/g, '').replace(/-/g, ''); // Removes spaces and hyphens
+            const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+            
+            if (!phoneRegex.test(cleanPhone)) {
+                throw new Error('Invalid Sri Lankan phone number format. Use 07xxxxxxxx or +947xxxxxxxx.');
+            }
+        }
+
         const updatePayload = {};
 
-        // 💡 ඩේටා ඔක්කොම තියෙන්නේ Root fields විදිහට නිසා සාමාන්‍ය විදිහට චෙක් කරලා payload එකට දානවා
+        
         if (profileData.name) updatePayload.name = profileData.name;
         if (profileData.phone) updatePayload.phone = profileData.phone;
         if (profileData.address) updatePayload.address = profileData.address;
@@ -22,27 +32,62 @@ class TutorProfileServices {
         if (profileData.qualifications) updatePayload.qualifications = profileData.qualifications;
         if (profileData.university) updatePayload.university = profileData.university;
 
-        // payload එක හිස් නැත්නම් විතරක් update කරන්න
+        
         if (Object.keys(updatePayload).length > 0) {
             await userRef.update(updatePayload);
         }
 
         return { success: true, message: 'Profile updated successfully' };
     }
-    
 
-    // Bank card වැඩ ටික කලින් තිබ්බා වගේමයි...
+    
+    async deleteTutorAccount(uid) {
+        try {
+            const userRef = db.collection('users').doc(uid);
+
+    
     async getBankCards(uid) {
         const cardsSnapshot = await db.collection('users').doc(uid).collection('bankCards').get();
         const cards = [];
         cardsSnapshot.forEach(doc => { cards.push({ id: doc.id, ...doc.data() }); });
         return cards;
     }
+    
     async addBankCard(uid, cardData) {
         const cardsRef = db.collection('users').doc(uid).collection('bankCards');
-        const newCardRef = await cardsRef.add(cardData);
-        return { id: newCardRef.id, ...cardData };
+        
+        // 1. Max Card Limit Check: Verify if a linked payout record already exists
+        const cardsSnapshot = await cardsRef.get();
+        if (!cardsSnapshot.empty) {
+            throw new Error('You can only add a maximum of 1 bank card for payouts.');
+        }
+
+        const { bankName, accountNo, accountHolder } = cardData;
+
+        // 2. Card Number Validation (Ensures strict numerical compliance between 12 and 19 characters)
+        // Standard rule set designed for cross-matching common banking system structures. Strips spaces/dashes first.
+        const cleanAccountNo = accountNo.replace(/\s+/g, '').replace(/-/g, '');
+        const isOnlyDigits = /^\d+$/.test(cleanAccountNo);
+
+        if (!isOnlyDigits || cleanAccountNo.length < 12 || cleanAccountNo.length > 19) {
+            throw new Error('Invalid Card/Account Number. Please enter a valid number containing 12 to 19 digits.');
+        }
+
+        // 3. Card Masking: Isolates the final trailing 4 digits to prevent clear-text sensitive exposures
+        const lastFourDigits = cleanAccountNo.slice(-4);
+        const maskedAccountNo = `**** **** **** ${lastFourDigits}`;
+
+        const secureCardData = {
+            bankName,
+            accountNo: maskedAccountNo, // Encrypted/masked representation persisted directly to db collections
+            accountHolder,
+            createdAt: new Date()
+        };
+
+        const newCardRef = await cardsRef.add(secureCardData);
+        return { id: newCardRef.id, ...secureCardData };
     }
+    
     async deleteBankCard(uid, cardId) {
         const cardRef = db.collection('users').doc(uid).collection('bankCards').doc(cardId);
         await cardRef.delete();

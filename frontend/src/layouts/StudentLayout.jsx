@@ -4,13 +4,13 @@ import DashboardSidebar from '../components/layout/DashboardSidebar';
 
 const navItems = [
   { label: 'Dashboard', path: '', icon: LayoutDashboard },
+  { label: 'Performance', path: '/performance', icon: BarChart2 },
   { label: 'Marketplace', path: '/marketplace', icon: ShoppingBag },
   { label: 'My Exams', path: '/exams', icon: BookOpen },
   { label: 'Study Planner', path: '/planner', icon: CalendarDays },
   { label: 'Performance', path: '/performance', icon: BarChart2 },
   { label: 'Subscription', path: '/subscription', icon: Crown },
-  { label: 'Profile', path: '/profile', icon: User },
-  
+  { label: 'Profile', path: '/profile', icon: User }
 ];
 
 export default function StudentLayout() {

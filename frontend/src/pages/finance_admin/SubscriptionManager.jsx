@@ -214,7 +214,7 @@ export default function SubscriptionManager() {
                         {plan.popular && plan.active && <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-[10px] font-bold uppercase tracking-wider">Most Popular</div>}
                         <div className="p-3 bg-white/5 rounded-xl w-fit mb-3"><Icon size={24} className="text-purple-400" /></div>
                         <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
-                        <div className="text-2xl font-bold text-white mb-4">LKR {plan.price} <span className="text-xs text-gray-400">/mo</span></div>
+                        <div className="text-2xl font-bold text-white mb-4">LKR {plan.price} <span className="text-xs text-gray-400">/month</span></div>
                         <div className="text-xs text-amber-400 mb-4 flex items-center gap-1"><Sparkles size={12}/>{plan.credits} credits granted</div>
                         <div className="space-y-2 mb-6">
                           {plan.features?.map((f, idx) => (
@@ -247,7 +247,7 @@ export default function SubscriptionManager() {
                       </div>
                       <div className="space-y-2 mb-4">
                         <div className="flex justify-between text-sm bg-white/5 p-2 rounded-lg"><span className="text-gray-400">Credits Required</span><span className="font-bold text-white">{cat.credits}</span></div>
-                        <div className="flex justify-between text-sm bg-white/5 p-2 rounded-lg"><span className="text-gray-400">Exams Count</span><span className="text-gray-300">{cat.exams}</span></div>
+                        {/* <div className="flex justify-between text-sm bg-white/5 p-2 rounded-lg"><span className="text-gray-400">Exams Count</span><span className="text-gray-300">{cat.exams}</span></div> */}
                       </div>
                       <div className="flex gap-2">
                         <button onClick={() => toggleExamStatus(cat.id, cat.status)} className={`flex-1 py-2 rounded-xl text-xs font-medium ${cat.status === 'active' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>{cat.status === 'active' ? 'Active' : 'Inactive'}</button>
@@ -294,7 +294,7 @@ export default function SubscriptionManager() {
                 <div className="space-y-4">
                   <div><label className="text-xs text-gray-400 block mb-1">Category Domain Identifier</label><input type="text" value={examFormData.name} onChange={(e) => setExamFormData({ ...examFormData, name: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
                   <div><label className="text-xs text-gray-400 block mb-1">Valuation Token Weight (Credits)</label><input type="number" value={examFormData.credits} onChange={(e) => setExamFormData({ ...examFormData, credits: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
-                  <div><label className="text-xs text-gray-400 block mb-1">Total Loaded Exam Structures</label><input type="number" value={examFormData.exams} onChange={(e) => setExamFormData({ ...examFormData, exams: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
+                  {/* <div><label className="text-xs text-gray-400 block mb-1">Total Loaded Exam Structures</label><input type="number" value={examFormData.exams} onChange={(e) => setExamFormData({ ...examFormData, exams: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div> */}
                 </div>
               )}
 

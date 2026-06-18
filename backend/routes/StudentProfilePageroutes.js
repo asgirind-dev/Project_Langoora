@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const studentController = require('../controllers/StudentProfilePagecontroller');
+const studentController = require('../controllers/StudentProfilePageController');
 
 // Student profile routes
 router.get('/:uid', studentController.getStudentProfile);
