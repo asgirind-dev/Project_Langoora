@@ -17,7 +17,7 @@ const navLinks = [
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { user, logout } = useAuth(); // Destructured 'user' directly to evaluate inline roles and profile metadata states
+  const { user, logout } = useAuth(); 
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,14 +26,14 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', handler);
   }, []);
 
-  // Centralized navigation engine evaluating granular verification rules before routing
+
   const handleDashboardNavigation = () => {
     if (!user) {
       navigate('/auth/login');
       return;
     }
 
-    // Explicitly fallback to structured lifecycle targets depending on account status and system access tiers
+
     if (user.role === 'tutor') {
       if (user.status === 'pending') {
         navigate('/auth/under-review');
@@ -43,7 +43,6 @@ export default function Navbar() {
     } else if (user.role === 'admin') {
       navigate('/admin');
     } else {
-      // Default trajectory safely mapped for active students
       navigate('/student');
     }
   };
