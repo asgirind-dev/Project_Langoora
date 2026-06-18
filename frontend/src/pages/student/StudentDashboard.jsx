@@ -107,7 +107,7 @@ export default function StudentDashboard() {
           <p className="text-sm text-gray-400 mb-6 text-center">JLPT N2 · Next exam in 45 days</p>
           <CircularProgress value={74} size={150} strokeWidth={12} color="#3b82f6" sublabel="Ready" />
           <div className="mt-6 w-full space-y-3">
-            {sectionScores.slice(0, 3).map(s => (
+            {sectionScores && sectionScores.slice(0, 3).map(s => (
               <div key={s.section}>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-400">{s.section}</span>
@@ -134,7 +134,7 @@ export default function StudentDashboard() {
             <Button variant="ghost" size="sm" onClick={() => navigate('/student/exams')}>View All <ArrowRight size={14} /></Button>
           </div>
           <div className="space-y-3">
-            {recentExams.map(exam => (
+            {recentExams && recentExams.map(exam => (
               <div key={exam.id} className="flex items-center gap-4 p-3 bg-white/3 rounded-xl border border-white/5 hover:border-white/10 transition-all">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
                   exam.status === 'passed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
@@ -189,7 +189,7 @@ export default function StudentDashboard() {
           <Button variant="ghost" size="sm" onClick={() => navigate('/student/marketplace')}>Browse All <ArrowRight size={14} /></Button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {featuredExams.slice(0, 3).map((exam, i) => (
+          {featuredExams && featuredExams.slice(0, 3).map((exam, i) => (
             <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
               <GlassCard hover className="p-4" onClick={() => navigate(`/exam/${exam.id}/preview`)}>
                 <div className="flex gap-3">
@@ -198,7 +198,10 @@ export default function StudentDashboard() {
                     <p className="text-sm font-medium text-white line-clamp-2 leading-snug mb-1">{exam.title}</p>
                     <p className="text-xs text-gray-400">{exam.tutor}</p>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-blue-400 font-semibold text-sm">LKR {exam.price.toLocaleString()}</span>
+                      {/* FIXED LINE: Safely checks for price and provides default 0 if it's undefined */}
+                      <span className="text-blue-400 font-semibold text-sm">
+                        LKR {exam?.price ? exam.price.toLocaleString() : '0'}
+                      </span>
                       <Badge color="blue">{exam.level}</Badge>
                     </div>
                   </div>
