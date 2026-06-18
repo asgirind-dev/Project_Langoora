@@ -7,7 +7,7 @@ import Navbar from '../../components/layout/Navbar';
 import Footer from '../../components/layout/Footer';
 import Button from '../../components/ui/Button';
 
-// Backend එකෙන් එන string icon එක Lucide component එකකට map කරන grid එක
+
 const iconMap = {
   Zap: Zap,
   Rocket: Rocket,
@@ -27,7 +27,6 @@ export default function PricingPage() {
     const fetchPlans = async () => {
       try {
         setLoading(true);
-        // Backend API Endpoint Loop එකෙන් dynamic data ඇදීම
         const res = await axios.get('http://localhost:5000/api/subscription-management/plans');
         setPlans(res.data);
       } catch (e) { 
@@ -138,8 +137,6 @@ export default function PricingPage() {
           )}
         </div>
       </section>
-      
-      <Footer />
     </div>
   );
 }

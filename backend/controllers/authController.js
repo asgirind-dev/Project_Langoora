@@ -2,6 +2,10 @@ const { db, auth } = require('../config/firebase');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+// 💡 Service Layer Link integration
+const authService = require('../services/authService');
+const tutorValidationService = require('../services/tutorValidationService'); 
+
 // ==========================================
 // 1. REGISTER LOGIC
 // ==========================================
@@ -9,12 +13,30 @@ exports.registerUser = async (req, res) => {
   const { email, password, role, userData } = req.body;
 
   try {
-    if (!email || !password || !role) {
+    if (!email || !password || !role || !userData) {
       return res.status(400).json({ message: 'Missing required registration fields.' });
+    }
+
+    // 🔒 Back-end Enterprise Validation Interceptions
+    if (!authService.validateFullName(userData.name)) {
+      return res.status(400).json({ message: 'Invalid name syntax configuration. Use alphabetic letters only.' });
+    }
+    if (!authService.validateEmail(email)) {
+      return res.status(400).json({ message: 'Invalid email address structure layout.' });
+    }
+    if (!authService.validatePasswordPolicy(password)) {
+      return res.status(400).json({ message: 'Password policy breakdown. Requires 8-12 chars with min 3 dynamic complexity matches.' });
+    }
+    if (!authService.validateSriLankanPhone(userData.phone)) {
+      return res.status(400).json({ message: 'Invalid connection node phone sequence. Drop a valid Sri Lankan mobile sequence.' });
+    }
+    if (!authService.validateAgeLimit(userData.dob)) {
+      return res.status(400).json({ message: 'Age barrier restriction failed. You must be at least 15 years old to hook up.' });
     }
 
     const formattedEmail = email.toLowerCase().trim();
 
+    // Check pre-authorized staging block
     const preAuthRef = db.collection('pre_authorized_staff').doc(formattedEmail);
     const preAuthDoc = await preAuthRef.get();
 
@@ -32,6 +54,10 @@ exports.registerUser = async (req, res) => {
       isPreAuthStaff = true;
     }
 
+    // 🔐 FIX: ඊළඟ වතාවේ සාර්ථකව ලොගින් වෙන්න පුළුවන් වෙන්න පාස්වර්ඩ් එක බීක්‍රිප්ට් කරගන්නවා මචන්
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     const userRecord = await auth.createUser({
       email: formattedEmail,
       password: password,
@@ -41,19 +67,41 @@ exports.registerUser = async (req, res) => {
     const userProfile = {
       uid: userRecord.uid,
       email: formattedEmail,
+      password: hashedPassword, // 👈 ඩේටාබේස් එකට හෑෂ් කරපු පාස්වර්ඩ් එක ඇතුළත් කළා
       role: finalRole, 
       status: finalRole === 'tutor' ? 'pending' : 'active',
       joined: new Date().toISOString().split('T')[0],
-      ...userData,
+      name: userData.name.trim(),
+      phone: userData.phone.trim(),
+      dob: userData.dob,
+      ...(finalRole === 'tutor' && {
+        university: userData.university?.trim() || '',
+        qualifications: userData.qualifications?.trim() || '',
+        address: userData.address?.trim() || '',
+        certificateData: userData.certificateData || ''
+      }),
       ...additionalStaffData, 
       createdAt: new Date().toISOString()
     };
 
+    // Users Collection එකේ Profile එක සේව් කරනවා
     await db.collection('users').doc(userRecord.uid).set(userProfile);
+
+    // 🚀 FIX: කන්ඩිෂන් එක වඩාත් ආරක්ෂිත කරලා ඇප්ලිකේෂන් ක්‍රියේට් කරන ලොජික් එක මෙතනින් රන් කරා
+    if (finalRole === 'tutor' || role === 'tutor') {
+      console.log(`LOG: Spawning tutor application node for UID: ${userRecord.uid}`);
+      await tutorValidationService.createApplication(userRecord.uid, {
+        qualifications: userData.qualifications?.trim() || 'JLPT Level Unspecified',
+        certificateData: userData.certificateData || ''
+      });
+    }
 
     if (isPreAuthStaff) {
       await preAuthRef.delete();
     }
+
+    // Front-end එකට රිටන් කරන්න කලින් සේෆ්ටි එකට පාස්වර්ඩ් එක අයින් කරනවා
+    delete userProfile.password;
 
     const appToken = jwt.sign(
       { id: userRecord.uid, role: finalRole },
@@ -79,9 +127,6 @@ exports.loginUser = async (req, res) => {
   const { email, password, idToken } = req.body;
 
   try {
-    // ------------------------------------------
-    // PATHWAY A: ID TOKEN VALIDATION (Frontend Firebase Auth Integrations)
-    // ------------------------------------------
     if (idToken) {
       const decodedToken = await auth.verifyIdToken(idToken);
       const uid = decodedToken.uid;
@@ -89,7 +134,6 @@ exports.loginUser = async (req, res) => {
       const nameFromToken = decodedToken.name || 'User';
 
       let userDoc = await db.collection('users').doc(uid).get();
-
 
       if (!userDoc.exists) {
         return res.status(200).json({
@@ -111,20 +155,12 @@ exports.loginUser = async (req, res) => {
         { expiresIn: '1d' }
       );
 
-
       return res.status(200).json({ 
         token: appToken, 
-        user: { 
-          id: uid, 
-          uid: uid, 
-          ...userData 
-        } 
+        user: { id: uid, uid: uid, ...userData } 
       });
     }
 
-    // ------------------------------------------
-    // PATHWAY B: LEGACY BACKEND AUTHENTICATION (Bcrypt / Postman Flow)
-    // ------------------------------------------
     if (!email || !password) {
       return res.status(400).json({ message: 'Please provide valid credentials or an identity idToken.' });
     }
@@ -145,7 +181,6 @@ exports.loginUser = async (req, res) => {
       return res.status(403).json({ message: 'Your account has been suspended!' });
     }
 
-    // Bcrypt Password Verification
     if (userData.password && (userData.password.startsWith('$2a$') || userData.password.startsWith('$2b$'))) {
       const isMatch = await bcrypt.compare(password, userData.password);
       if (!isMatch) return res.status(400).json({ message: 'Invalid credentials!' });
@@ -160,11 +195,7 @@ exports.loginUser = async (req, res) => {
       
       return res.status(200).json({ 
         token: appToken, 
-        user: { 
-          id: userId, 
-          uid: userId, 
-          ...userData 
-        } 
+        user: { id: userId, uid: userId, ...userData } 
       });
     }
 
@@ -187,6 +218,13 @@ exports.completeGoogleRegistration = async (req, res) => {
       return res.status(400).json({ message: 'Missing required parameters.' });
     }
 
+    if (!authService.validateSriLankanPhone(phone)) {
+      return res.status(400).json({ message: 'Invalid connection node phone sequence. Drop a valid Sri Lankan mobile sequence.' });
+    }
+    if (!authService.validateAgeLimit(dob)) {
+      return res.status(400).json({ message: 'Age barrier restriction failed. You must be at least 15 years old to hook up.' });
+    }
+
     const userCheck = await db.collection('users').doc(uid).get();
     if (userCheck.exists) {
       return res.status(400).json({ message: 'Profile configuration already established.' });
@@ -196,7 +234,7 @@ exports.completeGoogleRegistration = async (req, res) => {
       uid: uid,
       email: email.toLowerCase().trim(),
       name: name,
-      phone: phone,
+      phone: phone.trim(),
       dob: dob,
       role: role || 'student',
       status: 'active',

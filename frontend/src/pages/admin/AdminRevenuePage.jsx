@@ -88,7 +88,8 @@ export default function AdminRevenuePage() {
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="month" tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
-            <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={v => [`LKR ${v.toLocaleString()}`, '']} />
+            {/* 💡 Safe Chart Tooltip Context */}
+            <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff' }} formatter={v => [`LKR ${v ? v.toLocaleString() : '0'}`, '']} />
             <Bar dataKey="tutors" fill="#3b82f6" radius={[4,4,0,0]} name="Tutor Payouts" stackId="a" />
             <Bar dataKey="platform" fill="#06b6d4" radius={[4,4,0,0]} name="Platform Share" stackId="a" />
           </BarChart>
@@ -115,15 +116,15 @@ export default function AdminRevenuePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {recentTransactions.map(t => (
-                <tr key={t.id} className="hover:bg-white/3">
-                  <td className="py-3 pr-4 text-xs text-blue-400 font-mono">{t.id}</td>
-                  <td className="py-3 pr-4 text-sm text-gray-300">{t.user}</td>
-                  <td className="py-3 pr-4 text-sm text-gray-300">{t.exam}</td>
-                  <td className="py-3 pr-4 text-sm font-semibold text-white">LKR {t.amount.toLocaleString()}</td>
-                  <td className="py-3 pr-4 text-xs text-gray-500">{t.date}</td>
+              {recentTransactions && recentTransactions.map(t => (
+                <tr key={t?.id ?? Math.random()} className="hover:bg-white/3">
+                  <td className="py-3 pr-4 text-xs text-blue-400 font-mono">{t?.id ?? 'N/A'}</td>
+                  <td className="py-3 pr-4 text-sm text-gray-300">{t?.user ?? 'Unknown'}</td>
+                  <td className="py-3 pr-4 text-sm text-gray-300">{t?.exam ?? 'Unknown'}</td>
+                  <td className="py-3 pr-4 text-sm font-semibold text-white">LKR {t?.amount ? t.amount.toLocaleString() : '0'}</td>
+                  <td className="py-3 pr-4 text-xs text-gray-500">{t?.date ?? 'N/A'}</td>
                   <td className="py-3">
-                    <Badge color={t.status === 'completed' ? 'green' : t.status === 'pending' ? 'yellow' : 'red'}>{t.status}</Badge>
+                    <Badge color={t?.status === 'completed' ? 'green' : t?.status === 'pending' ? 'yellow' : 'red'}>{t?.status ?? 'pending'}</Badge>
                   </td>
                 </tr>
               ))}
