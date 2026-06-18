@@ -173,7 +173,7 @@ export default function MyExamsPage() {
                 <div className="flex h-full min-h-[165px]">
                   <img src={exam.thumbnail} alt={exam.title} className="w-32 object-cover flex-shrink-0 group-hover:scale-105 transition-transform duration-500" />
                   
-                  {/* Content Container (flex-col කෑල්ල ලස්සනට හැදුවා) */}
+                 
                   <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
                     
                     <div className="space-y-2">
@@ -187,7 +187,7 @@ export default function MyExamsPage() {
                         </div>
                       </div>
 
-                      {/* 👨‍🏫 TUTOR RECOGNITION LAYER (Layout Fix: Title එකට පල්ලෙහායින් වෙන් කරලා දැම්මා) */}
+                      
                       <div className="flex items-center gap-1.5 text-xs text-blue-400/90 font-medium">
                         <User size={13} className="text-blue-400/70" />
                         <span>Published by: <span className="text-gray-200 font-semibold">{exam.tutor || 'Alternative Tutor'}</span></span>
@@ -260,14 +260,7 @@ export default function MyExamsPage() {
                         )}
                       </div>
 
-                      {/* TRASH PURGE BUTTON */}
-                      <button 
-                        onClick={() => openDeleteConfirm(exam.id)}
-                        className="text-gray-500 hover:text-rose-400 p-1.5 hover:bg-rose-500/10 rounded-lg transition-colors flex-shrink-0"
-                        title="Remove Exam Node"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                     
                     </div>
 
                   </div>
