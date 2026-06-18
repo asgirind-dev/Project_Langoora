@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, User, Phone, Calendar, GraduationCap, Upload, MapPin, ArrowRight, Chrome, BookOpen, CheckCircle } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, User, Phone, Calendar, GraduationCap, Upload, MapPin, ArrowRight, Chrome, BookOpen, CheckCircle, AlertCircle, Check, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -9,7 +9,7 @@ import Input from '../../components/ui/Input';
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const timeoutRef = useRef(null); // Tracks the redirection timer safely
+  const timeoutRef = useRef(null);
   
   const { register, loginWithGoogle } = useAuth();
   
@@ -23,18 +23,56 @@ export default function RegisterPage() {
     qualifications: '', university: '', address: '', certificate: null,
   });
 
-  // Safe timeout cleanup to prevent memory leaks if the component unmounts early
+  const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '' });
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
-  // Simplified form field state setter
+  // Structural breakdown of policy rules matching for live UI feedback
+  const getPasswordCriteria = (pass) => {
+    return {
+      hasLength: pass.length >= 8 && pass.length <= 12,
+      hasNumeric: /[0-9]/.test(pass),
+      hasLower: /[a-z]/.test(pass),
+      hasUpper: /[A-Z]/.test(pass),
+      hasSpecial: /[@#$%\^&\+=]/.test(pass),
+    };
+  };
+
+
+  const checkPasswordStrength = (pass) => {
+    if (!pass) return { score: 0, label: '' };
+    
+    const criteria = getPasswordCriteria(pass);
+    let criteriaMet = 0;
+    if (criteria.hasNumeric) criteriaMet++;
+    if (criteria.hasLower) criteriaMet++;
+    if (criteria.hasUpper) criteriaMet++;
+    if (criteria.hasSpecial) criteriaMet++;
+
+    if (!criteria.hasLength) {
+      if (pass.length < 8) return { score: 1, label: 'Too Short (Min. 8 Chars)' };
+      if (pass.length > 12) return { score: 1, label: 'Too Long (Max. 12 Chars)' };
+    }
+
+    if (criteriaMet <= 1) return { score: 1, label: 'Weak' };
+    if (criteriaMet === 2) return { score: 2, label: 'Fair' };
+    if (criteriaMet === 3) return { score: 3, label: 'Good' };
+    return { score: 4, label: 'Strong' };
+  };
+
   const set = (field) => (e) => {
     const value = e.target.type === 'file' ? e.target.files[0] : e.target.value;
     setForm(prev => ({ ...prev, [field]: value }));
-    // Clear validation error dynamically when the user type/updates fields
+    
+    if (field === 'password') {
+      setPasswordStrength(checkPasswordStrength(value));
+    }
+
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: null }));
     }
@@ -51,11 +89,55 @@ export default function RegisterPage() {
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = 'Full name is required';
-    if (!form.email || !/\S+@\S+\.\S+/.test(form.email)) e.email = 'Valid email required';
-    if (!form.password || form.password.length < 8) e.password = 'Minimum 8 characters';
-    if (!form.phone.trim()) e.phone = 'Phone number is required';
-    if (!form.dob) e.dob = 'Date of birth is required';
+    
+    if (!form.name.trim()) {
+      e.name = 'Full name is required';
+    } else if (!/^[A-Za-z\s]{3,}$/.test(form.name.trim())) {
+      e.name = 'Name can only contain alphabet letters and must be valid';
+    }
+
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!form.email) {
+      e.email = 'Valid email is required';
+    } else if (!emailRegex.test(form.email)) {
+      e.email = 'Invalid email structure format';
+    }
+
+    // Server-grade validation criteria block enforcement
+    const criteria = getPasswordCriteria(form.password);
+    let criteriaMet = 0;
+    if (criteria.hasNumeric) criteriaMet++;
+    if (criteria.hasLower) criteriaMet++;
+    if (criteria.hasUpper) criteriaMet++;
+    if (criteria.hasSpecial) criteriaMet++;
+
+    if (!form.password) {
+      e.password = 'Password structural requirement is missing';
+    } else if (!criteria.hasLength) {
+      e.password = 'Password must be between 8 and 12 characters long';
+    } else if (criteriaMet < 3) {
+      e.password = 'Must match at least 3 conditions: Uppercase, Lowercase, Number, or Symbol';
+    }
+
+    const slPhoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+    if (!form.phone.trim()) {
+      e.phone = 'Phone number is required';
+    } else if (!slPhoneRegex.test(form.phone.trim().replace(/\s+/g, ''))) {
+      e.phone = 'Enter a valid Sri Lankan mobile number';
+    }
+
+    if (!form.dob) {
+      e.dob = 'Date of birth is required';
+    } else {
+      const selectedDate = new Date(form.dob);
+      const limitDate = new Date();
+      limitDate.setFullYear(limitDate.getFullYear() - 15);
+      if (selectedDate > new Date()) {
+        e.dob = 'Date of birth cannot be in the future';
+      } else if (selectedDate > limitDate) {
+        e.dob = 'You must be at least 15 years old to register';
+      }
+    }
     
     if (role === 'tutor') {
       if (!form.qualifications.trim()) e.qualifications = 'Qualifications required';
@@ -68,7 +150,10 @@ export default function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const errs = validate();
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    if (Object.keys(errs).length > 0) { 
+      setErrors({ ...errs, globalAlert: "Submission blocked. Please rectify the highlighted registration errors." }); 
+      return; 
+    }
     
     setLoading(true);
     setErrors({});
@@ -99,7 +184,6 @@ export default function RegisterPage() {
       }, 3000);
 
     } catch (err) {
-      console.error("Registration workflow failure:", err);
       setErrors({ server: err.message || 'Registration failed. Please try again.' });
     } finally {
       setLoading(false);
@@ -111,21 +195,14 @@ export default function RegisterPage() {
     setErrors({});
     try {
       const result = await loginWithGoogle();
-      
       if (result && result.status === 'profile_incomplete') {
         navigate('/auth/complete-profile', { 
-          state: { 
-            uid: result.uid, 
-            email: result.email, 
-            name: result.name 
-          } 
+          state: { metadata: { uid: result.uid, email: result.email, name: result.name } } 
         });
         return;
       }
-
       navigate('/student');
     } catch (err) {
-      console.error("Google authentication registration failed:", err);
       setErrors({ server: err.message || "Google single sign-on system breakdown." });
     } finally {
       setLoading(false);
@@ -136,6 +213,8 @@ export default function RegisterPage() {
     { id: 'student', label: 'Student', icon: BookOpen, desc: 'Prepare for language exams and track your progress' },
     { id: 'tutor', label: 'Tutor', icon: GraduationCap, desc: 'Create and sell exam packs, earn from your expertise' },
   ];
+
+  const currentCriteria = getPasswordCriteria(form.password);
 
   if (success) {
     return (
@@ -159,9 +238,17 @@ export default function RegisterPage() {
       <h2 className="text-3xl font-bold text-white mb-2">Create your account</h2>
       <p className="text-gray-400 mb-8">Join 24,000+ learners on Langoora</p>
 
+      {errors.globalAlert && (
+        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 p-3.5 rounded-xl text-xs mb-5 flex items-start gap-2">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span>{errors.globalAlert}</span>
+        </div>
+      )}
+
       {errors.server && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3.5 rounded-xl text-xs mb-5">
-          {errors.server}
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3.5 rounded-xl text-xs mb-5 flex items-start gap-2">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span>{errors.server}</span>
         </div>
       )}
 
@@ -170,7 +257,7 @@ export default function RegisterPage() {
           <button
             key={r.id}
             type="button"
-            onClick={() => setRole(r.id)}
+            onClick={() => { setRole(r.id); setErrors({}); }}
             className={`p-4 rounded-xl border text-left transition-all ${
               role === r.id
                 ? 'border-blue-500/60 bg-blue-500/10 text-white'
@@ -188,22 +275,91 @@ export default function RegisterPage() {
         <Input label="Full Name" placeholder="Kavindu Perera" icon={User} value={form.name} onChange={set('name')} error={errors.name} />
         <Input label="Email Address" type="email" placeholder="you@example.com" icon={Mail} value={form.email} onChange={set('email')} error={errors.email} />
 
-        {/* Custom Password Block wrapper built cleanly for uniform layouts */}
-        <div className="flex flex-col gap-1.5">
+        {/* Password Matrix Field with Real-time Tooltip Rules Modal Box */}
+        <div className="flex flex-col gap-1.5 relative">
           <label className="text-sm font-medium text-gray-300">Password</label>
           <div className="relative">
             <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type={showPass ? 'text' : 'password'}
-              placeholder="Min. 8 characters"
+              placeholder="8 - 12 characters"
               value={form.password}
               onChange={set('password')}
+              onFocus={() => setIsPasswordFocused(true)}
+              onBlur={() => setIsPasswordFocused(false)}
               className={`w-full bg-white/5 border ${errors.password ? 'border-red-500/60' : 'border-white/10'} rounded-xl px-4 py-3 pl-10 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/60 text-sm transition-colors`}
             />
             <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors">
               {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
+
+          {/* Contextual Password Requirements Floating Tooltip Box */}
+          <AnimatePresence>
+            {isPasswordFocused && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                transition={{ duration: 0.2 }}
+                className="absolute z-20 top-full mt-2 w-full bg-[#0d1527] border border-white/15 p-4 rounded-xl shadow-2xl space-y-3 pointer-events-none"
+              >
+                <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
+                  <span className="text-xs font-semibold text-gray-200">Password Requirements</span>
+                  <span className="text-[10px] text-amber-400 font-medium">Length + Min. 3 Criteria</span>
+                </div>
+                
+                <ul className="space-y-1.5 text-xs text-gray-400">
+                  <li className="flex items-center gap-2">
+                    {currentCriteria.hasLength ? <Check size={14} className="text-emerald-400 shrink-0" /> : <div className="w-3.5 h-3.5 rounded-full border border-white/20 bg-white/5 shrink-0" />}
+                    <span className={currentCriteria.hasLength ? "text-emerald-400 transition-colors" : ""}>Length between 8 and 12 characters</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {currentCriteria.hasLower ? <Check size={14} className="text-emerald-400 shrink-0" /> : <div className="w-3.5 h-3.5 rounded-full border border-white/20 bg-white/5 shrink-0" />}
+                    <span className={currentCriteria.hasLower ? "text-emerald-400 transition-colors" : ""}>One lowercase letter (a-z)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {currentCriteria.hasUpper ? <Check size={14} className="text-emerald-400 shrink-0" /> : <div className="w-3.5 h-3.5 rounded-full border border-white/20 bg-white/5 shrink-0" />}
+                    <span className={currentCriteria.hasUpper ? "text-emerald-400 transition-colors" : ""}>One uppercase letter (A-Z)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {currentCriteria.hasNumeric ? <Check size={14} className="text-emerald-400 shrink-0" /> : <div className="w-3.5 h-3.5 rounded-full border border-white/20 bg-white/5 shrink-0" />}
+                    <span className={currentCriteria.hasNumeric ? "text-emerald-400 transition-colors" : ""}>One numeric digit (0-9)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {currentCriteria.hasSpecial ? <Check size={14} className="text-emerald-400 shrink-0" /> : <div className="w-3.5 h-3.5 rounded-full border border-white/20 bg-white/5 shrink-0" />}
+                    <span className={currentCriteria.hasSpecial ? "text-emerald-400 transition-colors" : ""}>One symbol (@, #, $, %, ^, &, +, =)</span>
+                  </li>
+                </ul>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          {/* Real-time Color Bar Tracker */}
+          {form.password && (
+            <div className="mt-1">
+              <div className="flex gap-1.5 h-1">
+                {[1, 2, 3, 4].map((index) => (
+                  <div
+                    key={index}
+                    className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                      passwordStrength.score >= index
+                        ? passwordStrength.score <= 2
+                          ? 'bg-red-500'
+                          : passwordStrength.score === 3
+                          ? 'bg-yellow-500'
+                          : 'bg-emerald-500'
+                        : 'bg-white/10'
+                    }`}
+                  />
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1.5">
+                Strength: <span className="font-semibold text-white">{passwordStrength.label}</span>
+              </p>
+            </div>
+          )}
+          
           {errors.password && <p className="text-xs text-red-400 mt-0.5">{errors.password}</p>}
         </div>
 
@@ -222,8 +378,8 @@ export default function RegisterPage() {
               className="space-y-4 overflow-hidden"
             >
               <Input label="Qualifications" placeholder="B.Ed Japanese, MA Linguistics..." icon={GraduationCap} value={form.qualifications} onChange={set('qualifications')} error={errors.qualifications} />
-              <Input label="University / Institution" placeholder="University / Institution Name" icon={GraduationCap} value={form.university} onChange={set('university')} error={errors.university} />
-              <Input label="Address" placeholder="Your physical address profile details" icon={MapPin} value={form.address} onChange={set('address')} />
+              <Input label="University / Institution" placeholder="University Name" icon={GraduationCap} value={form.university} onChange={set('university')} error={errors.university} />
+              <Input label="Address" placeholder="Your physical address details" icon={MapPin} value={form.address} onChange={set('address')} />
               
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-gray-300">Certificate Upload</label>

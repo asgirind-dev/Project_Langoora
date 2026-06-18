@@ -1,13 +1,13 @@
-const subscriptionService = require('../services/subscriptionService');
+const subscriptionService = require('../services/SubscriptionService');
 
 // ==========================================
 // 1. SUBSCRIPTION PLANS CONTROLLER
 // ==========================================
-
 exports.getPlans = async (req, res) => {
   try {
     const plans = await subscriptionService.getAllPlans();
-    res.status(200).json(plans);
+    const activePlans = plans.filter(plan => plan.active === true);
+    res.status(200).json(activePlans);
   } catch (error) {
     res.status(500).json({ message: "Plans fetch error", error: error.message });
   }
@@ -25,7 +25,7 @@ exports.createPlan = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ල මිස් වෙලා තිබුණේ මචන්:
+
 exports.updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -36,7 +36,7 @@ exports.updatePlan = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් මිස් වෙලා තිබුණේ:
+
 exports.deletePlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -50,7 +50,6 @@ exports.deletePlan = async (req, res) => {
 // ==========================================
 // 2. EXAM CATEGORY CONTROLLER
 // ==========================================
-
 exports.getCategories = async (req, res) => {
   try {
     const categories = await subscriptionService.getAllCategories();
@@ -72,7 +71,7 @@ exports.createCategory = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
+
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -83,7 +82,7 @@ exports.updateCategory = async (req, res) => {
   }
 };
 
-// 🟢 මෙන්න මේ කෑල්ලත් ඇතුළත් කළා:
+
 exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;

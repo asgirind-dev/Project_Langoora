@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+ import { useState, useEffect } from 'react';
 import { useNavigate as useReactNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -121,7 +121,7 @@ export default function LandingPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-red-500/10 to-blue-500/10 border border-white/10 text-gray-300 text-sm mb-6 backdrop-blur-md"
           >
             <Languages size={14} className="text-red-400" />
-            <span className="text-red-400 font-semibold">JLPT</span> & <span className="text-blue-400 font-semibold">EPS-TOPIK / TOPIK</span> Specialized Prep Hub
+            <span className="text-red-400 font-semibold">JLPT</span> & <span className="text-blue-400 font-semibold">TOPIK / EPS - TOPIK</span> Specialized Prep Hub
           </motion.div>
 
           {/* Main Hero Header */}
@@ -138,7 +138,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
             className="text-lg sm:text-xl text-gray-300 max-w-3xl mx-auto mb-10 leading-relaxed"
           >
-            Sri Lanka's premier specialized simulator. Master the JLPT (N5 - N1) and EPS-TOPIK & TOPIK I with real mock paper formats, active time tracking, and native audio listening rooms.
+            Sri Lanka's premier specialized simulator. Master the JLPT (N5 - N1) and TOPIK I & EPS - TOPIK with real mock paper formats, active time tracking, and native audio listening rooms.
           </motion.p>
 
           {/* Dynamic Dual Target Cards Grid */}
@@ -286,7 +286,7 @@ export default function LandingPage() {
                       {exam.tag && <Badge color="amber">{exam.tag}</Badge>}
                     </div>
                     <div className="absolute bottom-3 right-3 text-right">
-                      {/* Credits ක්‍රමවේදය සඳහා ආරක්ෂිතව වෙනස් කරන ලදී */}
+                    
                       <div className="text-white font-bold text-lg flex items-center gap-1">
                         <Coins size={16} className="text-amber-400" />
                         {exam?.credits || 10} Credits
@@ -471,4 +471,4 @@ export default function LandingPage() {
 
     </div>
   );
-}
+} 
