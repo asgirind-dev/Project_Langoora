@@ -17,12 +17,10 @@ class StudentProfilePageController {
                 return res.status(200).json({ success: true, data: {} }); 
             }
 
-            // 🎯 FIX: සාර්ථකව කියවපු දත්ත ටික ෆ්‍රන්ට්-එන්ඩ් එකට රිටන් කරන පේළිය එකතු කළා මචන්!
             return res.status(200).json({ success: true, data: profile });
 
-        } catch (error) { 
-            // 🎯 FIX: කලින් මඟහැරුණු 'catch' බ්ලොක් එක මෙතනට දාලා සින්ටැක්ස් එරර් එක හැදුවා
-            console.error("Error in getStudentProfile controller:", error);
+        } catch (error) {
+
             return res.status(500).json({ success: false, error: error.message });
         }
     }
