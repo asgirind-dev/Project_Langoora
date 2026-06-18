@@ -10,4 +10,4 @@ router.get('/student-exams', getStudentExams);
 // URL: DELETE http://localhost:5000/api/student-exams/:id
 router.delete('/student-exams/:id', deleteStudentExam);
 
-module.exports = router;
+module.exports = router; 

@@ -39,6 +39,9 @@ import TutorExamsPage from "../pages/tutor/TutorExamsPage";
 import CreateExamPage from "../pages/tutor/CreateExamPage";
 import TutorEarningsPage from "../pages/tutor/TutorEarningsPage";
 import TutorProfilePage from "../pages/tutor/TutorProfilePage";
+import TutorAnalyticsPage from "../pages/tutor/TutorAnalyticsPage";
+import TutorReviewsPage from "../pages/tutor/TutorReviewsPage";
+
 
 // Academic Validator Pages
 import AcademicValidatorDashboard from "../pages/validator/AcademicValidatorDashboard";
@@ -126,8 +129,8 @@ export default function AppRoutes() {
             <Route path="exams" element={<TutorExamsPage />} />
             <Route path="create" element={<CreateExamPage />} />
             <Route path="earnings" element={<TutorEarningsPage />} />
-            <Route path="analytics" element={<TutorDashboard />} />
-            <Route path="reviews" element={<TutorDashboard />} />
+            <Route path="analytics" element={<TutorAnalyticsPage />} />
+            <Route path="reviews" element={<TutorReviewsPage />} />
             <Route path="profile" element={<TutorProfilePage />} />
             <Route path="*" element={<Navigate to="/tutor" replace />} />
           </Route>

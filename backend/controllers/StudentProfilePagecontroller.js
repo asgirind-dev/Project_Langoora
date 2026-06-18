@@ -6,22 +6,26 @@ class StudentProfilePageController {
     async getStudentProfile(req, res) {
         try {
             const { uid } = req.params;
+            
             if (!uid) {
-                return res.status(400).json({ success: false, message: 'UID is required parameters.' });
+                return res.status(400).json({ success: false, message: 'UID is required' });
             }
 
             const profile = await studentService.getStudentProfile(uid);
+            
             if (!profile) {
                 return res.status(200).json({ success: true, data: {} }); 
             }
+
             return res.status(200).json({ success: true, data: profile });
-        } catch (error) { 
-            console.error("Error in getStudentProfile:", error);
+
+        } catch (error) {
+
             return res.status(500).json({ success: false, error: error.message });
         }
     }
 
-    // 2. Update Profile (With integrated Base64 Card number masking triggers)
+    // 2. Update Profile
     async updateStudentProfile(req, res) {
         try {
             const { uid } = req.params;
@@ -45,7 +49,7 @@ class StudentProfilePageController {
         }
     }
 
-    // 🛑 4. NEW: DELETE STUDENT ACCOUNT CORE PIPELINE (Danger Zone Sync)
+    // 4. NEW: DELETE STUDENT ACCOUNT CORE PIPELINE (Danger Zone Sync)
     async deleteStudentAccount(req, res) {
         try {
             const { uid } = req.params;
@@ -59,7 +63,7 @@ class StudentProfilePageController {
             }
             return res.status(200).json(result);
         } catch (error) {
-            console.error("🔥 CRITICAL BACKEND EXCEPTION IN STUDENT ERASER CONTROLLER:", error);
+            console.error(" CRITICAL BACKEND EXCEPTION IN STUDENT ERASER CONTROLLER:", error);
             return res.status(500).json({ success: false, error: error.message });
         }
     }
