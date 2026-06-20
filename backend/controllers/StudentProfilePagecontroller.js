@@ -17,12 +17,11 @@ class StudentProfilePageController {
                 return res.status(200).json({ success: true, data: {} }); 
             }
 
-            // 💡 FIX: සාර්ථකව Profile දත්ත ලැබුණහොත් Frontend එකට Response එක ලබා දීම
+            // FIXED: Added missing return statement for successful profile retrieval
             return res.status(200).json({ success: true, data: profile });
 
         } catch (error) {
-            // 💡 FIX: කලින් අතහැරී තිබුණු catch බ්ලොක් එක මෙතනට එකතු කළා
-            console.error("Get student profile error:", error.message);
+            // FIXED: Added missing catch block to handle runtime exceptions safely
             return res.status(500).json({ success: false, error: error.message });
         }
     }
