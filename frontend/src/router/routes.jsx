@@ -155,7 +155,7 @@ export default function AppRoutes() {
             } />
             
             <Route path="content-disputes" element={
-              <ProtectedRoute requiredPrivilege="manage_disputes">
+              <ProtectedRoute requiredPrivilege="resolve_disputes">
                 <ContentDisputePage />
               </ProtectedRoute>
             } />

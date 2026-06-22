@@ -15,6 +15,7 @@ const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
 
+
 const app = express();
 
 // Middlewares
@@ -31,6 +32,7 @@ app.use('/api/tutors', tutorProfileRoutes);
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
 app.use('/api/validator/tutors', tutorValidationRoutes);
+
 
 
 const PORT = process.env.PORT || 5000;
