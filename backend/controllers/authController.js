@@ -2,7 +2,7 @@ const { db, auth } = require('../config/firebase');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// 💡 Service Layer Link integration
+// Service Layer Link integration
 const authService = require('../services/authService');
 const tutorValidationService = require('../services/tutorValidationService'); 
 
@@ -17,7 +17,7 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ message: 'Missing required registration fields.' });
     }
 
-    // 🔒 Back-end Enterprise Validation Interceptions
+    //  Back-end Enterprise Validation Interceptions
     if (!authService.validateFullName(userData.name)) {
       return res.status(400).json({ message: 'Invalid name syntax configuration. Use alphabetic letters only.' });
     }
@@ -54,7 +54,7 @@ exports.registerUser = async (req, res) => {
       isPreAuthStaff = true;
     }
 
-    // 🔐 FIX: ඊළඟ වතාවේ සාර්ථකව ලොගින් වෙන්න පුළුවන් වෙන්න පාස්වර්ඩ් එක බීක්‍රිප්ට් කරගන්නවා මචන්
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -67,7 +67,7 @@ exports.registerUser = async (req, res) => {
     const userProfile = {
       uid: userRecord.uid,
       email: formattedEmail,
-      password: hashedPassword, // 👈 ඩේටාබේස් එකට හෑෂ් කරපු පාස්වර්ඩ් එක ඇතුළත් කළා
+      password: hashedPassword, 
       role: finalRole, 
       status: finalRole === 'tutor' ? 'pending' : 'active',
       joined: new Date().toISOString().split('T')[0],
@@ -84,10 +84,10 @@ exports.registerUser = async (req, res) => {
       createdAt: new Date().toISOString()
     };
 
-    // Users Collection එකේ Profile එක සේව් කරනවා
+
     await db.collection('users').doc(userRecord.uid).set(userProfile);
 
-    // 🚀 FIX: කන්ඩිෂන් එක වඩාත් ආරක්ෂිත කරලා ඇප්ලිකේෂන් ක්‍රියේට් කරන ලොජික් එක මෙතනින් රන් කරා
+
     if (finalRole === 'tutor' || role === 'tutor') {
       console.log(`LOG: Spawning tutor application node for UID: ${userRecord.uid}`);
       await tutorValidationService.createApplication(userRecord.uid, {
@@ -100,7 +100,7 @@ exports.registerUser = async (req, res) => {
       await preAuthRef.delete();
     }
 
-    // Front-end එකට රිටන් කරන්න කලින් සේෆ්ටි එකට පාස්වර්ඩ් එක අයින් කරනවා
+
     delete userProfile.password;
 
     const appToken = jwt.sign(

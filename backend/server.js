@@ -11,11 +11,10 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const studyPlannerRoutes = require('./routes/studyPlannerRoutes'); 
-
-
-const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
+const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
+
 
 const app = express();
 
@@ -30,10 +29,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes); 
 app.use('/api/subscription-management', subscriptionRoutes);
 app.use('/api/tutors', tutorProfileRoutes); 
-
-app.use('/api/student', require('./routes/StudentProfilePageroutes'));
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
+app.use('/api/validator/tutors', tutorValidationRoutes);
+
 
 
 const PORT = process.env.PORT || 5000;

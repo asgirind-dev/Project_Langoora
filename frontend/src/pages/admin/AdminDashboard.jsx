@@ -18,7 +18,7 @@ const revenueData = [
   { month: 'Jun', revenue: 2980000 },
 ];
 
-// 🚀 REALISTIC EXAM DISTRIBUTION FOR YOUR PLATFORM SCOPE
+// REALISTIC EXAM DISTRIBUTION FOR YOUR PLATFORM SCOPE
 const examDistribution = [
   { name: 'JLPT (N1 - N5)', value: 55, color: '#3b82f6' },  // Main focus layer
   { name: 'EPS-TOPIK', value: 30, color: '#06b6d4' },
