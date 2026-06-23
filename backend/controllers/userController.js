@@ -1,7 +1,8 @@
-// backend/controllers/userController.js
 const { db, auth } = require('../config/firebase');
 
-// GET all users (registered + pre‑authorized)
+/**
+ * 1. Fetch All Registered Users & Pre-Authorized Staff Nodes
+ */
 const getAllUsers = async (req, res) => {
   try {
     const usersSnapshot = await db.collection('users').get();
@@ -13,195 +14,139 @@ const getAllUsers = async (req, res) => {
     const preAuthSnapshot = await db.collection('pre_authorized_staff').get();
     const preAuthUsers = [];
     preAuthSnapshot.forEach(doc => {
-      preAuthUsers.push({
-        id: doc.id,
-        ...doc.data(),
-        status: 'invited',
-        activityCount: 0,
-      });
+      preAuthUsers.push({ id: doc.id, ...doc.data(), status: 'invited', activityCount: 0 });
     });
 
-    const combined = [...preAuthUsers, ...registeredUsers].sort((a, b) => {
+    const combinedUsers = [...preAuthUsers, ...registeredUsers].sort((a, b) => {
       const dateA = a.joined ? new Date(a.joined) : new Date(0);
       const dateB = b.joined ? new Date(b.joined) : new Date(0);
       return dateB - dateA;
     });
 
-    res.status(200).json({ success: true, users: combined });
+    return res.status(200).json({ success: true, users: combinedUsers });
   } catch (error) {
-    console.error('getAllUsers error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Error fetching system directory:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to synchronize central storage registry.' });
   }
 };
 
-// Provision a new staff member (pre‑authorized)
+/**
+ * 2. Provision Internal System Staff Node (Pre-Authorize)
+ */
 const provisionStaffNode = async (req, res) => {
   try {
-    const { name, email, roleId, institution, languageScope } = req.body;
+    const { name, email, role, institution, languageScope, privileges } = req.body;
     const formattedEmail = email.toLowerCase().trim();
 
-    if (!name || !formattedEmail || !roleId) {
-      return res.status(400).json({ success: false, message: 'Name, email, and role are required.' });
+    if (!name || !formattedEmail) {
+      return res.status(400).json({ success: false, message: 'All fields are mandatory.' });
     }
 
-    // Fetch the role
-    const roleDoc = await db.collection('roles').doc(roleId).get();
-    if (!roleDoc.exists) {
-      return res.status(400).json({ success: false, message: 'Invalid role selected.' });
-    }
-    const roleData = roleDoc.data();
-    const privileges = roleData.privileges || [];
-
-    // Check if email already exists
     const userDoc = await db.collection('users').doc(formattedEmail).get();
     const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+
     if (userDoc.exists || preAuthDoc.exists) {
-      return res.status(400).json({ success: false, message: 'Email already exists.' });
+      return res.status(400).json({ success: false, message: 'Email already exists in terminal records.' });
     }
 
-    const finalLanguageScope = roleData.name === 'finance' ? 'All' : (languageScope || 'All');
-
-    const newStaff = {
+    const newStaffNode = {
       name,
       email: formattedEmail,
-      roleId,
-      roleName: roleData.name,
+      role,
       joined: new Date().toISOString().split('T')[0],
-      institution: institution || 'LNBTI',
-      languageScope: finalLanguageScope,
-      privileges,
+      institution,
+      languageScope: role === 'finance' ? 'All' : languageScope,
+      privileges: privileges || []
     };
 
-    await db.collection('pre_authorized_staff').doc(formattedEmail).set(newStaff);
+    await db.collection('pre_authorized_staff').doc(formattedEmail).set(newStaffNode);
 
-    res.status(201).json({
-      success: true,
-      user: { id: formattedEmail, ...newStaff, status: 'invited', activityCount: 0 },
-    });
+    return res.status(201).json({ success: true, user: { id: formattedEmail, ...newStaffNode, status: 'invited', activityCount: 0 } });
   } catch (error) {
-    console.error('provisionStaffNode error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Provisioning failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Database connectivity failed during node provisioning.' });
   }
 };
 
-// Toggle suspend/activate or revoke invitation
+/**
+ * 3. Toggle Suspension or Revoke Invitations
+ */
 const toggleUserLifecycle = async (req, res) => {
   try {
-    const { uid } = req.params;
+    const { uid } = req.params; 
     const { currentStatus, email } = req.body;
 
-    // Handle invited (pre‑authorized) users
     if (currentStatus === 'invited') {
-      const ref = db.collection('pre_authorized_staff').doc(email);
-      const doc = await ref.get();
-      if (!doc.exists) {
-        return res.status(404).json({ success: false, message: 'Invitation not found.' });
-      }
-      await ref.delete();
+      await db.collection('pre_authorized_staff').doc(email).delete();
       return res.status(200).json({ success: true, action: 'revoked' });
     }
 
-    // Toggle active ↔ suspended
     const targetStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
-    const userRef = db.collection('users').doc(uid);
-    const userDoc = await userRef.get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
-    }
+    await db.collection('users').doc(uid).update({ status: targetStatus });
 
-    await userRef.update({ status: targetStatus });
-
-    // Sync with Firebase Auth
     try {
       await auth.updateUser(uid, { disabled: targetStatus === 'suspended' });
     } catch (authErr) {
-      console.warn('Auth sync error:', authErr.message);
+      console.warn(`Auth disabled state sync omitted: ${authErr.message}`);
     }
 
-    res.status(200).json({ success: true, action: 'toggled', targetStatus });
+    return res.status(200).json({ success: true, action: 'toggled', targetStatus });
   } catch (error) {
-    console.error('toggleUserLifecycle error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Lifecycle adjustment failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to adjust operational lifecycle state.' });
   }
 };
 
-// Update privileges (and optionally change role)
+/**
+ * 4. Commit Capabilities & Privileges Governance Configurations
+ */
 const updatePrivileges = async (req, res) => {
   try {
     const { uid } = req.params;
-    const { privileges, languageScope, status, email, roleId } = req.body;
+    const { privileges, languageScope, status, email } = req.body;
 
     const updateData = { privileges, languageScope };
 
-    if (roleId) {
-      const roleDoc = await db.collection('roles').doc(roleId).get();
-      if (!roleDoc.exists) {
-        return res.status(400).json({ success: false, message: 'Invalid role.' });
-      }
-      updateData.roleId = roleId;
-      updateData.roleName = roleDoc.data().name;
-    }
-
     if (status === 'invited') {
-      const ref = db.collection('pre_authorized_staff').doc(email);
-      const doc = await ref.get();
-      if (!doc.exists) {
-        return res.status(404).json({ success: false, message: 'Invitation not found.' });
-      }
-      await ref.update(updateData);
+      await db.collection('pre_authorized_staff').doc(email).update(updateData);
     } else {
-      const ref = db.collection('users').doc(uid);
-      const doc = await ref.get();
-      if (!doc.exists) {
-        return res.status(404).json({ success: false, message: 'User not found.' });
-      }
-      await ref.update(updateData);
+      await db.collection('users').doc(uid).update(updateData);
     }
 
-    res.status(200).json({ success: true, message: 'Privileges updated.' });
+    return res.status(200).json({ success: true, message: 'Governance configuration committed.' });
   } catch (error) {
-    console.error('updatePrivileges error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Privilege dynamic commit failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Server configuration error.' });
   }
 };
 
-// Soft delete (mark as deleted)
+/**
+ * 5. 🔒 PERMANENT DELETE WORKFLOW (Hard Delete - Auth + Firestore Sync)
+ */
 const deleteUserNode = async (req, res) => {
   try {
     const { uid } = req.params;
     const { email, currentStatus } = req.body;
 
     if (currentStatus === 'invited') {
-      const ref = db.collection('pre_authorized_staff').doc(email);
-      const doc = await ref.get();
-      if (!doc.exists) {
-        return res.status(404).json({ success: false, message: 'Invitation not found.' });
-      }
-      await ref.delete();
-      return res.status(200).json({ success: true, message: 'Invitation cleared.' });
+      await db.collection('pre_authorized_staff').doc(email).delete();
+      return res.status(200).json({ success: true, message: "Invitation deleted cleanly from staging area." });
     }
 
-    const userRef = db.collection('users').doc(uid);
-    const userDoc = await userRef.get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
-    }
+    // Delete Firestore profile mapping block
+    await db.collection('users').doc(uid).delete();
 
-    await userRef.update({
-      status: 'deleted',
-      deletedAt: new Date().toISOString(),
-    });
-
+    // Trigger Firebase Authentication Node Purge
     try {
-      await auth.updateUser(uid, { disabled: true });
+      await auth.deleteUser(uid);
     } catch (authErr) {
-      console.warn('Auth disable error:', authErr.message);
+      console.warn(`Auth deletion deferred or user didn't register: ${authErr.message}`);
     }
 
-    res.status(200).json({ success: true, message: 'Account soft‑deleted.' });
+    return res.status(200).json({ success: true, message: "User account dropped cleanly from database layers." });
   } catch (error) {
-    console.error('deleteUserNode error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Purge transaction failure:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to drop user node from database servers.' });
   }
 };
 
@@ -210,5 +155,5 @@ module.exports = {
   provisionStaffNode,
   toggleUserLifecycle,
   updatePrivileges,
-  deleteUserNode,
+  deleteUserNode 
 };

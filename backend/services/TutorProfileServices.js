@@ -42,12 +42,6 @@ class TutorProfileServices {
     async deleteTutorAccount(uid) {
         try {
             const userRef = db.collection('users').doc(uid);
-            await userRef.delete();
-            return { success: true, message: 'Tutor account deleted successfully' };
-        } catch (error) {
-            throw new Error(`Failed to delete tutor account: ${error.message}`);
-        }
-    }
 
             const cardsSnapshot = await userRef.collection('bankCards').get();
             
