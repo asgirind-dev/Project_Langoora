@@ -236,6 +236,8 @@ export const AuthProvider = ({ children }) => {
           console.error("Background session sync failed:", error);
         }
       } else {
+        
+
         if (!localStorage.getItem('user')) {
           localStorage.removeItem('token');
           setUser(null);

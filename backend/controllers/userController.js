@@ -121,7 +121,7 @@ const updatePrivileges = async (req, res) => {
 };
 
 /**
- * 5. PERMANENT DELETE WORKFLOW (Hard Delete - Auth + Firestore Sync)
+ * 5. 🔒 PERMANENT DELETE WORKFLOW (Hard Delete - Auth + Firestore Sync)
  */
 const deleteUserNode = async (req, res) => {
   try {
