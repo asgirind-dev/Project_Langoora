@@ -1,10 +1,17 @@
 import { Navigate, useLocation, Outlet } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext'; 
+import { useAuth } from '../context/AuthContext';
 
+// ✅ Admin roles list – used for redirects and role checks
+const ADMIN_ROLES = ['admin', 'super_admin'];
 
 export default function ProtectedRoute({ children, allowedRoles, requiredPrivilege }) {
-  const { user, role, loading } = useAuth(); 
+  const { user, role: contextRole, loading } = useAuth();
   const location = useLocation();
+
+  // Resolve active session parameters from both runtime context and persistent local storage
+  const token = localStorage.getItem('token');
+  const sessionRole = localStorage.getItem('userRole') || contextRole;
+  const sessionStatus = user?.status || (token ? 'active' : null);
 
   if (loading) {
     return (
@@ -14,39 +21,41 @@ export default function ProtectedRoute({ children, allowedRoles, requiredPrivile
     );
   }
 
-  if (!user) {
+  // Enforce global authentication guard bounds
+  if (!user && !token) {
     return <Navigate to="/auth/login" state={{ from: location }} replace />;
   }
 
-
-  if (role === 'tutor' && user?.status === 'pending') {
+  // Intercept and route pending tutor nodes to the onboarding review track
+  if (sessionRole === 'tutor' && sessionStatus === 'pending') {
     if (!location.pathname.includes('/auth/under-review')) {
       return <Navigate to="/auth/under-review" replace />;
     }
   }
 
-
-  if (user?.status === 'active' && location.pathname.includes('/auth/under-review')) {
-    if (role === 'admin') return <Navigate to="/admin" replace />;
-    if (role === 'validator') return <Navigate to="/validator" replace />;
-    return <Navigate to={role === 'tutor' ? '/tutor' : '/student'} replace />;
+  // Prevent activated user profiles from getting trapped inside the review frame
+  if (sessionStatus === 'active' && location.pathname.includes('/auth/under-review')) {
+    if (ADMIN_ROLES.includes(sessionRole)) return <Navigate to="/admin" replace />;
+    if (sessionRole === 'validator') return <Navigate to="/validator" replace />;
+    if (sessionRole === 'finance') return <Navigate to="/finance-admin" replace />;
+    return <Navigate to={sessionRole === 'tutor' ? '/tutor' : '/student'} replace />;
   }
 
-
-  if (allowedRoles && !allowedRoles.includes(role)) {
-    if (role === 'admin') return <Navigate to="/admin" replace />;
-    if (role === 'validator') return <Navigate to="/validator" replace />;
-    if (role === 'finance') return <Navigate to="/finance-admin" replace />;
-    return <Navigate to={role === 'tutor' ? '/tutor' : '/student'} replace />;
+  // Enforce strict Role‑Based Access Control (RBAC) perimeter boundaries
+  if (allowedRoles && !allowedRoles.includes(sessionRole)) {
+    if (ADMIN_ROLES.includes(sessionRole)) return <Navigate to="/admin" replace />;
+    if (sessionRole === 'validator') return <Navigate to="/validator" replace />;
+    if (sessionRole === 'finance') return <Navigate to="/finance-admin" replace />;
+    return <Navigate to={sessionRole === 'tutor' ? '/tutor' : '/student'} replace />;
   }
 
-
+  // Enforce fine‑grained granular capability privilege checks
   if (requiredPrivilege && !user?.privileges?.includes(requiredPrivilege)) {
-    console.warn(`Unauthorized access attempt to privilege: ${requiredPrivilege}`);
-    
-    if (role === 'validator') return <Navigate to="/validator" replace />;
-    if (role === 'finance') return <Navigate to="/finance-admin" replace />;
-    return <Navigate to="/" replace />; 
+    console.warn(`Unauthorized framework entry attempt blocked for privilege: ${requiredPrivilege}`);
+
+    if (sessionRole === 'validator') return <Navigate to="/validator" replace />;
+    if (sessionRole === 'finance') return <Navigate to="/finance-admin" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return children ? children : <Outlet />;

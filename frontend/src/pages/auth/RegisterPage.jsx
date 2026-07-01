@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, User, Phone, Calendar, GraduationCap, Upload, MapPin, ArrowRight, Chrome, BookOpen, CheckCircle, AlertCircle, Check, X } from 'lucide-react';
+import { 
+  Mail, Lock, Eye, EyeOff, User, Phone, Calendar, GraduationCap, 
+  Upload, MapPin, ArrowRight, Chrome, BookOpen, CheckCircle, 
+  AlertCircle, Check, X, Globe, User as UserIcon, FileText 
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import { fetchActiveLanguages } from '../../services/languageService'; // ✅ Updated import
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -19,12 +24,48 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState(false); 
   const [errors, setErrors] = useState({});
   const [form, setForm] = useState({
-    name: '', email: '', password: '', phone: '', dob: '',
-    qualifications: '', university: '', address: '', certificate: null,
+    firstName: '', 
+    lastName: '',
+    email: '', 
+    password: '', 
+    phone: '', 
+    dob: '',
+    qualifications: '', 
+    university: '', 
+    address: '', 
+    certificate: null,
+    language: '', // new field for tutor language selection
   });
 
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '' });
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  
+  // State for available languages from LanguageConfigPage
+  const [availableLanguages, setAvailableLanguages] = useState([]);
+  const [languagesLoading, setLanguagesLoading] = useState(false);
+
+  // Fetch active languages when component mounts (public endpoint - no auth required)
+  useEffect(() => {
+    const fetchLanguages = async () => {
+      setLanguagesLoading(true);
+      try {
+        const data = await fetchActiveLanguages();
+        if (data.success) {
+          // data.languages is already an array of unique language names
+          setAvailableLanguages(data.languages);
+          // Set default language if available
+          if (data.languages.length > 0 && !form.language) {
+            setForm(prev => ({ ...prev, language: data.languages[0] }));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch languages:', error);
+      } finally {
+        setLanguagesLoading(false);
+      }
+    };
+    fetchLanguages();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -42,7 +83,6 @@ export default function RegisterPage() {
       hasSpecial: /[@#$%\^&\+=]/.test(pass),
     };
   };
-
 
   const checkPasswordStrength = (pass) => {
     if (!pass) return { score: 0, label: '' };
@@ -65,7 +105,7 @@ export default function RegisterPage() {
     return { score: 4, label: 'Strong' };
   };
 
-  const set = (field) => (e) => {
+  const setField = (field) => (e) => {
     const value = e.target.type === 'file' ? e.target.files[0] : e.target.value;
     setForm(prev => ({ ...prev, [field]: value }));
     
@@ -90,10 +130,16 @@ export default function RegisterPage() {
   const validate = () => {
     const e = {};
     
-    if (!form.name.trim()) {
-      e.name = 'Full name is required';
-    } else if (!/^[A-Za-z\s]{3,}$/.test(form.name.trim())) {
-      e.name = 'Name can only contain alphabet letters and must be valid';
+    if (!form.firstName.trim()) {
+      e.firstName = 'First name is required';
+    } else if (!/^[A-Za-z\s]{2,}$/.test(form.firstName.trim())) {
+      e.firstName = 'First name must contain only letters';
+    }
+
+    if (!form.lastName.trim()) {
+      e.lastName = 'Last name is required';
+    } else if (!/^[A-Za-z\s]{2,}$/.test(form.lastName.trim())) {
+      e.lastName = 'Last name must contain only letters';
     }
 
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -143,6 +189,7 @@ export default function RegisterPage() {
       if (!form.qualifications.trim()) e.qualifications = 'Qualifications required';
       if (!form.university.trim()) e.university = 'University required';
       if (!form.certificate) e.certificate = 'Certificate file is required';
+      if (!form.language) e.language = 'Please select your language expertise';
     }
     return e;
   };
@@ -164,15 +211,19 @@ export default function RegisterPage() {
         certificateBase64 = await convertToBase64(form.certificate);
       }
 
+      // Combine first and last name
+      const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`;
+
       const userData = {
-        name: form.name.trim(),
+        name: fullName,
         phone: form.phone.trim(),
         dob: form.dob,
         ...(role === 'tutor' && {
           university: form.university.trim(),
           qualifications: form.qualifications.trim(),
           address: form.address?.trim() || '',
-          certificateData: certificateBase64
+          certificateData: certificateBase64,
+          language: form.language, // new field
         })
       };
 
@@ -272,8 +323,27 @@ export default function RegisterPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label="Full Name" placeholder="Kavindu Perera" icon={User} value={form.name} onChange={set('name')} error={errors.name} />
-        <Input label="Email Address" type="email" placeholder="you@example.com" icon={Mail} value={form.email} onChange={set('email')} error={errors.email} />
+        {/* First Name & Last Name in a grid */}
+        <div className="grid grid-cols-2 gap-4">
+          <Input 
+            label="First Name" 
+            placeholder="Asgiri" 
+            icon={UserIcon} 
+            value={form.firstName} 
+            onChange={setField('firstName')} 
+            error={errors.firstName} 
+          />
+          <Input 
+            label="Last Name" 
+            placeholder="Perera" 
+            icon={UserIcon} 
+            value={form.lastName} 
+            onChange={setField('lastName')} 
+            error={errors.lastName} 
+          />
+        </div>
+
+        <Input label="Email Address" type="email" placeholder="you@example.com" icon={Mail} value={form.email} onChange={setField('email')} error={errors.email} />
 
         {/* Password Matrix Field with Real-time Tooltip Rules Modal Box */}
         <div className="flex flex-col gap-1.5 relative">
@@ -284,7 +354,7 @@ export default function RegisterPage() {
               type={showPass ? 'text' : 'password'}
               placeholder="8 - 12 characters"
               value={form.password}
-              onChange={set('password')}
+              onChange={setField('password')}
               onFocus={() => setIsPasswordFocused(true)}
               onBlur={() => setIsPasswordFocused(false)}
               className={`w-full bg-white/5 border ${errors.password ? 'border-red-500/60' : 'border-white/10'} rounded-xl px-4 py-3 pl-10 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/60 text-sm transition-colors`}
@@ -364,8 +434,8 @@ export default function RegisterPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Input label="Phone Number" type="tel" placeholder="+94 7X XXX XXXX" icon={Phone} value={form.phone} onChange={set('phone')} error={errors.phone} />
-          <Input label="Date of Birth" type="date" icon={Calendar} value={form.dob} onChange={set('dob')} error={errors.dob} />
+          <Input label="Phone Number" type="tel" placeholder="+94 7X XXX XXXX" icon={Phone} value={form.phone} onChange={setField('phone')} error={errors.phone} />
+          <Input label="Date of Birth" type="date" icon={Calendar} value={form.dob} onChange={setField('dob')} error={errors.dob} />
         </div>
 
         <AnimatePresence>
@@ -377,9 +447,49 @@ export default function RegisterPage() {
               transition={{ duration: 0.25 }}
               className="space-y-4 overflow-hidden"
             >
-              <Input label="Qualifications" placeholder="B.Ed Japanese, MA Linguistics..." icon={GraduationCap} value={form.qualifications} onChange={set('qualifications')} error={errors.qualifications} />
-              <Input label="University / Institution" placeholder="University Name" icon={GraduationCap} value={form.university} onChange={set('university')} error={errors.university} />
-              <Input label="Address" placeholder="Your physical address details" icon={MapPin} value={form.address} onChange={set('address')} />
+              {/* Language Selection Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-300">Language Expertise</label>
+                <div className="relative">
+                  <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <select
+                    value={form.language}
+                    onChange={setField('language')}
+                    className={`w-full bg-white/5 border ${errors.language ? 'border-red-500/60' : 'border-white/10'} rounded-xl px-4 py-3 pl-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/60 text-sm transition-colors appearance-none`}
+                  >
+                    <option value="">Select your language expertise</option>
+                    {availableLanguages.length === 0 && languagesLoading ? (
+                      <option value="" disabled>Loading languages...</option>
+                    ) : availableLanguages.length === 0 ? (
+                      <option value="" disabled>No languages available</option>
+                    ) : (
+                      availableLanguages.map(lang => (
+                        <option key={lang} value={lang} className="bg-[#0d1527]">
+                          {lang}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                {errors.language && <p className="text-xs text-red-400 mt-0.5">{errors.language}</p>}
+                {languagesLoading && <p className="text-xs text-gray-400">Loading languages...</p>}
+              </div>
+
+              {/* Qualifications as textarea */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-300">Qualifications</label>
+                <textarea
+                  placeholder="Enter your qualifications (e.g., B.Ed Japanese, MA Linguistics...)"
+                  value={form.qualifications}
+                  onChange={setField('qualifications')}
+                  rows={3}
+                  className={`w-full bg-white/5 border ${errors.qualifications ? 'border-red-500/60' : 'border-white/10'} rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/60 text-sm transition-colors resize-vertical`}
+                />
+                {errors.qualifications && <p className="text-xs text-red-400 mt-0.5">{errors.qualifications}</p>}
+              </div>
+
+              <Input label="University / Institution" placeholder="University Name" icon={GraduationCap} value={form.university} onChange={setField('university')} error={errors.university} />
+              <Input label="Address" placeholder="Your physical address details" icon={MapPin} value={form.address} onChange={setField('address')} />
               
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-gray-300">Certificate Upload</label>
@@ -388,7 +498,7 @@ export default function RegisterPage() {
                   <span className="text-sm text-gray-400 truncate max-w-xs">
                     {form.certificate ? form.certificate.name : 'Upload qualification certificate (PDF/JPG)'}
                   </span>
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={set('certificate')} className="hidden" />
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={setField('certificate')} className="hidden" />
                 </label>
                 {errors.certificate && <p className="text-xs text-red-400 mt-0.5">{errors.certificate}</p>}
               </div>

@@ -14,6 +14,7 @@ const studyPlannerRoutes = require('./routes/studyPlannerRoutes');
 const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
+const languageRoutes = require('./routes/languageRoutes');
 
 
 const app = express();
@@ -32,7 +33,7 @@ app.use('/api/tutors', tutorProfileRoutes);
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
 app.use('/api/validator/tutors', tutorValidationRoutes);
-
+app.use('/api/languages', languageRoutes);
 
 
 const PORT = process.env.PORT || 5000;

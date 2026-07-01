@@ -78,7 +78,8 @@ exports.registerUser = async (req, res) => {
         university: userData.university?.trim() || '',
         qualifications: userData.qualifications?.trim() || '',
         address: userData.address?.trim() || '',
-        certificateData: userData.certificateData || ''
+        certificateData: userData.certificateData || '',
+        language: userData.language || '' // ✅ New field for tutor's language expertise
       }),
       ...additionalStaffData, 
       createdAt: new Date().toISOString()
@@ -145,13 +146,22 @@ exports.loginUser = async (req, res) => {
       }
 
       const userData = userDoc.data();
+
+      const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
+      if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
+        });
+      }
+
       if (userData.status === 'suspended') {
         return res.status(403).json({ message: 'Your account has been suspended!' });
       }
 
       const appToken = jwt.sign(
         { id: uid, role: userData.role },
-        process.env.JWT_SECRET || 'fallback_secret_key',
+        process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
         { expiresIn: '1d' }
       );
 
@@ -177,6 +187,15 @@ exports.loginUser = async (req, res) => {
       userId = doc.id;
     });
 
+    // 🎯 CRITICAL SECURITY BLOCK: Disallow corporate staff roles from authenticating via the public email/password layout
+    const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
+    if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
+      });
+    }
+
     if (userData.status === 'suspended') {
       return res.status(403).json({ message: 'Your account has been suspended!' });
     }
@@ -187,7 +206,7 @@ exports.loginUser = async (req, res) => {
 
       const appToken = jwt.sign(
         { id: userId, role: userData.role },
-        process.env.JWT_SECRET || 'fallback_secret_key',
+        process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
         { expiresIn: '1d' }
       );
 
@@ -203,7 +222,7 @@ exports.loginUser = async (req, res) => {
 
   } catch (error) {
     console.error('Login Failure:', error);
-    res.status(500).json({ message: 'Server error during authentication processing phase', error: error.message });
+    res.status(500).json({ message: 'Server error during authentication processing phase' });
   }
 };
 
@@ -256,5 +275,78 @@ exports.completeGoogleRegistration = async (req, res) => {
   } catch (error) {
     console.error('Google Profile Finalization Failure:', error);
     return res.status(500).json({ message: 'Server error finalizing profile setups.' });
+  }
+};
+
+// ==========================================
+// 🔒 REFACTORED SECURE STAFF LOGIN GATEWAY
+// ==========================================
+exports.loginStaff = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Corporate credentials are required.' });
+    }
+
+    const formattedEmail = email.toLowerCase().trim();
+
+    const userSnapshot = await db.collection('users').where('email', '==', formattedEmail).get();
+    if (userSnapshot.empty) {
+      return res.status(404).json({ message: 'Access Denied: Terminal records mismatch.' });
+    }
+
+    let userData = null;
+    let userId = null;
+
+    userSnapshot.forEach(doc => {
+      userData = doc.data();
+      userId = doc.id;
+    });
+
+    // ✅ Enforce staff role boundaries – now includes super_admin
+    const allowedStaffRoles = ['super_admin', 'admin', 'validator', 'finance'];
+    if (!allowedStaffRoles.includes(userData.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Security Violation: Unauthorized personnel entry attempt logged.'
+      });
+    }
+
+    if (userData.status === 'suspended') {
+      return res.status(403).json({ message: 'Operational Notice: Administrative freeze active on node.' });
+    }
+
+    const savedPassword = userData.password || userData.passwordHash;
+    if (!savedPassword) {
+      return res.status(400).json({ message: 'Authentication registry trace missing valid password hash.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, savedPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials!' });
+    }
+
+    const appToken = jwt.sign(
+      { id: userId, role: userData.role },
+      process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
+      { expiresIn: '1d' }
+    );
+
+    delete userData.password;
+    delete userData.passwordHash;
+
+    return res.status(200).json({
+      success: true,
+      token: appToken,
+      user: { id: userId, uid: userId, ...userData }
+    });
+
+  } catch (error) {
+    console.error('Staff Gateway Critical Runtime Failure:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal Server Error during gateway verification setup phase.'
+    });
   }
 };

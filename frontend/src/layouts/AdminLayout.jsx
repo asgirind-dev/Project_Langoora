@@ -1,11 +1,12 @@
 import { Outlet } from 'react-router-dom';
-import { LayoutDashboard, Users, DollarSign, Activity, Shield, Settings } from 'lucide-react'; 
+import { LayoutDashboard, Users, DollarSign, Activity, Shield, Settings, Globe } from 'lucide-react'; 
 import DashboardSidebar from '../components/layout/DashboardSidebar';
 
 // Relative paths configured for seamless nested routing under '/admin'
 const navItems = [
   { label: 'Dashboard', path: '', icon: LayoutDashboard },
   { label: 'Users', path: 'users', icon: Users },
+  { label: 'Languages', path: 'languages', icon: Globe },
   { label: 'Revenue', path: 'revenue', icon: DollarSign },
   { label: 'Audit Logs', path: 'logs', icon: Activity },
   { label: 'System Settings', path: 'settings', icon: Settings }, 

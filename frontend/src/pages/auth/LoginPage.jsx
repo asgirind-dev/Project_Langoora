@@ -61,8 +61,6 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-
     setErrors({});
     
     const errs = validate();
@@ -71,9 +69,16 @@ export default function LoginPage() {
       return; 
     }
     
-
-    const savedEmail = form.email;
+    const savedEmail = form.email.toLowerCase().trim();
     const savedPassword = form.password;
+
+    // 🎯 CRITICAL ENTRY GUARD: Block corporate domain formats or known administrative strings on the client side
+    if (savedEmail.includes('admin') || savedEmail.includes('validator') || savedEmail.includes('finance') || savedEmail === 'admin@novacore.com') {
+      setErrors({
+        server: "Access Denied: Internal system staff profiles are restricted from using this portal. Authenticate via the Corporate Gateway Terminal."
+      });
+      return;
+    }
 
     setLoading(true);
 
@@ -82,15 +87,10 @@ export default function LoginPage() {
       handleRoleRedirection(authenticatedUser);
     } catch (err) {
       console.log("Captured login error in component:", err.message);
-      
-
       setForm({ email: savedEmail, password: savedPassword });
-
-
       setErrors({
-        server: "Invalid email address or password. Please try again."
+        server: err.message || "Invalid email address or password. Please try again."
       });
-      
     } finally {
       setLoading(false);
     }
