@@ -43,6 +43,7 @@ export default function CreateExamPage() {
   const q = questions[activeQIdx];
 
   const categories = ['JLPT', 'EPS-TOPIK', 'IELTS', 'HSK', 'TOPIK', 'GRE', 'SAT', 'TOEFL'];
+  
 
   return (
     <div className="space-y-6 max-w-6xl">

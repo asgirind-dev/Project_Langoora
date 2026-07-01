@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const studyPlannerRoutes = require('./routes/studyPlannerRoutes'); 
+const CreateExamRoutes = require('./routes/examRoutes');
 
 
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
