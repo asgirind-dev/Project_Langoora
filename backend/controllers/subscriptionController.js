@@ -7,8 +7,7 @@ const subscriptionService = require('../services/subscriptionService');
 
 exports.getPlans = async (req, res) => {
   try {
-    const plans = await subscriptionService.getAllPlans();
-    // මේ filter එකෙන් active ඒවා විතරක් Landing Page එකට යනවා
+    const plans = await subscriptionService.getAllPlans(); 
     const activePlans = plans.filter(plan => plan.active === true);
     res.status(200).json(activePlans);
   } catch (error) {
