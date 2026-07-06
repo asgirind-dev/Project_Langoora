@@ -1,10 +1,7 @@
-// කලින් තිබ්බ firebase-admin/firestore කෑල්ල වෙනුවට ඔයාලගේ global firebase config එකටම සම්බන්ධ කරා මචන්:
 const { db } = require('../config/firebase'); 
 
 class TutorValidationService {
-  /**
-   * ➕ 1. Register වෙද්දීම Tutor Application එකක් සෑදීම
-   */
+
   async createApplication(userId, applicationData) {
     const newApplication = {
       user_id: userId,
@@ -15,14 +12,12 @@ class TutorValidationService {
       applied_at: new Date().toISOString()
     };
 
-    // මෙතන db එක කෙලින්ම config එකෙන් එන එක
+  
     const docRef = await db.collection('tutor_applications').add(newApplication);
     return { id: docRef.id, ...newApplication };
   }
 
-  /**
-   * 🔍 2. Pending තියෙන සියලුම Tutor Applications කියවීම
-   */
+
   async getPendingApplications() {
     const appSnapshot = await db.collection('tutor_applications')
       .where('verification_status', '==', 'pending')
@@ -51,9 +46,7 @@ class TutorValidationService {
     return pendingQueue;
   }
 
-  /**
-   * 📝 3. Application එක APPROVE කිරීම
-   */
+
   async approveApplication(tutorId, validatorId) {
     await db.collection('users').doc(tutorId).update({
       status: 'active',
@@ -77,9 +70,7 @@ class TutorValidationService {
     return { success: true, tutorId };
   }
 
-  /**
-   * ❌ 4. Application එක REJECT කිරීම
-   */
+
   async rejectApplication(tutorId, validatorId) {
     await db.collection('users').doc(tutorId).update({
       status: 'rejected',

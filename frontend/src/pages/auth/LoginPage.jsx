@@ -61,8 +61,6 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // 1. කලින් තිබ්බ එරර්ස් ක්ලියර් කරනවා
     setErrors({});
     
     const errs = validate();
@@ -71,9 +69,16 @@ export default function LoginPage() {
       return; 
     }
     
-    // 🚀 STATE SNAPSHOT LOCK: දැනට කොටු ඇතුළේ තියෙන දත්ත ටික විචල්‍යයන්ට ලොක් කරනවා
-    const savedEmail = form.email;
+    const savedEmail = form.email.toLowerCase().trim();
     const savedPassword = form.password;
+
+    // 🎯 CRITICAL ENTRY GUARD: Block corporate domain formats or known administrative strings on the client side
+    if (savedEmail.includes('admin') || savedEmail.includes('validator') || savedEmail.includes('finance') || savedEmail === 'admin@novacore.com') {
+      setErrors({
+        server: "Access Denied: Internal system staff profiles are restricted from using this portal. Authenticate via the Corporate Gateway Terminal."
+      });
+      return;
+    }
 
     setLoading(true);
 
@@ -82,17 +87,11 @@ export default function LoginPage() {
       handleRoleRedirection(authenticatedUser);
     } catch (err) {
       console.log("Captured login error in component:", err.message);
-      
-      // 🚀 THE FIX: ස්ටේට් එක අප්ඩේට් වෙද්දී හිස් වීම වැළැක්වීමට මුලින්ම Form Data එක රඳවා ගන්නවා
       setForm({ email: savedEmail, password: savedPassword });
-
-      // මෙතනදී කෙලින්ම Object එකක් විදිහට එකවර සෙට් කරනවා Render එක බ්ලොක් කරන්න
       setErrors({
-        server: "Invalid email address or password. Please try again."
+        server: err.message || "Invalid email address or password. Please try again."
       });
-      
     } finally {
-      // ⚠️ LOADING STATE එක අන්තිමටම FALSE කරන්නේ රී-රෙන්ඩර් එක ස්මූත් කරන්නයි
       setLoading(false);
     }
   };
@@ -137,7 +136,7 @@ export default function LoginPage() {
           placeholder="you@example.com"
           icon={Mail}
           value={form.email}
-          onChange={e => setForm({ email: e.target.value, password: form.password })} // 👈 Explicit bind
+          onChange={e => setForm({ email: e.target.value, password: form.password })} 
           error={errors.email}
         />
         
@@ -149,7 +148,7 @@ export default function LoginPage() {
               type={showPass ? 'text' : 'password'}
               placeholder="••••••••"
               value={form.password}
-              onChange={e => setForm({ email: form.email, password: e.target.value })} // 👈 Explicit bind
+              onChange={e => setForm({ email: form.email, password: e.target.value })} 
               className={`w-full bg-white/5 border ${errors.password ? 'border-red-500/60' : 'border-white/10'} rounded-xl px-4 py-3 pl-10 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/60 transition-all text-sm`}
             />
             <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">

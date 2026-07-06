@@ -6,17 +6,17 @@ const serviceAccount = require('../firebase-key.json');
 
 let app;
 
-
 if (getApps().length === 0) {
   app = initializeApp({
-    credential: cert(serviceAccount)
+    credential: cert(serviceAccount),
+    storageBucket: 'langoora.appspot.com' 
   });
 } else {
   app = getApp();
 }
 
-
 const db = getFirestore(app);
 const auth = getAuth(app);
+const storage = getStorage(app).bucket(); // 👈 Storage bucket එක සෙට් කළා
 
-module.exports = { db, auth };
+module.exports = { db, auth, storage };

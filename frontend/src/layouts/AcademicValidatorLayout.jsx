@@ -27,7 +27,7 @@ const validatorNavItems = [
     label: 'Content Disputes', 
     path: 'content-disputes', 
     icon: AlertTriangle, 
-    requiredPrivilege: 'manage_disputes' 
+    requiredPrivilege: 'resolve_disputes' 
   },
 ];
 

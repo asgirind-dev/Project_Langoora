@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios'; // Axios install කරලා නැත්නම් install කරගන්න මචන් (npm i axios)
+import axios from 'axios'; 
 import { 
   Plus, Edit, Trash2, Crown, Sparkles, 
   Zap, Infinity, CheckCircle,
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 
-const API_BASE_URL = 'http://localhost:5000/api/subscription-management'; // ඔයාලගේ බැක්එන්ඩ් පෝර්ට් එකට ගැලපෙන්න වෙනස් කරන්න
+const API_BASE_URL = 'http://localhost:5000/api/subscription-management'; 
 
 const iconMap = {
   Zap: Zap,

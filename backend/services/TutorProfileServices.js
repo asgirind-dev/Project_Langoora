@@ -38,13 +38,13 @@ class TutorProfileServices {
         return { success: true, message: 'Profile updated successfully' };
     }
 
-    // 3. Delete Tutor Account
+    // 3. Delete Tutor Account & Subcollections (Merged & Fixed)
     async deleteTutorAccount(uid) {
         try {
             const userRef = db.collection('users').doc(uid);
-
             const cardsSnapshot = await userRef.collection('bankCards').get();
             
+            // එකවුන්ට් එක අයින් කරන්න කලින් බැංකු කාඩ් සබ්-කලෙක්ෂන් එක Batch එකකින් ඩිලීට් කරනවා
             if (!cardsSnapshot.empty) {
                 const batch = db.batch();
                 cardsSnapshot.forEach(doc => {
@@ -53,6 +53,7 @@ class TutorProfileServices {
                 await batch.commit();
             }
 
+            // ඊටපස්සේ මේන් යූසර් ඩොකියුමන්ට් එක ඩිලීට් කරනවා
             await userRef.delete();
 
             return { success: true, message: 'Tutor data deleted successfully' };
@@ -83,7 +84,7 @@ class TutorProfileServices {
         const cleanAccountNo = accountNo.replace(/\s+/g, '').replace(/-/g, '');
         const isOnlyDigits = /^\d+$/.test(cleanAccountNo);
 
-        // FIXED: Sri Lankan bank account rule check matching the frontend logic (9 to 16 digits)
+        // Frontend logic එකට මැච් වෙන්න හදපු ලංකාවේ එකවුන්ට් නම්බර් වැලිඩේෂන් (9 to 16 digits)
         if (!isOnlyDigits || cleanAccountNo.length < 9 || cleanAccountNo.length > 16) {
             throw new Error('Invalid Bank Account Number. Please enter a valid number.');
         }

@@ -1,32 +1,31 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { 
+import {
   signInWithEmailAndPassword,
-  signInWithPopup,          
-  GoogleAuthProvider,       
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut as firebaseSignOut,
-  onAuthStateChanged 
+  onAuthStateChanged
 } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
+import axios from 'axios';
 
 const AuthContext = createContext(null);
 
+// List of staff/admin roles that should NOT be synced via public login endpoint
+const STAFF_ROLES = ['super_admin', 'admin', 'validator', 'finance'];
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null); 
-  const [privileges, setPrivileges] = useState([]); 
-  const [loading, setLoading] = useState(true); 
+  const [role, setRole] = useState(null);
+  const [privileges, setPrivileges] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Helper function to carefully parse data structures from backend response
+  // ---------- Helper: Extract user data from API response ----------
   const extractUserData = (data) => {
-    console.log("=== BACKEND RAW DATA RECOVERY ===");
-    console.log("Full Data Object:", data);
-    console.log("Nested User Object:", data?.user);
-    console.log("=================================");
-
     if (!data) return null;
-    
+
     const rawUser = data.user || data;
-    
+
     if (!rawUser.role && !rawUser.email && !rawUser.uid && !rawUser.id) {
       return null;
     }
@@ -35,7 +34,7 @@ export const AuthProvider = ({ children }) => {
       id: rawUser.id || rawUser.uid || '',
       uid: rawUser.uid || rawUser.id || '',
       email: rawUser.email || '',
-      role: rawUser.role || 'student', 
+      role: rawUser.role || 'student',
       status: rawUser.status || 'active',
       privileges: rawUser.privileges || [],
       name: rawUser.name || 'User'
@@ -59,7 +58,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'Registration processing failed on the backend.');
       }
@@ -67,25 +66,25 @@ export const AuthProvider = ({ children }) => {
       try {
         await signInWithEmailAndPassword(auth, email, password);
       } catch (firebaseErr) {
-        console.warn("Firebase client session sync deferred:", firebaseErr.message);
+        console.warn('Firebase client session sync deferred:', firebaseErr.message);
       }
 
-      return data; 
+      return data;
     } catch (error) {
-      console.error("Auth Engine Registration Failure:", error);
+      console.error('Auth Engine Registration Failure:', error);
       throw error;
     }
   };
 
   // ==========================================
-  // 2. UNIFIED LOGIN GATEWAY WORKFLOW
+  // 2. UNIFIED PUBLIC LOGIN GATEWAY
   // ==========================================
   const login = async (email, password) => {
     try {
-      setLoading(true); 
+      setLoading(true);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const idToken = await userCredential.user.getIdToken(true); 
-      
+      const idToken = await userCredential.user.getIdToken(true);
+
       const response = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,25 +98,28 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (data.status === 'profile_incomplete' || data.user?.status === 'profile_incomplete') {
-        return data.user || data; 
+        return data.user || data;
       }
 
       const authenticatedUser = extractUserData(data);
 
       if (!authenticatedUser) {
-        throw new Error("Invalid user profile configuration returned from backend gateway.");
+        throw new Error('Invalid user profile configuration returned from backend gateway.');
       }
 
       localStorage.setItem('token', idToken);
+      localStorage.setItem('userRole', authenticatedUser.role);
       localStorage.setItem('user', JSON.stringify(authenticatedUser));
+
+      axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
 
       setUser(authenticatedUser);
       setRole(authenticatedUser.role);
       setPrivileges(authenticatedUser.privileges || []);
-      
+
       return authenticatedUser;
     } catch (error) {
-      console.error("Identity Validation Session Failure:", error);
+      console.error('Identity Validation Session Failure:', error);
       throw error;
     } finally {
       setLoading(false);
@@ -125,7 +127,50 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ==========================================
-  // 3. GOOGLE SIGN-IN WORKFLOW 
+  // 3. SECURE SYSTEM STAFF ENTRY GATEWAY
+  // ==========================================
+  const loginStaff = async (email, password) => {
+    try {
+      setLoading(true);
+
+      const response = await fetch('http://localhost:5000/api/auth/staff-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.toLowerCase().trim(),
+          password
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Staff portal authentication failed.');
+      }
+
+      const authenticatedStaff = extractUserData(data);
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('userRole', authenticatedStaff.role);
+      localStorage.setItem('user', JSON.stringify(authenticatedStaff));
+
+      axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
+
+      setUser(authenticatedStaff);
+      setRole(authenticatedStaff.role);
+      setPrivileges(authenticatedStaff.privileges || []);
+
+      return authenticatedStaff;
+    } catch (error) {
+      console.error('Staff Gateway Sign-in Operation Aborted:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // 4. GOOGLE SIGN-IN WORKFLOW
   // ==========================================
   const loginWithGoogle = async () => {
     try {
@@ -147,17 +192,20 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (data.status === 'profile_incomplete') {
-        return data; 
+        return data;
       }
 
       const authenticatedUser = extractUserData(data);
 
       if (!authenticatedUser) {
-        throw new Error("Invalid user profile configuration returned from Google gateway.");
+        throw new Error('Invalid user profile configuration returned from Google gateway.');
       }
 
       localStorage.setItem('token', idToken);
+      localStorage.setItem('userRole', authenticatedUser.role);
       localStorage.setItem('user', JSON.stringify(authenticatedUser));
+
+      axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
 
       setUser(authenticatedUser);
       setRole(authenticatedUser.role);
@@ -165,7 +213,7 @@ export const AuthProvider = ({ children }) => {
 
       return authenticatedUser;
     } catch (error) {
-      console.error("Google Authentication Workflow Failure:", error);
+      console.error('Google Authentication Workflow Failure:', error);
       throw error;
     } finally {
       setLoading(false);
@@ -173,16 +221,18 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ==========================================
-  // 4. LOGOUT WORKFLOW
+  // 5. LOGOUT WORKFLOW
   // ==========================================
   const logout = async () => {
     try {
       setLoading(true);
       localStorage.removeItem('token');
+      localStorage.removeItem('userRole');
       localStorage.removeItem('user');
+      delete axios.defaults.headers.common['Authorization'];
       await firebaseSignOut(auth);
     } catch (error) {
-      console.error("Session teardown error:", error);
+      console.error('Session teardown error:', error);
     } finally {
       setUser(null);
       setRole(null);
@@ -192,24 +242,34 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ==========================================
-  // 5. REAL-TIME SESSION RECOVERY HOOK 
+  // 6. REAL-TIME SESSION RECOVERY HOOK (FIXED)
   // ==========================================
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     const savedToken = localStorage.getItem('token');
-    
+    const savedRole = localStorage.getItem('userRole');
+
     if (savedUser && savedToken) {
       try {
         const parsedUser = JSON.parse(savedUser);
         setUser(parsedUser);
-        setRole(parsedUser.role);
+        setRole(savedRole || parsedUser.role);
         setPrivileges(parsedUser.privileges || []);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
       } catch (e) {
-        console.error("Failed to parse local storage user data", e);
+        console.error('Failed to parse local storage user data', e);
       }
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const storedRole = localStorage.getItem('userRole');
+
+      // 🔥 FIX: Stop background sync for ALL staff/admin roles
+      if (STAFF_ROLES.includes(storedRole)) {
+        setLoading(false);
+        return;
+      }
+
       if (firebaseUser) {
         try {
           const idToken = await firebaseUser.getIdToken();
@@ -225,34 +285,47 @@ export const AuthProvider = ({ children }) => {
 
             if (authenticatedUser && authenticatedUser.role) {
               localStorage.setItem('token', idToken);
+              localStorage.setItem('userRole', authenticatedUser.role);
               localStorage.setItem('user', JSON.stringify(authenticatedUser));
-              
+
+              axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
+
               setUser(authenticatedUser);
               setRole(authenticatedUser.role);
               setPrivileges(authenticatedUser.privileges || []);
             }
           }
         } catch (error) {
-          console.error("Background session sync failed:", error);
+          console.error('Background session sync failed:', error);
         }
       } else {
-        // 🔒 🚀 FIX HERE: යූසර් ඇත්තටම 'user' ඩේටා එකක් localStorage එකේ නැත්නම් විතරක් (ඒ කියන්නේ වැරදි ලොගින් එකක් නොවී, ඇත්තටම ලොග් අවුට් වුණ වෙලාවක විතරක්) මේක රන් වෙන්න දෙනවා.
-        // මේකෙන් තමයි වැරදි ලොගින් එකකදී මුළු පේජ් එකම හිස් වෙලා යන එක නවත්වන්නේ!
         if (!localStorage.getItem('user')) {
           localStorage.removeItem('token');
+          localStorage.removeItem('userRole');
           setUser(null);
           setRole(null);
           setPrivileges([]);
         }
       }
-      setLoading(false); 
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, role, privileges, register, login, loginWithGoogle, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        role,
+        privileges,
+        register,
+        login,
+        loginStaff,
+        loginWithGoogle,
+        logout
+      }}
+    >
       {!loading && children}
     </AuthContext.Provider>
   );
@@ -261,7 +334,7 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    console.error("useAuth must be used within an AuthProvider Wrapper.");
+    console.error('useAuth must be used within an AuthProvider Wrapper.');
   }
   return context;
 };

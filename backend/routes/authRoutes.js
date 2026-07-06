@@ -13,6 +13,9 @@ router.post('/register', authController.registerUser);
 // Handle unified identity gateway validation for both standard & initial Google logins
 router.post('/login', authController.loginUser);
 
+// Isolated Enterprise Staff Gateway Route
+router.post('/staff-login', authController.loginStaff);
+
 // Finalize extended profiles for onboarded Google accounts
 router.post('/complete-google-registration', authController.completeGoogleRegistration);
 

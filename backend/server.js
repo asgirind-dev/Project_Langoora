@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const path = require('path'); 
+
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 // Configs
 require('./config/firebase'); 
@@ -11,12 +14,10 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const studyPlannerRoutes = require('./routes/studyPlannerRoutes'); 
-const CreateExamRoutes = require('./routes/examRoutes');
-
-
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
+const languageRoutes = require('./routes/languageRoutes');
 
 const app = express();
 
@@ -31,11 +32,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes); 
 app.use('/api/subscription-management', subscriptionRoutes);
 app.use('/api/tutors', tutorProfileRoutes); 
-app.use('/api/tutors', tutorProfileRoutes); // 
-app.use('/api/student', require('./routes/StudentProfilePageroutes'));
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
-
+app.use('/api/validator/tutors', tutorValidationRoutes);
+app.use('/api/languages', languageRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
