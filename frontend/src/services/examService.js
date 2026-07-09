@@ -40,3 +40,30 @@ export const createTutorExam = async (examPayload) => {
     throw error.response?.data || { message: 'Failed to commit exam blueprint layer.' };
   }
 };
+
+/**
+ * 🎵 📷 Cloud Asset Uploader (Audio/Image) to Firebase Storage
+ */
+export const uploadExamAsset = async (fileBlob) => {
+  try {
+    const token = localStorage.getItem('token');
+    
+    // ⚠️ Token එක නැත්නම් මෙතනදීම error එකක් throw කරනවා check කරගන්න
+    if (!token) throw new Error("No authorization token found. Please re-login.");
+
+    const formData = new FormData();
+    formData.append('file', fileBlob);
+
+    // Axios config එක ලස්සනට මේ විදිහටම දෙන්න 👇
+    const response = await axios.post(`${API_URL}/upload-asset`, formData, {
+      headers: {
+        'Authorization': `Bearer ${token}`, // 👈 Single quotes දාලා ෂුවර් කරගන්න
+        'Content-Type': 'multipart/form-data', 
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || { message: error.message || 'Asset streaming pipeline rejected.' };
+  }
+};
