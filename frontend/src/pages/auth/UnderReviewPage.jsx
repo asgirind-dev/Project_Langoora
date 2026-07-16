@@ -8,6 +8,25 @@ export default function UnderReviewPage() {
   const navigate = useNavigate();
   const { logout, user } = useAuth();
 
+
+const maskEmail = (email) => {
+  if (!email) return 'your email';
+  try {
+    const [localPart, domain] = email.split('@');
+    
+
+    if (localPart.length <= 2) {
+      return `${localPart[0]}***@${domain}`;
+    }
+    
+
+    const visiblePart = localPart.substring(0, 2);
+    return `${visiblePart}***@${domain}`;
+  } catch (err) {
+    return email;
+  }
+};
+
   // Handle logout workflow if tutor wants to sign out
   const handleLogout = async () => {
     try {
@@ -84,7 +103,8 @@ export default function UnderReviewPage() {
       <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3.5 max-w-md flex items-center gap-3 text-left mb-8">
         <Mail size={18} className="text-blue-400 flex-shrink-0" />
         <p className="text-xs text-gray-400 leading-normal">
-          We will send a confirmation email to <span className="text-blue-400 font-medium">{user?.email || 'your email'}</span> once your dashboard workspace is ready.
+          {/* Fixed Target: Render masked email context dynamically */}
+          We will send a confirmation email to <span className="text-blue-400 font-medium font-mono">{maskEmail(user?.email)}</span> once your dashboard workspace is ready.
         </p>
       </div>
 

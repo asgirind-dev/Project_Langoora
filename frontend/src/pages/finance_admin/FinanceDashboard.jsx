@@ -1,92 +1,58 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line
-} from 'recharts';
-import { 
-  DollarSign, CreditCard, Activity, TrendingUp, 
-  ArrowUpRight, ArrowDownRight, Wallet, PieChart,
-  Zap, Shield, Sparkles, Coins, BarChart3,
-  Award, Gem, Star, Crown, Rocket, Calendar,
-  ChevronRight, CircleDot, Gauge, Clock,
-  Download, FileText, Users, Eye
-} from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts';
+import { DollarSign, Activity, Wallet, TrendingUp, Sparkles, Calendar, Zap, ChevronRight, Download, CircleDot, Clock, ArrowUpRight, ArrowDownRight, PieChart, Coins, Shield } from 'lucide-react';
+import FinanceService from '../../services/financeService'; 
 import GlassCard from '../../components/ui/GlassCard';
 
-const financeData = [
-  { month: 'Jan', revenue: 450000, credits: 3000, transactions: 234, growth: 5.2 },
-  { month: 'Feb', revenue: 520000, credits: 4200, transactions: 312, growth: 8.7 },
-  { month: 'Mar', revenue: 480000, credits: 3800, transactions: 278, growth: 3.1 },
-  { month: 'Apr', revenue: 610000, credits: 5500, transactions: 456, growth: 12.4 },
-  { month: 'May', revenue: 750000, credits: 6200, transactions: 534, growth: 15.8 },
-  { month: 'Jun', revenue: 920000, credits: 8100, transactions: 678, growth: 18.2 },
-];
-
-const recentTransactions = [
-  { id: 1, user: 'Priya K.', amount: 'LKR 45,000', type: 'Payout', status: 'Completed', time: '2 min ago', avatar: 'PK' },
-  { id: 2, user: 'Amal P.', amount: 'LKR 12,500', type: 'Credit Purchase', status: 'Pending', time: '15 min ago', avatar: 'AP' },
-  { id: 3, user: 'Nisha R.', amount: 'LKR 8,200', type: 'Payout', status: 'Completed', time: '1 hour ago', avatar: 'NR' },
-  { id: 4, user: 'Dinesh M.', amount: 'LKR 23,000', type: 'Credit Purchase', status: 'Completed', time: '3 hours ago', avatar: 'DM' },
-  { id: 5, user: 'Samantha W.', amount: 'LKR 5,600', type: 'Payout', status: 'Failed', time: '5 hours ago', avatar: 'SW' },
-];
-
 export default function FinanceDashboard() {
-  const [hoveredCard, setHoveredCard] = useState(null);
-  const [animatedValue, setAnimatedValue] = useState(0);
+  const [stats, setStats] = useState({ totalRevenue: '0', activeCredits: '0', growth: 0 });
+  const [transactions, setTransactions] = useState([]);
+  const [chartData, setChartData] = useState([]);
+  const [financeData, setFinanceData] = useState([]); // Chart data සඳහා
+  const [loading, setLoading] = useState(true);
   const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [hoveredCard, setHoveredCard] = useState(null);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setAnimatedValue(prev => (prev + 1) % 100);
-    }, 50);
-    return () => clearInterval(timer);
-  }, []);
-
+  // kpiData එක stats වෙනස් වන සෑම විටම update වීමට useEffect එකක් භාවිතා කරන්න
   const kpiData = [
-    { 
-      label: 'Total Revenue', 
-      value: 'LKR 3.73M', 
-      icon: DollarSign, 
-      color: 'from-emerald-400 to-green-500',
-      bg: 'bg-emerald-500/10',
-      change: '+12.4%',
-      trend: 'up',
-      description: 'vs last month'
-    },
-    { 
-      label: 'Active Credits', 
-      value: '45,284', 
-      icon: Coins, 
-      color: 'from-blue-400 to-indigo-500',
-      bg: 'bg-blue-500/10',
-      change: '+8.1%',
-      trend: 'up',
-      description: 'vs last month'
-    },
-    { 
-      label: 'Pending Payouts', 
-      value: 'LKR 2.45M', 
-      icon: Wallet, 
-      color: 'from-amber-400 to-orange-500',
-      bg: 'bg-amber-500/10',
-      change: '-2.3%',
-      trend: 'down',
-      description: 'vs last month'
-    },
-    { 
-      label: 'Growth Rate', 
-      value: '14.2%', 
-      icon: TrendingUp, 
-      color: 'from-purple-400 to-pink-500',
-      bg: 'bg-purple-500/10',
-      change: '+3.1%',
-      trend: 'up',
-      description: 'vs last month'
-    },
+    { label: 'Total Revenue', value: stats.totalRevenue, icon: DollarSign, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'up', change: '+12%' },
+    { label: 'Active Credits', value: stats.activeCredits, icon: Wallet, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: 'up', change: '+8%' },
+    { label: 'Growth', value: `${stats.growth}%`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'up', change: '+5%' },
+    { label: 'Active Users', value: '120', icon: Activity, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'down', change: '-2%' }
   ];
 
-  const displayedTransactions = showAllTransactions ? recentTransactions : recentTransactions.slice(0, 3);
+ useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [statsData, txData, chartDataRes] = await Promise.all([
+          FinanceService.getDashboardStats(),
+          FinanceService.getRecentTransactions(),
+          FinanceService.getRevenueChartData()
+        ]);
+
+        // මෙන්න මෙතන දත්ත ටික Map කරගන්න (Mapping Data)
+       setStats({
+      totalRevenue: statsData?.totalRevenue ? `LKR ${statsData.totalRevenue.toLocaleString()}` : 'LKR 0',
+      activeCredits: statsData?.activeUsers ? statsData.activeUsers.toString() : '0',
+      growth: statsData?.growth || 0
+    });
+
+    setTransactions(txData);
+    setFinanceData(chartDataRes);
+  } catch (err) {
+    console.error("Data load failed", err);
+  } finally {
+    setLoading(false);
+  }
+};
+    fetchData();
+  }, []);
+
+  const displayedTransactions = showAllTransactions ? transactions : transactions.slice(0, 3);
+
+  if (loading) return <div className="text-white text-center py-20">Loading Financial Data...</div>;
 
   return (
     <div className="space-y-6">
@@ -135,46 +101,23 @@ export default function FinanceDashboard() {
         </div>
       </motion.div>
 
-      {/* KPI Metrics with Premium Cards */}
+     {/* KPI Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiData.map((kpi, index) => (
-          <motion.div
-            key={index}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            onMouseEnter={() => setHoveredCard(index)}
-            onMouseLeave={() => setHoveredCard(null)}
-            className="relative group"
-          >
-            <GlassCard className={`p-5 border-white/10 transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl ${hoveredCard === index ? 'shadow-blue-500/10' : ''}`}>
+          <motion.div key={index} className="relative group" onMouseEnter={() => setHoveredCard(index)} onMouseLeave={() => setHoveredCard(null)}>
+            <GlassCard className={`p-5 border-white/10 transition-all duration-500 hover:scale-[1.02] ${hoveredCard === index ? 'shadow-2xl shadow-blue-500/10' : ''}`}>
               <div className="flex items-start justify-between">
                 <div className={`p-2.5 ${kpi.bg} rounded-xl`}>
-                  <kpi.icon size={20} className={`text-${kpi.color.split('-')[1]}-400`} />
+                  <kpi.icon size={20} className={kpi.color} />
                 </div>
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                  kpi.trend === 'up' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                }`}>
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${kpi.trend === 'up' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                   {kpi.trend === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
                   {kpi.change}
                 </div>
               </div>
               <div className="mt-4">
                 <div className="text-2xl font-bold text-white tracking-tight">{kpi.value}</div>
-                <div className="text-xs text-gray-400 mt-1 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400/50" />
-                  {kpi.label}
-                </div>
-                <div className="text-[10px] text-gray-500 mt-0.5">
-                  {kpi.description}
-                </div>
-              </div>
-              {/* Progress Bar */}
-              <div className="mt-3 h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full bg-gradient-to-r ${kpi.color} rounded-full transition-all duration-1000`}
-                  style={{ width: `${Math.min(Math.abs(parseFloat(kpi.change)) * 5, 100)}%` }}
-                />
+                <div className="text-xs text-gray-400 mt-1">{kpi.label}</div>
               </div>
             </GlassCard>
           </motion.div>
@@ -277,6 +220,11 @@ export default function FinanceDashboard() {
                   className="flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-all duration-300 group cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
+                    <div className={`p-2 ${stat.color === 'text-blue-400' ? 'bg-blue-400/10' : 
+                   stat.color === 'text-emerald-400' ? 'bg-emerald-400/10' : 
+                   stat.color === 'text-amber-400' ? 'bg-amber-400/10' : 'bg-purple-400/10'} 
+                   rounded-lg group-hover:scale-110 transition-transform duration-300`}> <stat.icon size={14} className={stat.color} />
+                    </div>
                     <div className={`p-2 bg-${stat.color.split('-')[1]}/10 rounded-lg group-hover:scale-110 transition-transform duration-300`}>
                       <stat.icon size={14} className={stat.color} />
                     </div>

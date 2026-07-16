@@ -1,13 +1,20 @@
 const express = require('express');
 const router = express.Router();
+const { 
+  createExam, 
+  getStudentExams, 
+  deleteStudentExam 
+} = require('../controllers/examController');
+const { protect, authorizeRoles } = require('../middleware/authMiddleware');
 
-// 💡 මෙතනින් import කරන්නේ එකම එක පාරයි!
-const { deleteStudentExam, getStudentExams } = require('../controllers/examController');
-
-// URL: GET http://localhost:5000/api/student-exams
+// URL: GET http://localhost:5000/api/exams/student-exams
 router.get('/student-exams', getStudentExams);
 
-// URL: DELETE http://localhost:5000/api/student-exams/:id
+// URL: DELETE http://localhost:5000/api/exams/student-exams/:id
 router.delete('/student-exams/:id', deleteStudentExam);
+
+// 🔒 Secure Perimeter Gatekeeper for Tutor Core Operations
+// URL: POST http://localhost:5000/api/exams/create
+router.post('/create', protect, authorizeRoles('tutor', 'admin'), createExam);
 
 module.exports = router;

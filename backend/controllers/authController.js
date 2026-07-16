@@ -2,6 +2,10 @@ const { db, auth } = require('../config/firebase');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+// Service Layer Link integration
+const authService = require('../services/authService');
+const tutorValidationService = require('../services/tutorValidationService'); 
+
 // ==========================================
 // 1. REGISTER LOGIC
 // ==========================================
@@ -9,12 +13,30 @@ exports.registerUser = async (req, res) => {
   const { email, password, role, userData } = req.body;
 
   try {
-    if (!email || !password || !role) {
+    if (!email || !password || !role || !userData) {
       return res.status(400).json({ message: 'Missing required registration fields.' });
+    }
+
+    //  Back-end Enterprise Validation Interceptions
+    if (!authService.validateFullName(userData.name)) {
+      return res.status(400).json({ message: 'Invalid name syntax configuration. Use alphabetic letters only.' });
+    }
+    if (!authService.validateEmail(email)) {
+      return res.status(400).json({ message: 'Invalid email address structure layout.' });
+    }
+    if (!authService.validatePasswordPolicy(password)) {
+      return res.status(400).json({ message: 'Password policy breakdown. Requires 8-12 chars with min 3 dynamic complexity matches.' });
+    }
+    if (!authService.validateSriLankanPhone(userData.phone)) {
+      return res.status(400).json({ message: 'Invalid connection node phone sequence. Drop a valid Sri Lankan mobile sequence.' });
+    }
+    if (!authService.validateAgeLimit(userData.dob)) {
+      return res.status(400).json({ message: 'Age barrier restriction failed. You must be at least 15 years old to hook up.' });
     }
 
     const formattedEmail = email.toLowerCase().trim();
 
+    // Check pre-authorized staging block
     const preAuthRef = db.collection('pre_authorized_staff').doc(formattedEmail);
     const preAuthDoc = await preAuthRef.get();
 
@@ -32,6 +54,10 @@ exports.registerUser = async (req, res) => {
       isPreAuthStaff = true;
     }
 
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     const userRecord = await auth.createUser({
       email: formattedEmail,
       password: password,
@@ -41,19 +67,42 @@ exports.registerUser = async (req, res) => {
     const userProfile = {
       uid: userRecord.uid,
       email: formattedEmail,
+      password: hashedPassword, 
       role: finalRole, 
       status: finalRole === 'tutor' ? 'pending' : 'active',
       joined: new Date().toISOString().split('T')[0],
-      ...userData,
+      name: userData.name.trim(),
+      phone: userData.phone.trim(),
+      dob: userData.dob,
+      ...(finalRole === 'tutor' && {
+        university: userData.university?.trim() || '',
+        qualifications: userData.qualifications?.trim() || '',
+        address: userData.address?.trim() || '',
+        certificateData: userData.certificateData || '',
+        language: userData.language || '' // ✅ New field for tutor's language expertise
+      }),
       ...additionalStaffData, 
       createdAt: new Date().toISOString()
     };
 
+
     await db.collection('users').doc(userRecord.uid).set(userProfile);
+
+
+    if (finalRole === 'tutor' || role === 'tutor') {
+      console.log(`LOG: Spawning tutor application node for UID: ${userRecord.uid}`);
+      await tutorValidationService.createApplication(userRecord.uid, {
+        qualifications: userData.qualifications?.trim() || 'JLPT Level Unspecified',
+        certificateData: userData.certificateData || ''
+      });
+    }
 
     if (isPreAuthStaff) {
       await preAuthRef.delete();
     }
+
+
+    delete userProfile.password;
 
     const appToken = jwt.sign(
       { id: userRecord.uid, role: finalRole },
@@ -79,9 +128,6 @@ exports.loginUser = async (req, res) => {
   const { email, password, idToken } = req.body;
 
   try {
-    // ------------------------------------------
-    // PATHWAY A: ID TOKEN VALIDATION (Frontend Firebase Auth Integrations)
-    // ------------------------------------------
     if (idToken) {
       const decodedToken = await auth.verifyIdToken(idToken);
       const uid = decodedToken.uid;
@@ -89,7 +135,6 @@ exports.loginUser = async (req, res) => {
       const nameFromToken = decodedToken.name || 'User';
 
       let userDoc = await db.collection('users').doc(uid).get();
-
 
       if (!userDoc.exists) {
         return res.status(200).json({
@@ -101,30 +146,31 @@ exports.loginUser = async (req, res) => {
       }
 
       const userData = userDoc.data();
+
+      const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
+      if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
+        });
+      }
+
       if (userData.status === 'suspended') {
         return res.status(403).json({ message: 'Your account has been suspended!' });
       }
 
       const appToken = jwt.sign(
         { id: uid, role: userData.role },
-        process.env.JWT_SECRET || 'fallback_secret_key',
+        process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
         { expiresIn: '1d' }
       );
 
-
       return res.status(200).json({ 
         token: appToken, 
-        user: { 
-          id: uid, 
-          uid: uid, 
-          ...userData 
-        } 
+        user: { id: uid, uid: uid, ...userData } 
       });
     }
 
-    // ------------------------------------------
-    // PATHWAY B: LEGACY BACKEND AUTHENTICATION (Bcrypt / Postman Flow)
-    // ------------------------------------------
     if (!email || !password) {
       return res.status(400).json({ message: 'Please provide valid credentials or an identity idToken.' });
     }
@@ -141,18 +187,26 @@ exports.loginUser = async (req, res) => {
       userId = doc.id;
     });
 
+    // 🎯 CRITICAL SECURITY BLOCK: Disallow corporate staff roles from authenticating via the public email/password layout
+    const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
+    if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
+      });
+    }
+
     if (userData.status === 'suspended') {
       return res.status(403).json({ message: 'Your account has been suspended!' });
     }
 
-    // Bcrypt Password Verification
     if (userData.password && (userData.password.startsWith('$2a$') || userData.password.startsWith('$2b$'))) {
       const isMatch = await bcrypt.compare(password, userData.password);
       if (!isMatch) return res.status(400).json({ message: 'Invalid credentials!' });
 
       const appToken = jwt.sign(
         { id: userId, role: userData.role },
-        process.env.JWT_SECRET || 'fallback_secret_key',
+        process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
         { expiresIn: '1d' }
       );
 
@@ -160,11 +214,7 @@ exports.loginUser = async (req, res) => {
       
       return res.status(200).json({ 
         token: appToken, 
-        user: { 
-          id: userId, 
-          uid: userId, 
-          ...userData 
-        } 
+        user: { id: userId, uid: userId, ...userData } 
       });
     }
 
@@ -172,7 +222,7 @@ exports.loginUser = async (req, res) => {
 
   } catch (error) {
     console.error('Login Failure:', error);
-    res.status(500).json({ message: 'Server error during authentication processing phase', error: error.message });
+    res.status(500).json({ message: 'Server error during authentication processing phase' });
   }
 };
 
@@ -187,6 +237,13 @@ exports.completeGoogleRegistration = async (req, res) => {
       return res.status(400).json({ message: 'Missing required parameters.' });
     }
 
+    if (!authService.validateSriLankanPhone(phone)) {
+      return res.status(400).json({ message: 'Invalid connection node phone sequence. Drop a valid Sri Lankan mobile sequence.' });
+    }
+    if (!authService.validateAgeLimit(dob)) {
+      return res.status(400).json({ message: 'Age barrier restriction failed. You must be at least 15 years old to hook up.' });
+    }
+
     const userCheck = await db.collection('users').doc(uid).get();
     if (userCheck.exists) {
       return res.status(400).json({ message: 'Profile configuration already established.' });
@@ -196,7 +253,7 @@ exports.completeGoogleRegistration = async (req, res) => {
       uid: uid,
       email: email.toLowerCase().trim(),
       name: name,
-      phone: phone,
+      phone: phone.trim(),
       dob: dob,
       role: role || 'student',
       status: 'active',
@@ -218,5 +275,78 @@ exports.completeGoogleRegistration = async (req, res) => {
   } catch (error) {
     console.error('Google Profile Finalization Failure:', error);
     return res.status(500).json({ message: 'Server error finalizing profile setups.' });
+  }
+};
+
+// ==========================================
+// 🔒 REFACTORED SECURE STAFF LOGIN GATEWAY
+// ==========================================
+exports.loginStaff = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Corporate credentials are required.' });
+    }
+
+    const formattedEmail = email.toLowerCase().trim();
+
+    const userSnapshot = await db.collection('users').where('email', '==', formattedEmail).get();
+    if (userSnapshot.empty) {
+      return res.status(404).json({ message: 'Access Denied: Terminal records mismatch.' });
+    }
+
+    let userData = null;
+    let userId = null;
+
+    userSnapshot.forEach(doc => {
+      userData = doc.data();
+      userId = doc.id;
+    });
+
+    // ✅ Enforce staff role boundaries – now includes super_admin
+    const allowedStaffRoles = ['super_admin', 'admin', 'validator', 'finance'];
+    if (!allowedStaffRoles.includes(userData.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Security Violation: Unauthorized personnel entry attempt logged.'
+      });
+    }
+
+    if (userData.status === 'suspended') {
+      return res.status(403).json({ message: 'Operational Notice: Administrative freeze active on node.' });
+    }
+
+    const savedPassword = userData.password || userData.passwordHash;
+    if (!savedPassword) {
+      return res.status(400).json({ message: 'Authentication registry trace missing valid password hash.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, savedPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials!' });
+    }
+
+    const appToken = jwt.sign(
+      { id: userId, role: userData.role },
+      process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
+      { expiresIn: '1d' }
+    );
+
+    delete userData.password;
+    delete userData.passwordHash;
+
+    return res.status(200).json({
+      success: true,
+      token: appToken,
+      user: { id: userId, uid: userId, ...userData }
+    });
+
+  } catch (error) {
+    console.error('Staff Gateway Critical Runtime Failure:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal Server Error during gateway verification setup phase.'
+    });
   }
 };

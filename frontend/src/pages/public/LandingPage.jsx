@@ -1,16 +1,29 @@
- import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate as useReactNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import axios from 'axios'; // Added Axios for live subscription stream sync
 import {
   Search, ArrowRight, Play, Star, Users, BookOpen, Award, Mic,
-  BarChart2, Coins, KeyRound, Zap, TrendingUp, ChevronRight, Languages, Clock, CheckCircle
+  BarChart2, Coins, KeyRound, Zap, TrendingUp, ChevronRight, Languages, Clock, CheckCircle,
+  RefreshCw, Rocket, Crown, Infinity as InfinityIcon, Layers
 } from 'lucide-react';
-import { examCategories, topTutors, featuredExams, testimonials, subscriptionPlans, adminStats } from '../../data/mockData';
+import { examCategories, topTutors, featuredExams, testimonials, adminStats } from '../../data/mockData';
 import Button from '../../components/ui/Button';
 import GlassCard from '../../components/ui/GlassCard';
 import StarRating from '../../components/ui/StarRating';
 import Badge from '../../components/ui/Badge';
 import { useAuth } from '../../context/AuthContext';
+
+// Icon Map configuration synced with dynamic schema properties
+const iconMap = {
+  Zap: Zap,
+  Rocket: Rocket,
+  Crown: Crown,
+  Infinity: InfinityIcon,
+  Star: Star,
+  Award: Award,
+  Layers: Layers
+};
 
 // Animation Variants
 const fadeUp = {
@@ -32,6 +45,10 @@ export default function LandingPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
+  // 🎯 New States for Live Database Subscriptions Framework
+  const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+
   // Tutor Onboarding Handler
   const handleTutorOnboarding = () => {
     if (user) {
@@ -46,6 +63,22 @@ export default function LandingPage() {
       navigate('/auth/register?role=tutor');
     }
   };
+
+  // 🎯 Hook to fetch active database packages directly from core server
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        setPlansLoading(true);
+        const response = await axios.get('http://localhost:5000/api/subscription-management/plans');
+        setPlans(response.data || []);
+      } catch (error) {
+        console.error("Error loading plans on Landing View:", error);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+    fetchPlans();
+  }, []);
 
   // Testimonial Carousel Effect
   useEffect(() => {
@@ -74,14 +107,11 @@ export default function LandingPage() {
   return (
     <div className="text-white overflow-x-hidden bg-[#040814]">
       
-      {/* ================= HERO SECTION (CRISTALIZED JAPANESE & KOREAN THEME) ================= */}
+      {/* ================= HERO SECTION ================= */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-28 pb-16">
-        
-        {/* Background Layer with Dual Culture Split Visuals */}
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-b from-[#060d1f]/40 via-[#0a1628]/90 to-[#040814]" />
           
-          {/* Japan Aesthetic Component (Left Side Backdrop) */}
           <div className="absolute top-0 left-0 w-full md:w-1/2 h-full opacity-15 md:opacity-20 pointer-events-none mix-blend-lighten">
             <img 
               src="https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=1000&q=80" 
@@ -91,7 +121,6 @@ export default function LandingPage() {
             <div className="absolute inset-0 bg-gradient-to-r from-[#060d1f] via-transparent to-transparent" />
           </div>
 
-          {/* Korea Aesthetic Component (Right Side Backdrop) */}
           <div className="absolute top-0 right-0 w-full md:w-1/2 h-full opacity-15 md:opacity-20 pointer-events-none mix-blend-lighten">
             <img 
               src="https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=1000&q=80" 
@@ -101,30 +130,23 @@ export default function LandingPage() {
             <div className="absolute inset-0 bg-gradient-to-l from-[#060d1f] via-transparent to-transparent" />
           </div>
 
-          {/* Glowing Ambient Neon Orbs */}
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-red-600/10 rounded-full blur-[120px]" />
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px]" />
-          
-          {/* Cyber Grid Overlay */}
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:40px_40px]" />
         </div>
 
-        {/* Traditional Cultural Elements Background Watermarks */}
         <div className="absolute top-24 left-12 opacity-5 text-7xl font-bold hidden xl:block select-none font-serif text-red-500">日本語</div>
         <div className="absolute bottom-24 right-12 opacity-5 text-7xl font-bold hidden xl:block select-none font-serif text-blue-500">한국어</div>
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          
-          {/* Tagline Badge */}
           <motion.div
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-red-500/10 to-blue-500/10 border border-white/10 text-gray-300 text-sm mb-6 backdrop-blur-md"
           >
             <Languages size={14} className="text-red-400" />
-            <span className="text-red-400 font-semibold">JLPT</span> & <span className="text-blue-400 font-semibold">EPS-TOPIK / TOPIK</span> Specialized Prep Hub
+            <span className="text-red-400 font-semibold">JLPT</span> & <span className="text-blue-400 font-semibold">TOPIK / EPS - TOPIK</span> Specialized Prep Hub
           </motion.div>
 
-          {/* Main Hero Header */}
           <motion.h1
             initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }}
             className="text-4xl sm:text-6xl lg:text-7xl font-extrabold leading-tight tracking-tight mb-6"
@@ -133,18 +155,14 @@ export default function LandingPage() {
             <br />Exams on the First Attempt!
           </motion.h1>
 
-          {/* Subtitle description */}
           <motion.p
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
             className="text-lg sm:text-xl text-gray-300 max-w-3xl mx-auto mb-10 leading-relaxed"
           >
-            Sri Lanka's premier specialized simulator. Master the JLPT (N5 - N1) and EPS-TOPIK & TOPIK I with real mock paper formats, active time tracking, and native audio listening rooms.
+            Sri Lanka's premier specialized simulator. Master the JLPT (N5 - N1) and TOPIK I & EPS - TOPIK with real mock paper formats, active time tracking, and native audio listening rooms.
           </motion.p>
 
-          {/* Dynamic Dual Target Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-12">
-            
-            {/* Japan Track Card */}
             <motion.div 
               initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.3 }}
               className="relative group overflow-hidden rounded-2xl border border-red-500/20 bg-gradient-to-br from-black/40 to-red-950/10 backdrop-blur-md p-6 text-left hover:border-red-500/40 transition-all duration-300"
@@ -163,7 +181,6 @@ export default function LandingPage() {
               </button>
             </motion.div>
 
-            {/* Korea Track Card */}
             <motion.div 
               initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.3 }}
               className="relative group overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-br from-black/40 to-blue-950/10 backdrop-blur-md p-6 text-left hover:border-blue-500/40 transition-all duration-300"
@@ -181,10 +198,8 @@ export default function LandingPage() {
                 Explore Korean Papers <ChevronRight size={14} />
               </button>
             </motion.div>
-
           </div>
 
-          {/* Call to Actions */}
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14"
@@ -197,7 +212,6 @@ export default function LandingPage() {
             </Button>
           </motion.div>
 
-          {/* Quick Search Panel */}
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.5 }}
             className="relative max-w-2xl mx-auto mb-16"
@@ -224,7 +238,6 @@ export default function LandingPage() {
             </div>
           </motion.div>
 
-          {/* Metrics Displays */}
           <motion.div
             initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.6 }}
             className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto"
@@ -286,7 +299,6 @@ export default function LandingPage() {
                       {exam.tag && <Badge color="amber">{exam.tag}</Badge>}
                     </div>
                     <div className="absolute bottom-3 right-3 text-right">
-                    
                       <div className="text-white font-bold text-lg flex items-center gap-1">
                         <Coins size={16} className="text-amber-400" />
                         {exam?.credits || 10} Credits
@@ -315,7 +327,7 @@ export default function LandingPage() {
       </section>
 
       {/* Top Tutors Section */}
-      <section className="py-24 bg-gradient-to-b from-transparent to-[#070e20]">
+      <section className="py-24 bg-gradient-to-br from-transparent to-[#070e20]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div {...fadeUp} className="flex items-end justify-between mb-12">
             <div>
@@ -389,53 +401,92 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing Preview Section */}
+      {/* ==========================================
+          🎯 UPDATED: DYNAMIC LIVE DB SUBSCRIPTION PLANS
+         ========================================== */}
       <section className="py-24 bg-gradient-to-b from-transparent to-[#070e20]">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div {...fadeUp} className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Simple, Transparent Pricing</h2>
-            <p className="text-gray-400 text-lg">Start free, upgrade when ready</p>
+            <h2 className="text-4xl font-bold mb-4 tracking-tight">Simple, Transparent Pricing</h2>
+            <p className="text-gray-400 text-lg max-w-2xl mx-auto">Start free, upgrade when ready to accelerate your studies</p>
           </motion.div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {subscriptionPlans.map((plan, i) => (
-              <motion.div key={plan.id} {...stagger} transition={{ duration: 0.4, delay: i * 0.1 }}>
-                <GlassCard className={`p-7 h-full relative ${plan.popular ? 'border-blue-500/50 bg-blue-500/5' : ''}`}>
-                  {plan.popular && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <span className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-xs font-bold px-4 py-1 rounded-full">MOST POPULAR</span>
-                    </div>
-                  )}
-                  <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
-                  <div className="mb-6">
-                    {plan.price === 0 ? (
-                      <span className="text-4xl font-bold text-white">Free</span>
-                    ) : (
-                      <>
-                        <span className="text-4xl font-bold text-white">LKR {plan?.price?.toLocaleString() || plan.price}</span>
-                        <span className="text-gray-400 text-sm">/month</span>
-                      </>
-                    )}
-                  </div>
-                  <ul className="space-y-3 mb-8">
-                    {plan.features.map((f, j) => (
-                      <li key={j} className="flex items-start gap-2.5 text-sm text-gray-300">
-                        <CheckCircle size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-                        <span>{f}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    variant={plan.popular ? 'primary' : 'secondary'}
-                    fullWidth
-                    onClick={() => navigate('/pricing')}
-                  >
-                    {plan.price === 0 ? 'Start Free' : `Get ${plan.name}`}
-                  </Button>
-                </GlassCard>
-              </motion.div>
-            ))}
-          </div>
-          <div className="text-center mt-8">
+
+          {plansLoading ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-3">
+              <RefreshCw className="animate-spin text-blue-500" size={36} />
+              <p className="text-gray-400 text-sm font-medium">Synchronizing live credit packages...</p>
+            </div>
+          ) : plans.length === 0 ? (
+            <div className="text-center py-16 text-gray-400 bg-white/[0.01] border border-white/5 rounded-2xl">
+              <AlertCircle className="mx-auto text-gray-600 mb-2" size={24} />
+              <p className="text-sm">No active plans are currently included in the core system repositories.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {plans
+                .filter(plan => plan.active === true) 
+                .map((plan) => {
+                  const IconComponent = iconMap[plan.icon] || Zap;
+                  const isPopular = plan.popular || false;
+                  
+                  return (
+                    <motion.div 
+                      key={plan._id}
+                      whileHover={{ y: -6 }}
+                      className={`relative bg-[#0b1221]/60 backdrop-blur-md border rounded-3xl p-8 flex flex-col shadow-2xl transition-all duration-300 ${
+                        isPopular ? 'border-blue-500 shadow-blue-500/10' : 'border-white/10'
+                      }`}
+                    >
+                      {isPopular && (
+                        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-[11px] font-bold px-4 py-1 rounded-full shadow-lg z-10 tracking-wider uppercase">
+                          MOST POPULAR
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-4 mb-6 mt-2">
+                        <div className={`p-3 rounded-2xl ${isPopular ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-blue-500/10 border border-blue-500/20'}`}>
+                          <IconComponent className={isPopular ? 'text-cyan-400' : 'text-blue-400'} size={24} />
+                        </div>
+                        <h3 className="text-2xl font-bold capitalize tracking-wide text-white">{plan.name}</h3>
+                      </div>
+
+                      <div className="mb-4">
+                        <span className="text-4xl sm:text-5xl font-extrabold text-white">
+                          LKR {Number(plan.price).toLocaleString()}
+                        </span>
+                        <span className="text-gray-400 text-sm font-light ml-1">/mo</span>
+                      </div>
+
+                      <div className="mb-2">
+                        <span className="text-sm text-gray-400">
+                          <span className="text-amber-400 font-semibold">{plan.credits || 0}</span> credits 
+                        </span>
+                      </div>
+
+                      <ul className="space-y-4 mb-8 flex-grow mt-4">
+                        {plan.features && plan.features.map((feature, idx) => (
+                          <li key={idx} className="flex items-start gap-3 text-sm text-gray-300 font-light">
+                            <CheckCircle size={16} className={`${isPopular ? 'text-cyan-400' : 'text-emerald-400'} mt-0.5 flex-shrink-0`} />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <Button 
+                        variant={isPopular ? "primary" : "outline"} 
+                        size="lg" 
+                        fullWidth 
+                        onClick={() => navigate('/pricing')}
+                        className={isPopular ? "shadow-lg shadow-blue-500/20" : ""}
+                      >
+                        Choose {plan.name} <ArrowRight size={16} className="ml-2" />
+                      </Button>
+                    </motion.div>
+                  );
+                })}
+            </div>
+          )}
+          <div className="text-center mt-12">
             <Button variant="ghost" onClick={() => navigate('/pricing')}>View full pricing comparison <ChevronRight size={16} /></Button>
           </div>
         </div>
@@ -471,4 +522,4 @@ export default function LandingPage() {
 
     </div>
   );
-} 
+}

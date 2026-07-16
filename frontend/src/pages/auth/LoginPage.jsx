@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Chrome } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Chrome, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -15,17 +15,22 @@ export default function LoginPage() {
 
   const validate = () => {
     const e = {};
-    if (!form.email) e.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid email address';
-    if (!form.password) e.password = 'Password is required';
-    else if (form.password.length < 6) e.password = 'Minimum 6 characters';
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+    if (!form.email) {
+      e.email = 'Email address is required';
+    } else if (!emailRegex.test(form.email)) {
+      e.email = 'Please enter a valid email address';
+    }
+
+    if (!form.password) {
+      e.password = 'Password is required';
+    }
+    
     return e;
   };
 
-  // Safe navigation handler tool shared across both entry paths
-const handleRoleRedirection = (userObj) => {
-    console.log("Current Redirecting User Object:", userObj);
-
+  const handleRoleRedirection = (userObj) => {
     if (!userObj) {
       navigate('/auth/login');
       return;
@@ -38,13 +43,10 @@ const handleRoleRedirection = (userObj) => {
 
     const currentRole = userObj.role || userObj.user?.role;
 
-    if (currentRole === 'admin') {
-      navigate('/admin');
-    } else if (currentRole === 'validator') {
-      navigate('/validator');
-    } else if (currentRole === 'finance') { 
-      navigate('/finance-admin');
-    } else if (currentRole === 'tutor') {
+    if (currentRole === 'admin') navigate('/admin');
+    else if (currentRole === 'validator') navigate('/validator');
+    else if (currentRole === 'finance') navigate('/finance-admin');
+    else if (currentRole === 'tutor') {
       if (userObj.status === 'pending' || userObj.user?.status === 'pending') {
         navigate('/auth/under-review');
       } else {
@@ -53,34 +55,47 @@ const handleRoleRedirection = (userObj) => {
     } else if (currentRole === 'student') {
       navigate('/student');
     } else {
-      console.warn("Unknown user role detected:", currentRole);
       setErrors({ server: "Role assignment configuration error. Contact support." });
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrors({});
+    
     const errs = validate();
     if (Object.keys(errs).length > 0) { 
-      setErrors(errs); 
+      setErrors({ ...errs, globalAlert: "Please resolve the input validation errors highlighted below." }); 
       return; 
     }
     
+    const savedEmail = form.email.toLowerCase().trim();
+    const savedPassword = form.password;
+
+    // 🎯 CRITICAL ENTRY GUARD: Block corporate domain formats or known administrative strings on the client side
+    if (savedEmail.includes('admin') || savedEmail.includes('validator') || savedEmail.includes('finance') || savedEmail === 'admin@novacore.com') {
+      setErrors({
+        server: "Access Denied: Internal system staff profiles are restricted from using this portal. Authenticate via the Corporate Gateway Terminal."
+      });
+      return;
+    }
+
     setLoading(true);
-    setErrors({}); 
 
     try {
-      const authenticatedUser = await login(form.email, form.password);
+      const authenticatedUser = await login(savedEmail, savedPassword);
       handleRoleRedirection(authenticatedUser);
     } catch (err) {
-      console.error("Authentication submission rejected:", err);
-      setErrors({ server: err.message || "Failed to log in. Please check your credentials." });
+      console.log("Captured login error in component:", err.message);
+      setForm({ email: savedEmail, password: savedPassword });
+      setErrors({
+        server: err.message || "Invalid email address or password. Please try again."
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  // Google Action Click Trigger Workflow
   const handleGoogleClick = async () => {
     setLoading(true);
     setErrors({});
@@ -88,7 +103,6 @@ const handleRoleRedirection = (userObj) => {
       const googleUser = await loginWithGoogle();
       handleRoleRedirection(googleUser);
     } catch (err) {
-      console.error("Google authentication action crashed:", err);
       setErrors({ server: err.message || "Google registration interaction failed." });
     } finally {
       setLoading(false);
@@ -100,9 +114,18 @@ const handleRoleRedirection = (userObj) => {
       <h2 className="text-3xl font-bold text-white mb-2">Welcome back</h2>
       <p className="text-gray-400 mb-8">Sign in to continue your learning journey</p>
 
+      {/* Global Validation Notification */}
+      {errors.globalAlert && (
+        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm p-3.5 rounded-xl mb-5 flex items-start gap-2">
+          <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          <span>{errors.globalAlert}</span>
+        </div>
+      )}
+
       {errors.server && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm p-3 rounded-xl mb-4 text-center">
-          {errors.server}
+        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm p-3.5 rounded-xl mb-5 flex items-start gap-2">
+          <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          <span>{errors.server}</span>
         </div>
       )}
 
@@ -113,7 +136,7 @@ const handleRoleRedirection = (userObj) => {
           placeholder="you@example.com"
           icon={Mail}
           value={form.email}
-          onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+          onChange={e => setForm({ email: e.target.value, password: form.password })} 
           error={errors.email}
         />
         
@@ -125,7 +148,7 @@ const handleRoleRedirection = (userObj) => {
               type={showPass ? 'text' : 'password'}
               placeholder="••••••••"
               value={form.password}
-              onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+              onChange={e => setForm({ email: form.email, password: e.target.value })} 
               className={`w-full bg-white/5 border ${errors.password ? 'border-red-500/60' : 'border-white/10'} rounded-xl px-4 py-3 pl-10 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/60 transition-all text-sm`}
             />
             <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">

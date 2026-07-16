@@ -1,19 +1,20 @@
 import { Outlet } from 'react-router-dom';
-import { LayoutDashboard, Users, DollarSign, Activity, Shield } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, Activity, Shield, Settings, Globe } from 'lucide-react'; 
 import DashboardSidebar from '../components/layout/DashboardSidebar';
 
 // Relative paths configured for seamless nested routing under '/admin'
 const navItems = [
   { label: 'Dashboard', path: '', icon: LayoutDashboard },
   { label: 'Users', path: 'users', icon: Users },
+  { label: 'Languages', path: 'languages', icon: Globe },
   { label: 'Revenue', path: 'revenue', icon: DollarSign },
   { label: 'Audit Logs', path: 'logs', icon: Activity },
-  { label: 'Security', path: 'security', icon: Shield },
+  { label: 'System Settings', path: 'settings', icon: Settings }, 
+  { label: 'Security', path: 'security', icon: Shield }
 ];
 
 export default function AdminLayout() {
   return (
-    
     <div className="min-h-screen bg-slate-50 dark:bg-[#060d1f] text-slate-900 dark:text-white flex transition-colors duration-200">
       
       {/* Dynamic sidebar passing the base and inner navigation items */}
