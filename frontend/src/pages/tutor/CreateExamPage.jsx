@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronRight, ChevronLeft, BookOpen, Plus, Trash2, 
   GripVertical, Upload, Save, Send, CheckCircle, 
-  Mic, ShieldAlert, Loader, X, AlertCircle, Info
+  Mic, ShieldAlert, Loader, X, AlertCircle, Info, FileText, HelpCircle, Image
 } from 'lucide-react';
 import { createTutorExam , uploadExamAsset } from '../../services/examService';
 import { fetchActiveExamSchema } from '../../services/languageService';
@@ -32,14 +32,18 @@ export default function CreateExamPage() {
   
   // 🧭 Default initial sections setup
   const [sections, setSections] = useState([
-    { id: 1, name: 'Grammar', questions: 10, time: 25 },
+    { id: 1, name: 'Vocabulary', questions: 0, time: 25 },
+    { id: 2, name: 'Grammar', questions: 0, time: 35 },
+    { id: 3, name: 'Listening', questions: 0, time: 30 }
   ]);
   
-  const [questions, setQuestions] = useState([
-    { id: 1, section: 'Grammar', type: 'mcq', text: '', options: ['', '', '', ''], correct: 0, explanation: '', audio_url: null, image_url: null },
-  ]);
+  // 📝 Questions - Start with empty array
+  const [questions, setQuestions] = useState([]);
   
-  const [activeQIdx, setActiveQIdx] = useState(0);
+  const [activeQuestionId, setActiveQuestionId] = useState(null);
+
+  // 👂 Listening specific state - image preview for current question
+  const [listeningImagePreview, setListeningImagePreview] = useState(null);
 
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -73,19 +77,18 @@ export default function CreateExamPage() {
     syncSchemaMatrix();
   }, []);
 
-  // 🔄 💥 Auto-Calculate Total Duration from Sections
+  // 🔄 Auto-Calculate Total Duration from Sections
   useEffect(() => {
     const totalTime = sections.reduce((sum, currentSec) => sum + Number(currentSec.time || 0), 0);
     setMeta(p => ({ ...p, duration_minutes: totalTime }));
   }, [sections]);
 
-  // 🎯 Handle Category Change + Auto Setup Sections for JLPT (Empty Inputs)
+  // 🎯 Handle Category Change + Auto Setup Sections for JLPT
   const handleCategoryChange = (catId) => {
     setMeta(p => ({ ...p, category_id: catId, level_id: '' }));
     
     const targetCluster = activeSchema.find(c => c.id === catId || c.category_name === catId);
     
-    // JLPT Fallback options setup (N1-N5) dynamic levels mapping
     if (targetCluster && targetCluster.levels && targetCluster.levels.length > 0) {
       setAvailableLevels(targetCluster.levels);
     } else if (catId.toUpperCase() === 'JLPT' || (targetCluster && targetCluster.category_name.toUpperCase() === 'JLPT')) {
@@ -100,19 +103,15 @@ export default function CreateExamPage() {
       setAvailableLevels([]);
     }
 
-    // 🔥 🧠 JLPT වුණොත් inputs හිස්ව (Tutor ටම fill කරන්න) සෙක්ෂන් 3ක් හදනවා:
     const isJlpt = catId.toUpperCase() === 'JLPT' || (targetCluster && targetCluster.category_name.toUpperCase() === 'JLPT');
     if (isJlpt) {
       setSections([
-        { id: Date.now() + 1, name: 'Vocabulary', questions: '', time: '' },
-        { id: Date.now() + 2, name: 'Grammar', questions: '', time: '' },
-        { id: Date.now() + 3, name: 'Listening', questions: '', time: '' }
+        { id: Date.now() + 1, name: 'Vocabulary', questions: 0, time: '' },
+        { id: Date.now() + 2, name: 'Grammar', questions: 0, time: '' },
+        { id: Date.now() + 3, name: 'Listening', questions: 0, time: '' }
       ]);
-      // Update first question's section to match standard JLPT workspace
-      setQuestions(p => p.map((q, idx) => idx === 0 ? { ...q, section: 'Vocabulary' } : q));
     } else {
-      // Default fallback for other general clusters
-      setSections([{ id: Date.now(), name: 'General Section', questions: '', time: '' }]);
+      setSections([{ id: Date.now(), name: 'General Section', questions: 0, time: '' }]);
     }
   };
 
@@ -123,12 +122,9 @@ export default function CreateExamPage() {
 
     try {
       showNotification('Uploading exam cover image...', 'info');
-      
-      // 📡 API එක හරහා Thumbnail File එක යවනවා
       const result = await uploadExamAsset(file);
       
       if (result && result.success) {
-        // ලැබෙන public URL එක meta data වල thumbnail එකට දානවා
         setMeta(p => ({ ...p, thumbnail: result.fileUrl })); 
         showNotification('Exam cover uploaded successfully!', 'success');
       }
@@ -138,67 +134,187 @@ export default function CreateExamPage() {
     }
   };
 
-  const addSection = () => setSections(p => [...p, { id: Date.now(), name: 'New Section Block', questions: 10, time: 15 }]);
+  // Section CRUD operations
+  const addSection = () => setSections(p => [...p, { id: Date.now(), name: 'New Section Block', questions: 0, time: 15 }]);
   const removeSection = (id) => setSections(p => p.filter(s => s.id !== id));
   const updateSection = (id, field, val) => setSections(p => p.map(s => s.id === id ? { ...s, [field]: val } : s));
 
-  // ➕ Add Question to a Specific Section Block
-  const addQuestion = (sectionName) => {
-    const targetSection = sections.find(s => s.name === sectionName);
-    const currentQsInSection = questions.filter(q => q.section === sectionName).length;
-    
-    // 🛑 Block adding if it exceeds the limit set in Phase 02
-    if (currentQsInSection >= Number(targetSection.questions)) {
-      showNotification(`Maximum limit of ${targetSection.questions} questions reached for ${sectionName}.`, 'error');
-      return;
-    }
-
-    const newQ = { 
-      id: Date.now(), 
-      section: sectionName, 
-      type: 'mcq', 
-      text: '', 
-      options: ['', '', '', ''], 
-      correct: 0, 
-      explanation: '', 
-      image_url: null 
-    };
-    
-    setQuestions(p => [...p, newQ]);
-    setActiveQIdx(questions.length); // Focus on the new question
+  // 🔢 Function to get questions for a specific section (only non-problem questions)
+  const getQuestionsForSection = (sectionName) => {
+    return questions.filter(q => q.section === sectionName && !q.is_problem);
   };
 
-  // 🎵 Cloud Master Audio Upload for Listening Block
+  // 📝 Function to generate display label for a question (section-wise numbering)
+  const getQuestionLabel = (question) => {
+    if (question.is_problem) {
+      return question.problem_title || 'Problem';
+    }
+    
+    const sectionQuestions = getQuestionsForSection(question.section);
+    const index = sectionQuestions.findIndex(q => q.id === question.id);
+    
+    if (index !== -1) {
+      return `Q${index + 1}`;
+    }
+    
+    return 'Question';
+  };
+
+  // ➕ Add Problem Context - MANUAL ADD
+  const addProblemContext = (sectionName) => {
+    const newId = Date.now();
+    const sectionProblemsCount = questions.filter(q => q.section === sectionName && q.is_problem).length;
+    
+    const newProblem = {
+      id: newId,
+      section: sectionName,
+      is_problem: true,
+      problem_title: `Problem ${sectionProblemsCount + 1}`,
+      explanation: '',
+      example_question: '',
+      example_correct_option: 0,
+      options: ['', '', '', '']
+    };
+
+    setQuestions(p => [...p, newProblem]);
+    setActiveQuestionId(newId);
+    showNotification(`New Problem Block created inside ${sectionName}!`);
+  };
+
+  // ➕ Add Standard Question - MANUAL ADD (Works for all sections including Listening)
+  const addStandardQuestion = (sectionName) => {
+    const newId = Date.now();
+    
+    // Get the last problem in this section to auto-link
+    const lastProblem = [...questions].reverse().find(q => q.section === sectionName && q.is_problem);
+    
+    // Check if it's Listening section
+    const isListening = sectionName.toLowerCase().includes('listen');
+
+    const newQ = {
+      id: newId,
+      section: sectionName,
+      is_problem: false,
+      parent_problem_id: lastProblem ? lastProblem.id : '', 
+      type: isListening ? 'listening' : 'mcq',
+      text: '',
+      options: ['', '', '', ''],
+      correct: 0,
+      explanation: '',
+      image_url: null // 👈 For listening question image (1,2,3,4 marked)
+    };
+
+    setQuestions(p => [...p, newQ]);
+    setActiveQuestionId(newId);
+    setListeningImagePreview(null);
+    showNotification(`New ${isListening ? 'Listening' : ''} question added to ${sectionName}!`);
+  };
+
+  // 👂 Add Listening Question
+  const addListeningQuestion = (sectionName) => {
+    const newId = Date.now();
+    
+    const newQ = {
+      id: newId,
+      section: sectionName,
+      is_problem: false,
+      parent_problem_id: '', 
+      type: 'listening',
+      text: '',
+      options: ['', '', '', ''],
+      correct: 0,
+      explanation: '',
+      image_url: null // 👈 Image with 1,2,3,4 marked
+    };
+
+    setQuestions(p => [...p, newQ]);
+    setActiveQuestionId(newId);
+    setListeningImagePreview(null);
+    showNotification(`New Listening question added!`);
+  };
+
+  // 📷 Upload Listening Question Image (1,2,3,4 marked)
+  const handleListeningImageUpload = async (questionId, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      showNotification('Uploading listening image...', 'info');
+      const result = await uploadExamAsset(file);
+      
+      if (result && result.success) {
+        updateItemField(questionId, 'image_url', result.fileUrl);
+        setListeningImagePreview(result.fileUrl);
+        showNotification('Listening image uploaded successfully!', 'success');
+      }
+    } catch (err) {
+      console.error("Image Upload Error:", err);
+      showNotification(err.message || 'Image upload failed.', 'error');
+    }
+  };
+
+  // 🎵 Audio Upload for Listening Section (GLOBAL - Single audio for entire section)
   const handleSectionAudioUpload = async (sectionId, e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     try {
-      showNotification('Uploading audio track to cloud storage...', 'info');
-      
-      // 📡 API එක හරහා Firebase Storage එකට File එක යවනවා
+      showNotification('Uploading listening audio track...', 'info');
       const result = await uploadExamAsset(file);
       
       if (result && result.success) {
-        // Backend එකෙන් ලැබෙන public URL එක section එකට සෙට් කරනවා
         updateSection(sectionId, 'audio_url', result.fileUrl); 
-        showNotification('Master Audio uploaded and attached successfully!', 'success');
+        showNotification('Listening audio uploaded successfully!', 'success');
       }
     } catch (err) {
-      console.error("Audio Cloud Upload Error:", err);
-      showNotification(err.message || 'Audio cloud upload failed.', 'error');
+      console.error("Audio Upload Error:", err);
+      showNotification(err.message || 'Audio upload failed.', 'error');
     }
   };
-  
-  const removeQuestion = (idx) => {
-    setQuestions(p => p.filter((_, i) => i !== idx));
-    setActiveQIdx(Math.max(0, activeQIdx - 1));
-  };
-  
-  const updateQ = (idx, field, val) => setQuestions(p => p.map((q, i) => i === idx ? { ...q, [field]: val } : q));
-  const updateOption = (qIdx, optIdx, val) => setQuestions(p => p.map((q, i) => i === qIdx ? { ...q, options: q.options.map((o, j) => j === optIdx ? val : o) } : q));
 
-  // 📡 Commit Payload Data and Trigger Backend Core Controller
+  // Remove item (problem or question)
+  const removeItem = (id) => {
+    if (questions.length <= 1) return;
+    
+    const itemToRemove = questions.find(q => q.id === id);
+    if (itemToRemove && itemToRemove.is_problem) {
+      const linkedQuestions = questions.filter(q => q.parent_problem_id === id);
+      if (linkedQuestions.length > 0) {
+        if (!window.confirm(`This will also delete ${linkedQuestions.length} question(s) linked to this problem. Continue?`)) {
+          return;
+        }
+      }
+      const remaining = questions.filter(q => q.id !== id && q.parent_problem_id !== id);
+      setQuestions(remaining);
+      setActiveQuestionId(remaining[0]?.id || null);
+    } else {
+      const remaining = questions.filter(q => q.id !== id);
+      setQuestions(remaining);
+      setActiveQuestionId(remaining[0]?.id || null);
+    }
+  };
+
+  const updateItemField = (id, field, val) => {
+    setQuestions(p => p.map(q => q.id === id ? { ...q, [field]: val } : q));
+  };
+
+  const updateItemOption = (id, optIdx, val) => {
+    setQuestions(p => p.map(q => {
+      if (q.id === id) {
+        const updatedOpts = [...q.options];
+        updatedOpts[optIdx] = val;
+        return { ...q, options: updatedOpts };
+      }
+      return q;
+    }));
+  };
+
+  // Get questions linked to a specific problem
+  const getQuestionsForProblem = (problemId) => {
+    return questions.filter(q => q.parent_problem_id === problemId);
+  };
+
+  // 📡 Commit Payload Data
   const handlePublishExam = async (statusType) => {
     try {
       setError('');
@@ -214,23 +330,39 @@ export default function CreateExamPage() {
         level_id: meta.level_id,
         duration_minutes: Number(meta.duration_minutes),
         description: meta.description,
-        status: statusType, // 'draft' or 'active'
+        thumbnail: meta.thumbnail || '',
+        status: statusType,
         sections: sections.map(s => ({
           name: s.name,
           questions: Number(s.questions),
           time: Number(s.time),
-          audio_url: s.audio_url || null
+          audio_url: s.audio_url || null // 👈 Global audio for listening section
         })),
-        questions: questions.map(q => ({
-          section: q.section,
-          type: q.type,
-          text: q.text,
-          options: q.options,
-          correct: Number(q.correct),
-          explanation: q.explanation,
-          audio_url: q.audio_url,
-          image_url: q.image_url
-        }))
+        questions: questions.map(q => {
+          if (q.is_problem) {
+            return {
+              is_problem: true,
+              section: q.section,
+              problem_title: q.problem_title,
+              explanation: q.explanation,
+              example_question: q.example_question || '',
+              example_correct_option: Number(q.example_correct_option || 0),
+              options: q.options
+            };
+          } else {
+            return {
+              is_problem: false,
+              section: q.section,
+              parent_problem_id: q.parent_problem_id || null,
+              type: q.type || 'mcq',
+              text: q.text || '',
+              options: q.options || ['', '', '', ''],
+              correct: Number(q.correct || 0),
+              explanation: q.explanation || '',
+              image_url: q.image_url || null // 👈 Image for listening question
+            };
+          }
+        })
       };
 
       const response = await createTutorExam(examPayload);
@@ -248,23 +380,13 @@ export default function CreateExamPage() {
     }
   };
 
-  const q = questions[activeQIdx];
+  // Get active item
+  const activeItem = questions.find(q => q.id === activeQuestionId) || questions[0];
 
-  // Frontend Axios/Fetch Example:
-const deleteAudio = async (urlToDelete) => {
-  try {
-    const response = await axios.post('http://localhost:5000/api/exams/delete-asset', {
-      fileUrl: urlToDelete // 👈 ඩිලීට් කරන්න ඕන audio එකේ සම්පූර්ණ URL එක මෙතනට දෙන්න
-    });
-    
-    if(response.data.success) {
-       alert("Audio එක Cloudinary එකෙන් මැකුණා මචං!");
-       // මෙතනින් පස්සේ ඔයාගේ state එක හෝ input field එක clear කරගන්න
-    }
-  } catch (error) {
-     console.error("Deletion failed", error);
-  }
-};
+  // Check if listening section
+  const isListeningSection = (sectionName) => {
+    return sectionName?.toLowerCase().includes('listen');
+  };
 
   return (
     <div className="space-y-6 max-w-6xl text-white relative">
@@ -339,19 +461,17 @@ const deleteAudio = async (urlToDelete) => {
                         {c.category_name}
                       </option>
                     ))}
-                    {/* Fallback option inline if collection fetch is empty during cold boot */}
                     <option value="JLPT" className="bg-[#070c19]">JLPT (Japanese Language Proficiency Test)</option>
                   </select>
                 </div>
                 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Target Structural Level</label>
-                  {/* 📜 Scrollable Select Dropdown Implementation */}
                   <select 
                     disabled={availableLevels.length === 0} 
                     value={meta.level_id} 
                     onChange={e => setMeta(p => ({ ...p, level_id: e.target.value }))} 
-                    className="bg-slate-950/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 disabled:opacity-40 max-h-40 overflow-y-auto scrollbar-thin"
+                    className="bg-slate-950/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 disabled:opacity-40"
                   >
                     <option value="" className="bg-[#070c19]">Select Mapped Level Node</option>
                     {availableLevels.map(l => (
@@ -363,7 +483,6 @@ const deleteAudio = async (urlToDelete) => {
                 </div>
               </div>
 
-              {/* 🕒 Auto Updating Total Duration Notice Box */}
               <div className="grid grid-cols-1 gap-4">
                 <div className="flex flex-col gap-1.5 relative">
                   <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Total Calculated Duration (Minutes)</label>
@@ -409,7 +528,7 @@ const deleteAudio = async (urlToDelete) => {
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
                 <div>
                   <h2 className="text-base font-bold uppercase tracking-wider">Exam Segment Matrix Partitioning</h2>
-                  {meta.category_id.toUpperCase() === 'JLPT' && (
+                  {meta.category_id?.toUpperCase() === 'JLPT' && (
                     <p className="text-emerald-400 font-mono text-[10px] mt-0.5 tracking-wider uppercase">🎯 Auto-Generated 3-Core Framework Loaded for JLPT</p>
                   )}
                 </div>
@@ -426,7 +545,7 @@ const deleteAudio = async (urlToDelete) => {
                         <Input placeholder="e.g., Vocabulary / Grammar" value={s.name} onChange={e => updateSection(s.id, 'name', e.target.value)} />
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Questions Count Bound</label>
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Questions Count (Manual)</label>
                         <Input type="number" placeholder="Target Qs" value={s.questions} onChange={e => updateSection(s.id, 'questions', e.target.value)} />
                       </div>
                       <div>
@@ -441,7 +560,6 @@ const deleteAudio = async (urlToDelete) => {
                 ))}
               </div>
 
-              {/* Live Evaluation Aggregator Display */}
               <div className="p-4 bg-blue-500/5 border border-blue-500/15 rounded-2xl flex justify-between text-xs font-mono font-bold tracking-wide uppercase">
                 <div>Total Operational Items: <span className="text-blue-400 ml-1">{sections.reduce((s, r) => s + Number(r.questions || 0), 0)} Items</span></div>
                 <div>Aggregated Master Clock: <span className="text-blue-400 ml-1">{meta.duration_minutes} Minutes</span></div>
@@ -449,15 +567,16 @@ const deleteAudio = async (urlToDelete) => {
             </GlassCard>
           )}
 
-          {/* PHASE 03: QUESTIONS STRUCTURAL STRING DATA */}
+          {/* PHASE 03: QUESTIONS - WITH LISTENING SUPPORT (No ばん, only Q1, Q2...) */}
           {step === 2 && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
               
-              {/* 🗂️ SIDEBAR: Evaluation Blocks Grouped by Sections */}
+              {/* 📂 SIDEBAR: Problems + Questions Grouped by Section */}
               <div className="lg:col-span-1 space-y-4 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
                 {sections.map(sec => {
-                  const secQuestions = questions.filter(q => q.section === sec.name);
-                  const isListening = sec.name.toLowerCase().includes('listen');
+                  const secProblems = questions.filter(q => q.section === sec.name && q.is_problem);
+                  const secQuestions = getQuestionsForSection(sec.name);
+                  const isListening = isListeningSection(sec.name);
 
                   return (
                     <div key={sec.id} className="bg-slate-950/40 border border-white/5 rounded-2xl p-3">
@@ -466,45 +585,29 @@ const deleteAudio = async (urlToDelete) => {
                           <h3 className="text-[11px] font-bold uppercase tracking-widest text-emerald-400 truncate">
                             {sec.name}
                           </h3>
-                          {/* 🗑️ Quick Delete Section Option */}
-                          <button 
-                            onClick={() => {
-                              if(window.confirm(`Are you sure you want to completely delete the ${sec.name} section and all its questions?`)) {
-                                // 1. Remove all questions belonging to this section
-                                setQuestions(p => p.filter(q => q.section !== sec.name));
-                                // 2. Remove the section itself
-                                removeSection(sec.id);
-                                showNotification(`${sec.name} section completely removed.`, 'info');
-                              }
-                            }}
-                            className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors"
-                            title={`Delete ${sec.name} Section`}
-                          >
-                            <X size={11} />
-                          </button>
+                          {isListening && <Mic size={12} className="text-blue-400 flex-shrink-0" />}
                         </div>
                         <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">
-                          {secQuestions.length} / {sec.questions || 0}
+                          {secProblems.length + secQuestions.length} / {sec.questions || 0}
                         </span>
                       </div>
 
-                      {/* 🎵 Global Audio Upload for Listening Block */}
+                      {/* 🎵 GLOBAL Audio Upload for Listening Section */}
                       {isListening && (
                         <div className="mb-3 space-y-2">
                           <label className={`flex items-center justify-center gap-2 px-3 py-2 border border-dashed rounded-lg cursor-pointer transition-colors text-[10px] uppercase font-bold tracking-wider ${
                             sec.audio_url ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-slate-400 hover:border-blue-500/30'
                           }`}>
                             <Mic size={12} />
-                            {sec.audio_url ? 'Audio Track Attached' : 'Attach Master Audio'}
+                            {sec.audio_url ? '🎧 Audio Track Attached ✓' : 'Attach Listening Audio (Single Track)'}
                             <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleSectionAudioUpload(sec.id, e)} />
                           </label>
 
-                          {/* 🎧 Audio Preview Player Player */}
                           {sec.audio_url && (
                             <div className="bg-slate-900/80 p-2 rounded-xl border border-white/5 space-y-1">
-                              <p className="text-[9px] font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
+                              <p className="text-[9px] font-mono uppercase tracking-widest text-emerald-400 flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                Audio Preview
+                                Audio Preview (Shared for all questions)
                               </p>
                               <audio 
                                 src={sec.audio_url} 
@@ -516,120 +619,329 @@ const deleteAudio = async (urlToDelete) => {
                         </div>
                       )}
 
-                      {/* 📝 List of Questions for this Section */}
-                      <div className="space-y-1.5 mb-2">
-                        {secQuestions.map((q, i) => {
-                          // Find the absolute index of this question in the main array
-                          const absoluteIdx = questions.findIndex(item => item.id === q.id);
-                          return (
+                      {/* 🔷 Render Problems in this Section */}
+                      {secProblems.map((problem) => {
+                        const childQuestions = getQuestionsForProblem(problem.id);
+                        return (
+                          <div key={problem.id} className="space-y-1 mb-2">
                             <button 
-                              key={q.id} 
-                              onClick={() => setActiveQIdx(absoluteIdx)}
-                              className={`w-full text-left px-3 py-2 rounded-lg border transition-all text-[11px] font-semibold flex items-center justify-between ${
-                                activeQIdx === absoluteIdx ? 'border-blue-500 bg-blue-500/10 text-white' : 'border-white/5 bg-slate-900/30 text-gray-500 hover:border-white/10'
+                              onClick={() => setActiveQuestionId(problem.id)}
+                              className={`w-full text-left px-2.5 py-2 rounded-xl border transition-all text-[10px] font-semibold flex items-center justify-between ${
+                                activeQuestionId === problem.id ? 'border-blue-500 bg-blue-500/10 text-white' : 'border-white/5 bg-slate-950/40 text-gray-400 hover:border-white/10'
                               }`}
                             >
-                              <span>Q {i + 1}</span>
-                              {q.text ? <span className="truncate ml-2 opacity-50 font-light max-w-[100px]">{q.text}</span> : <span className="opacity-30">Empty</span>}
+                              <div className="flex items-center gap-1.5 truncate">
+                                <FileText size={12} className="text-blue-400 flex-shrink-0" />
+                                <span className="truncate">{problem.problem_title || 'Problem'}</span>
+                              </div>
+                              <span className="text-[8px] px-1.5 bg-slate-700/50 rounded-full text-slate-400 flex-shrink-0">
+                                {childQuestions.length}
+                              </span>
                             </button>
-                          );
-                        })}
-                      </div>
+                            
+                            <div className="ml-4 space-y-0.5 border-l border-white/5 pl-2">
+                              {childQuestions.map((q) => {
+                                const sectionQuestions = getQuestionsForSection(q.section);
+                                const globalIndex = sectionQuestions.findIndex(item => item.id === q.id);
+                                const questionNumber = globalIndex + 1;
+                                const isListeningQ = q.type === 'listening';
+                                
+                                return (
+                                  <button 
+                                    key={q.id}
+                                    onClick={() => setActiveQuestionId(q.id)}
+                                    className={`w-full text-left px-2 py-1.5 rounded-lg border transition-all text-[9px] font-medium flex items-center justify-between ${
+                                      activeQuestionId === q.id ? 'border-emerald-500/50 bg-emerald-500/10 text-white' : 'border-transparent bg-slate-950/30 text-gray-500 hover:border-white/10'
+                                    }`}
+                                  >
+                                    <span className="truncate flex items-center gap-1">
+                                      {isListeningQ && <Mic size={10} className="text-blue-400" />}
+                                      Q{questionNumber}: {q.text || 'Empty'}
+                                    </span>
+                                    {isListeningQ && q.image_url && (
+                                      <span className="text-[8px] px-1 bg-purple-500/20 text-purple-300 rounded">🖼️</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
 
-                      {/* ➕ Add Question Button */}
-                      <button 
-                        onClick={() => addQuestion(sec.name)}
-                        disabled={secQuestions.length >= Number(sec.questions)}
-                        className="w-full py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-white/5 border border-white/5 rounded-lg text-white transition-all flex items-center justify-center gap-1 text-[10px] uppercase tracking-wider"
-                      >
-                        <Plus size={12} /> Add Item
-                      </button>
+                      {/* 📝 Questions (not linked to problem) */}
+                      {secQuestions.filter(q => !q.parent_problem_id).map((q) => {
+                        const sectionQuestions = getQuestionsForSection(q.section);
+                        const globalIndex = sectionQuestions.findIndex(item => item.id === q.id);
+                        const questionNumber = globalIndex + 1;
+                        const isListeningQ = q.type === 'listening';
+                        
+                        return (
+                          <button 
+                            key={q.id}
+                            onClick={() => setActiveQuestionId(q.id)}
+                            className={`w-full text-left px-2.5 py-2 rounded-xl border transition-all text-[10px] font-semibold flex items-center justify-between ${
+                              activeQuestionId === q.id ? 'border-emerald-500/50 bg-emerald-500/10 text-white' : 'border-white/5 bg-slate-950/30 text-gray-500 hover:border-white/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 truncate">
+                              {isListeningQ ? (
+                                <Mic size={12} className="text-blue-400 flex-shrink-0" />
+                              ) : (
+                                <HelpCircle size={12} className="text-slate-500 flex-shrink-0" />
+                              )}
+                              <span className="truncate">
+                                Q{questionNumber}: {q.text || 'Empty'}
+                              </span>
+                            </div>
+                            {isListeningQ && q.image_url && (
+                              <span className="text-[8px] px-1 bg-purple-500/20 text-purple-300 rounded">🖼️</span>
+                            )}
+                          </button>
+                        );
+                      })}
+
+                      {/* 🛠️ ACTION BUTTONS */}
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 mt-2">
+                        <button 
+                          onClick={() => addProblemContext(sec.name)}
+                          className="w-full py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl text-blue-400 transition-all flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+                        >
+                          <Plus size={12} /> Add Problem
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if (isListening) {
+                              addListeningQuestion(sec.name);
+                            } else {
+                              addStandardQuestion(sec.name);
+                            }
+                          }}
+                          className={`w-full py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${
+                            isListening 
+                              ? 'bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400'
+                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400'
+                          }`}
+                        >
+                          <Plus size={12} /> Add Question
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* 🎯 MAIN PANEL: Edit Selected Question */}
-              <GlassCard className="lg:col-span-3 p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl">
-                {questions.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-500 min-h-[300px]">
-                    <BookOpen size={40} className="opacity-20 mb-3" />
-                    <p className="text-sm font-semibold">No questions created yet.</p>
-                    <p className="text-xs opacity-60">Click 'Add Item' in the left panel to begin.</p>
-                  </div>
-                ) : (
-                  <>
+              {/* 🎯 MAIN ACTIVE EDITING BOARD */}
+              <div className="lg:col-span-3">
+                {activeItem ? (
+                  <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl relative">
+                    
                     <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-white text-sm uppercase tracking-wider">
-                          Workspace Integration Node
-                        </h3>
-                        <Badge color="blue" className="text-[10px] font-mono">{q?.section}</Badge>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge color={activeItem.is_problem ? 'blue' : activeItem.type === 'listening' ? 'purple' : 'emerald'}>
+                          {activeItem.is_problem ? 'PROBLEM BLOCK' : 
+                           activeItem.type === 'listening' ? '🎧 LISTENING' : 'STANDARD QUESTION'}
+                        </Badge>
+                        <span className="text-xs font-mono text-slate-400">{activeItem.section}</span>
+                        {!activeItem.is_problem && (
+                          <Badge color="purple" className="text-[9px]">
+                            {getQuestionLabel(activeItem)}
+                          </Badge>
+                        )}
+                        {!activeItem.is_problem && activeItem.parent_problem_id && (
+                          <Badge color="purple" className="text-[9px]">
+                            Linked to: {questions.find(q => q.id === activeItem.parent_problem_id)?.problem_title || 'Problem'}
+                          </Badge>
+                        )}
                       </div>
-                      <button onClick={() => removeQuestion(activeQIdx)} disabled={questions.length === 1} className="text-rose-400 hover:text-rose-300 disabled:opacity-30">
+                      <button onClick={() => removeItem(activeItem.id)} className="text-rose-400 hover:text-rose-300" disabled={questions.length === 1}>
                         <Trash2 size={16} />
                       </button>
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Evaluation Mode Matrix</label>
-                      <select value={q?.type || 'mcq'} onChange={e => updateQ(activeQIdx, 'type', e.target.value)} className="bg-slate-950 border border-white/10 rounded-xl px-4 py-2.5 text-white text-xs focus:outline-none w-fit">
-                        <option value="mcq" className="bg-[#070c19]">Multiple Choice Question (MCQ)</option>
-                        <option value="typed" className="bg-[#070c19]">Typed Response String</option>
-                      </select>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Question Content String</label>
-                      <textarea rows={3} placeholder="Provide target structural expression code block..." value={q?.text || ''} onChange={e => updateQ(activeQIdx, 'text', e.target.value)}
-                        className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-xs focus:outline-none focus:border-blue-500/50 resize-none" />
-                    </div>
-
-                    {q?.type === 'mcq' && (
-                      <div className="space-y-3 bg-slate-950/20 p-4 border border-white/5 rounded-2xl">
-                        <label className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-1">Response Dimensions Array</label>
-                        {q.options.map((opt, j) => (
-                          <div key={j} className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => updateQ(activeQIdx, 'correct', j)}
-                              className={`w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all ${
-                                q.correct === j ? 'border-emerald-500 bg-emerald-500 text-white shadow-md' : 'border-white/10 text-gray-500 hover:border-white/30'
-                              }`}
-                            >
-                              {String.fromCharCode(65 + j)}
-                            </button>
-                            <input
-                              type="text" placeholder={`Option Index Dimension ${String.fromCharCode(65 + j)}`}
-                              value={opt} onChange={e => updateOption(activeQIdx, j, e.target.value)}
-                              className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-xs focus:outline-none focus:border-blue-500/50"
-                            />
+                    {/* 🔷 CONDITION A: PROBLEM BLOCK EDITOR */}
+                    {activeItem.is_problem ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="col-span-2">
+                            <Input label="Problem Title" placeholder="e.g. Problem 1" value={activeItem.problem_title} onChange={e => updateItemField(activeItem.id, 'problem_title', e.target.value)} />
                           </div>
-                        ))}
+                          <div className="col-span-1">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">Questions: {getQuestionsForProblem(activeItem.id).length}</label>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Problem Instruction / Explanation</label>
+                          <textarea rows={2} placeholder="Type core instructions for this problem block..." value={activeItem.explanation} onChange={e => updateItemField(activeItem.id, 'explanation', e.target.value)} className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none resize-none" />
+                        </div>
+
+                        <div className="p-4 bg-slate-950/30 border border-white/5 rounded-2xl space-y-4">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">Example Question Configuration (Optional)</h4>
+                          
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Example Question Text</label>
+                            <input type="text" placeholder="e.g. Example Question Context..." value={activeItem.example_question || ''} onChange={e => updateItemField(activeItem.id, 'example_question', e.target.value)} className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none" />
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Example Options (4 Options)</label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {activeItem.options.map((opt, oIdx) => (
+                                <div key={oIdx} className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateItemField(activeItem.id, 'example_correct_option', oIdx)}
+                                    className={`w-7 h-7 rounded-lg border text-xs font-bold transition-all ${activeItem.example_correct_option === oIdx ? 'bg-blue-600 border-blue-500 text-white' : 'border-white/10 text-slate-500'}`}
+                                  >
+                                    {String.fromCharCode(65 + oIdx)}
+                                  </button>
+                                  <input type="text" placeholder={`Option ${String.fromCharCode(65 + oIdx)}`} value={opt} onChange={e => updateItemOption(activeItem.id, oIdx, e.target.value)} className="flex-1 bg-slate-950/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white placeholder-gray-700 focus:outline-none" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {getQuestionsForProblem(activeItem.id).length > 0 && (
+                          <div className="p-3 bg-slate-950/30 border border-white/5 rounded-xl">
+                            <h5 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Questions in this Problem:</h5>
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {getQuestionsForProblem(activeItem.id).map((q) => {
+                                const sectionQuestions = getQuestionsForSection(q.section);
+                                const globalIndex = sectionQuestions.findIndex(item => item.id === q.id);
+                                const questionNumber = globalIndex + 1;
+                                
+                                return (
+                                  <div key={q.id} className="flex items-center justify-between text-[10px] text-slate-300 px-2 py-1 bg-slate-950/40 rounded-lg">
+                                    <span>Q{questionNumber}: {q.text || 'Empty'}</span>
+                                    <button onClick={() => setActiveQuestionId(q.id)} className="text-blue-400 hover:text-blue-300 text-[9px]">Edit</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      
+                      // 🔹 CONDITION B: STANDARD / LISTENING QUESTION EDITOR
+                      <div className="space-y-4">
+                        
+                        {/* Question Number Display */}
+                        <div className="bg-slate-950/30 p-2 rounded-xl border border-white/5 flex items-center justify-between">
+                          <p className="text-[10px] font-mono text-slate-400">
+                            Question Number: <span className="text-emerald-400 font-bold">{getQuestionLabel(activeItem)}</span>
+                          </p>
+                          {activeItem.type === 'listening' && (
+                            <Badge color="purple" className="text-[9px]">
+                              🎧 Listening Question
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* 🔗 PARENT PROBLEM SELECTOR */}
+                        <div className="flex flex-col gap-1.5 bg-blue-500/5 p-3 rounded-2xl border border-blue-500/10">
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
+                            Link Parent Problem Cluster Context
+                          </label>
+                          <select 
+                            value={activeItem.parent_problem_id || ''} 
+                            onChange={e => updateItemField(activeItem.id, 'parent_problem_id', e.target.value)}
+                            className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none w-full"
+                          >
+                            <option value="">-- Standalone Question (No Parent Block) --</option>
+                            {questions
+                              .filter(q => q.section === activeItem.section && q.is_problem)
+                              .map(p => (
+                                <option key={p.id} value={p.id}>{p.problem_title} : {p.explanation?.substring(0, 45)}...</option>
+                              ))
+                            }
+                          </select>
+                        </div>
+
+                        {/* 📝 Question Text - Auto Update කරන්න පුළුවන් */}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Question Text</label>
+                          <textarea 
+                            rows={2} 
+                            placeholder="Type your question here..." 
+                            value={activeItem.text || ''} 
+                            onChange={e => updateItemField(activeItem.id, 'text', e.target.value)} 
+                            className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 resize-none"
+                          />
+                          <p className="text-[9px] text-slate-500">💡 Question text will be displayed as: Q{getQuestionsForSection(activeItem.section).findIndex(q => q.id === activeItem.id) + 1}: {activeItem.text || 'Empty'}</p>
+                        </div>
+
+                        {/* 👂 LISTENING SPECIFIC FIELDS - Image Upload below Question Text */}
+                        {activeItem.type === 'listening' && (
+                          <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-2xl">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-2">
+                              📷 Listening Image (1, 2, 3, 4 marked)
+                            </label>
+                            <label className="flex items-center gap-3 px-4 py-3 bg-white/5 border-2 border-dashed border-purple-500/30 rounded-xl cursor-pointer hover:border-purple-500/50 transition-colors relative overflow-hidden h-32">
+                              {activeItem.image_url ? (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                  <img src={activeItem.image_url} alt="Listening" className="h-full w-full object-contain" />
+                                  <div className="absolute bg-black/60 text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md text-white">Change Image</div>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center gap-2 w-full">
+                                  <Image size={24} className="text-purple-400" />
+                                  <span className="text-xs text-gray-400">Click to upload listening image</span>
+                                  <span className="text-[8px] text-gray-500">(Image should have 1, 2, 3, 4 marked)</span>
+                                </div>
+                              )}
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleListeningImageUpload(activeItem.id, e)} />
+                            </label>
+                            
+                            {/* Show which audio will be used */}
+                            <div className="mt-2 text-[9px] text-slate-400 flex items-center gap-1">
+                              <Mic size={12} className="text-blue-400" />
+                              Audio: Using section-level audio track
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Options Array (4 Options) */}
+                        <div className="space-y-3 bg-slate-950/40 p-4 border border-white/5 rounded-2xl">
+                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400 block">Response Options (4 Options)</label>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {activeItem.options?.map((opt, oIdx) => (
+                              <div key={oIdx} className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => updateItemField(activeItem.id, 'correct', oIdx)}
+                                  className={`w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all ${activeItem.correct === oIdx ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-white/10 text-gray-500'}`}
+                                >
+                                  {String.fromCharCode(65 + oIdx)}
+                                </button>
+                                <input type="text" placeholder={`Option ${String.fromCharCode(65 + oIdx)}`} value={opt} onChange={e => updateItemOption(activeItem.id, oIdx, e.target.value)} className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Explanation */}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Explanation / Resolution</label>
+                          <textarea rows={2} placeholder="Explain why this option is correct..." value={activeItem.explanation || ''} onChange={e => updateItemField(activeItem.id, 'explanation', e.target.value)} className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none resize-none" />
+                        </div>
                       </div>
                     )}
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Structural Explanation Sequence</label>
-                      <textarea rows={2} placeholder="Provide structural resolution sequence mapping details..." value={q?.explanation || ''} onChange={e => updateQ(activeQIdx, 'explanation', e.target.value)}
-                        className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-xs focus:outline-none focus:border-blue-500/50 resize-none" />
-                    </div>
-
-                    {/* Question Specific Image Upload */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <label className="flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-dashed border-white/10 rounded-xl cursor-pointer hover:border-blue-500/30 transition-colors">
-                        <Upload size={14} className="text-blue-400" />
-                        <span className="text-xs text-slate-400">Attach Graphic Asset Node</span>
-                        <input type="file" accept="image/*" className="hidden" />
-                      </label>
-                    </div>
-                  </>
+                  </GlassCard>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 min-h-[300px]">
+                    <BookOpen size={40} className="opacity-20 mb-3" />
+                    <p className="text-sm font-semibold">No items created yet.</p>
+                    <p className="text-xs opacity-60">Click "Add Problem" or "Add Question" from the sidebar to start building your exam.</p>
+                  </div>
                 )}
-              </GlassCard>
+              </div>
             </div>
           )}
 
-          {/* PHASE 04: PREVIEW & FINAL DEPLOYMENT ASSEMBLY */}
+          {/* PHASE 04: PREVIEW & FINAL DEPLOYMENT */}
           {step === 3 && (
             <div className="space-y-6">
               <GlassCard className="p-6 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl space-y-6">
@@ -652,15 +964,21 @@ const deleteAudio = async (urlToDelete) => {
                 
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Partition Layer Matrix Validation</h4>
-                  {sections.map((s, i) => (
-                    <div key={i} className="flex justify-between items-center px-4 py-3 bg-slate-900/20 border border-white/5 rounded-xl text-xs font-medium">
-                      <span className="text-slate-300 font-bold">{s.name}</span>
-                      <div className="flex gap-4 text-slate-500 font-mono">
-                        <span>{s.questions} Questions</span>
-                        <span>{s.time} Mins</span>
+                  {sections.map((s, i) => {
+                    const sectionQuestions = getQuestionsForSection(s.name);
+                    return (
+                      <div key={i} className="flex justify-between items-center px-4 py-3 bg-slate-900/20 border border-white/5 rounded-xl text-xs font-medium">
+                        <span className="text-slate-300 font-bold">{s.name}</span>
+                        <div className="flex gap-4 text-slate-500 font-mono">
+                          <span>{sectionQuestions.length} Questions</span>
+                          <span>{s.time} Mins</span>
+                          {isListeningSection(s.name) && s.audio_url && (
+                            <span className="text-emerald-400">🎧 Audio Attached</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </GlassCard>
               
@@ -685,7 +1003,7 @@ const deleteAudio = async (urlToDelete) => {
         </motion.div>
       </AnimatePresence>
 
-      {/* Navigation Footer Action Bounds */}
+      {/* Navigation Footer */}
       <div className="flex justify-between pt-4 border-t border-white/5">
         <Button variant="secondary" disabled={step === 0 || submitLoading} onClick={() => setStep(p => p - 1)} className="bg-white/5 text-gray-400 border border-white/10">
           <ChevronLeft size={16} /> Previous Phase
