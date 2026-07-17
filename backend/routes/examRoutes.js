@@ -1,26 +1,45 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 
-const { 
-  createExam, 
-  getStudentExams, 
+// Destructure all the functions out of the consolidated controller
+const {
+  createExam,
+  getStudentExams,
   deleteStudentExam,
-  uploadAsset 
-} = require('../controllers/examController');
+  uploadAsset,
+  getPendingAudits, // 👈 Added
+  getExamQuestions, // 👈 Added
+  updateExamStatus, // 👈 Added
+} = require("../controllers/examController");
 
-const { protect, authorizeRoles } = require('../middleware/authMiddleware');
-const upload = require('../middleware/uploadMiddleware');
+const { protect, authorizeRoles } = require("../middleware/authMiddleware");
+const upload = require("../middleware/uploadMiddleware");
 
-// 🔒 URL: POST http://localhost:5000/api/exams/upload-asset
-router.post('/upload-asset', upload.single('file'), protect, authorizeRoles('tutor', 'admin'), uploadAsset);
+// 🔒 Asset Management
+router.post(
+  "/upload-asset",
+  upload.single("file"),
+  protect,
+  authorizeRoles("tutor", "admin"),
+  uploadAsset,
+);
 
-// URL: GET http://localhost:5000/api/exams/student-exams
-router.get('/student-exams', getStudentExams);
+// 📊 Student Attempts Paths
+router.get("/student-exams", getStudentExams);
+router.delete("/student-exams/:id", deleteStudentExam);
 
-// URL: DELETE http://localhost:5000/api/exams/student-exams/:id
-router.delete('/student-exams/:id', deleteStudentExam);
+// 🚀 Core Tutor Exam Architecture Creation
+router.post("/create", protect, authorizeRoles("tutor", "admin"), createExam);
 
-// URL: POST http://localhost:5000/api/exams/create
-router.post('/create', protect, authorizeRoles('tutor', 'admin'), createExam);
+// 🔍 --- QUALITY AUDIT ROUTES (Academic Validator Actions) ---
+
+// URL: GET http://localhost:5000/api/exams/pending-audits
+router.get("/pending-audits", getPendingAudits);
+
+// URL: GET http://localhost:5000/api/exams/:examId/questions
+router.get("/:examId/questions", getExamQuestions);
+
+// URL: PUT http://localhost:5000/api/exams/:examId/status
+router.put("/:examId/status", updateExamStatus);
 
 module.exports = router;
