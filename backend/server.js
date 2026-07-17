@@ -15,6 +15,8 @@ const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
 const languageRoutes = require('./routes/languageRoutes');
+const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
+const studentExamRoutes = require('./routes/studentExamRoutes');
 
 
 const app = express();
@@ -34,6 +36,9 @@ app.use('/api/student', studentProfileRoutes);
 app.use('/api/planner', studyPlannerRoutes); 
 app.use('/api/validator/tutors', tutorValidationRoutes);
 app.use('/api/languages', languageRoutes);
+app.use('/api/system-settings', systemSettingsRoutes);
+app.use('/api/student-exams', studentExamRoutes);
+
 
 
 const PORT = process.env.PORT || 5000;

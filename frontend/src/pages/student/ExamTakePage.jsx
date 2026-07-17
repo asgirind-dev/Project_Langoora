@@ -1,77 +1,429 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, AlertTriangle, ChevronLeft, ChevronRight, Flag, CheckCircle, Mic, SkipForward, Send, LayoutGrid, X } from 'lucide-react';
+import {
+  Clock, AlertTriangle, ChevronLeft, ChevronRight,
+  Flag, CheckCircle, Mic, SkipForward, Send, LayoutGrid, X,
+  Volume2, Coffee, Lock, Loader2
+} from 'lucide-react';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
-
-const mockQuestions = Array.from({ length: 20 }, (_, i) => ({
-  id: i + 1,
-  section: i < 6 ? 'Grammar' : i < 12 ? 'Vocabulary' : i < 16 ? 'Listening' : 'Reading',
-  type: 'mcq',
-  text: i < 6
-    ? `Grammar Question ${i + 1}: Choose the correct form of the verb in the given context.`
-    : i < 12
-    ? `Vocabulary Question ${i - 5}: Select the best synonym for the underlined word in the sentence.`
-    : i < 16
-    ? `Listening Question ${i - 11}: What is the main topic of the conversation you just heard?`
-    : `Reading Question ${i - 15}: According to the passage, what does the author suggest about the topic?`,
-  options: ['Option A — correct usage form', 'Option B — incorrect form', 'Option C — alternative form', 'Option D — wrong pattern'],
-  audio: i >= 12 && i < 16,
-}));
+import GlassCard from '../../components/ui/GlassCard';
+import Badge from '../../components/ui/Badge';
+import studentApi from '../../services/studentExamService';
 
 const sections = ['All', 'Grammar', 'Vocabulary', 'Listening', 'Reading'];
+const MAX_VIOLATIONS = 3;
+
+function fmtClock(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
 
 export default function ExamTakePage() {
-  const { id } = useParams();
+  const { id: examId } = useParams();
   const navigate = useNavigate();
-  const [currentQ, setCurrentQ] = useState(0);
+
+  // State
+  const [phase, setPhase] = useState('loading'); // loading | intro | in_part | break | locked | submitting | error
+  const [errorMsg, setErrorMsg] = useState('');
+  const [examMeta, setExamMeta] = useState(null);
+  const [parts, setParts] = useState([]);
+  const [attemptId, setAttemptId] = useState(null);
+  
+  const [partIndex, setPartIndex] = useState(0);
+  const [qIndex, setQIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [flagged, setFlagged] = useState(new Set());
-  const [timeLeft, setTimeLeft] = useState(105 * 60);
-  const [paletteSection, setPaletteSection] = useState('All');
-  const [submitModal, setSubmitModal] = useState(false);
-  const [tabWarning, setTabWarning] = useState(false);
+  
+  const [partTimeLeft, setPartTimeLeft] = useState(0);
+  const [breakTimeLeft, setBreakTimeLeft] = useState(0);
+  
+  const [violationCount, setViolationCount] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(null);
+  const [warningBanner, setWarningBanner] = useState(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const intervalRef = useRef(null);
+  const [submitModal, setSubmitModal] = useState(false);
+  const [paletteSection, setPaletteSection] = useState('All'); // ✅ FIX: Added this
 
+  // Refs for safe callbacks
+  const phaseRef = useRef(phase);
+  const attemptIdRef = useRef(attemptId);
+  const answersRef = useRef(answers);
+  const flaggedRef = useRef(flagged);
+  const partsRef = useRef(parts);
+  const partIndexRef = useRef(partIndex);
+  const qIndexRef = useRef(qIndex);
+  
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { attemptIdRef.current = attemptId; }, [attemptId]);
+  useEffect(() => { answersRef.current = answers; }, [answers]);
+  useEffect(() => { flaggedRef.current = flagged; }, [flagged]);
+  useEffect(() => { partsRef.current = parts; }, [parts]);
+  useEffect(() => { partIndexRef.current = partIndex; }, [partIndex]);
+  useEffect(() => { qIndexRef.current = qIndex; }, [qIndex]);
+
+  // ---- Build parts from exam data ----
+  const buildParts = useCallback((meta, itemsBySection) => {
+    const isJLPT = meta.category_id === 'jlpt';
+    const sectionTime = {};
+    (meta.sections || []).forEach((s) => { sectionTime[s.name] = s.time; });
+    const listeningAudio = (meta.sections || []).find((s) => s.name === 'Listening')?.audio_url || null;
+
+    if (isJLPT) {
+      const parts = [];
+      if (itemsBySection['Vocabulary']?.length) {
+        parts.push({
+          key: 'vocabulary', label: 'Vocabulary', sections: ['Vocabulary'],
+          items: itemsBySection['Vocabulary'],
+          durationSec: (sectionTime['Vocabulary'] || 15) * 60,
+          breakAfterSec: 5 * 60,
+          isAudio: false,
+        });
+      }
+      const grammarReading = [...(itemsBySection['Grammar'] || []), ...(itemsBySection['Reading'] || [])];
+      if (grammarReading.length) {
+        const dur = (sectionTime['Grammar'] || 0) + (sectionTime['Reading'] || 0) || 25;
+        parts.push({
+          key: 'grammar_reading', label: 'Grammar & Reading', sections: ['Grammar', 'Reading'],
+          items: grammarReading,
+          durationSec: dur * 60,
+          breakAfterSec: 10 * 60,
+          isAudio: false,
+        });
+      }
+      if (itemsBySection['Listening']?.length) {
+        parts.push({
+          key: 'listening', label: 'Listening', sections: ['Listening'],
+          items: itemsBySection['Listening'],
+          durationSec: (sectionTime['Listening'] || 20) * 60,
+          breakAfterSec: 0,
+          isAudio: true,
+          audioUrl: listeningAudio,
+        });
+      }
+      return parts.length ? parts : [{
+        key: 'main', label: meta.title, sections: Object.keys(itemsBySection),
+        items: Object.values(itemsBySection).flat(),
+        durationSec: (meta.duration_minutes || 60) * 60, breakAfterSec: 0, isAudio: false,
+      }];
+    }
+
+    // EPS-TOPIK / other: no breaks
+    const allItems = Object.values(itemsBySection).flat();
+    return [{
+      key: 'main', label: meta.title, sections: Object.keys(itemsBySection),
+      items: allItems,
+      durationSec: (meta.duration_minutes || 60) * 60,
+      breakAfterSec: 0,
+      isAudio: false,
+    }];
+  }, []);
+
+  // ---- Fetch exam data and start attempt ----
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 0) { clearInterval(intervalRef.current); setSubmitModal(true); return 0; }
-        return t - 1;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [metaRes, qRes] = await Promise.all([
+          studentApi.get(`/student-exams/${examId}/metadata`),
+          studentApi.get(`/student-exams/${examId}/questions`),
+        ]);
+        const meta = metaRes.data.data;
+        const items = qRes.data.data;
+
+        const bySection = {};
+        items.forEach((it) => {
+          const sec = it.section || 'General';
+          if (!bySection[sec]) bySection[sec] = [];
+          bySection[sec].push(it);
+        });
+
+        const startRes = await studentApi.post(`/student-exams/${examId}/start`);
+        const attempt = startRes.data.data;
+
+        if (cancelled) return;
+        setExamMeta(meta);
+        setParts(buildParts(meta, bySection));
+        setAttemptId(attempt.attemptId);
+        setPhase('intro');
+      } catch (err) {
+        console.error('Failed to initialize exam:', err);
+        if (!cancelled) {
+          setErrorMsg(err?.response?.data?.message || 'Could not load this exam. Please try again.');
+          setPhase('error');
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [examId, buildParts]);
+
+  // ---- Begin a part ----
+  const beginPart = useCallback((idx) => {
+    const part = partsRef.current[idx];
+    if (!part) return;
+    setPartIndex(idx);
+    setQIndex(0);
+    setPartTimeLeft(part.durationSec);
+    setPhase('in_part');
+  }, []);
+
+  // ---- Submit exam ----
+  const doSubmit = useCallback(async (autoSubmitted = false) => {
+    if (!attemptIdRef.current) return;
+    setPhase('submitting');
+    try {
+      const payload = {
+        answers: answersRef.current,
+        flagged: Array.from(flaggedRef.current),
+        autoSubmitted,
+      };
+      await studentApi.post(`/student-exams/${attemptIdRef.current}/submit`, payload);
+      navigate(`/exam/${attemptIdRef.current}/results`);
+    } catch (err) {
+      console.error('Submit failed:', err);
+      setErrorMsg('We could not submit your exam. Please check your connection and try again.');
+      setPhase('error');
+    }
+  }, [navigate]);
+
+  // ---- Part timer ----
+  useEffect(() => {
+    if (phase !== 'in_part') return;
+    const t = setInterval(() => {
+      setPartTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(t);
+          const idx = partIndexRef.current;
+          const part = partsRef.current[idx];
+          const isLast = idx >= partsRef.current.length - 1;
+          if (isLast) {
+            doSubmit(true);
+          } else if (part.breakAfterSec > 0) {
+            setBreakTimeLeft(part.breakAfterSec);
+            setPhase('break');
+          } else {
+            beginPart(idx + 1);
+          }
+          return 0;
+        }
+        return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(intervalRef.current);
-  }, []);
+    return () => clearInterval(t);
+  }, [phase, beginPart, doSubmit]);
+
+  // ---- Break timer ----
+  useEffect(() => {
+    if (phase !== 'break') return;
+    const t = setInterval(() => {
+      setBreakTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(t);
+          beginPart(partIndexRef.current + 1);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [phase, beginPart]);
+
+  // ---- Tab switch violation ----
+  const reportViolation = useCallback(async () => {
+    if (!attemptIdRef.current) return;
+    try {
+      const res = await studentApi.post(`/student-exams/${attemptIdRef.current}/violation`);
+      const { tabSwitchCount, locked, lockedUntil: until } = res.data.data;
+      setViolationCount(tabSwitchCount);
+
+      if (locked) {
+        setLockedUntil(until);
+        setPhase('locked');
+        doSubmit(true);
+      } else {
+        setWarningBanner(
+          `Warning ${tabSwitchCount}/${MAX_VIOLATIONS}: leaving this tab during your exam is recorded as a rule violation. ${
+            MAX_VIOLATIONS - tabSwitchCount
+          } more and your paper will be auto-submitted and locked.`
+        );
+        setTimeout(() => setWarningBanner(null), 6000);
+      }
+    } catch (err) {
+      console.error('Could not report violation:', err);
+    }
+  }, [doSubmit]);
 
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) setTabWarning(true);
+    const handler = () => {
+      if (document.hidden && phaseRef.current === 'in_part') {
+        reportViolation();
+      }
     };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [reportViolation]);
 
-  const formatTime = (s) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  // ---- Derived state ----
+  const currentPart = parts[partIndex];
+  const currentItem = currentPart?.items?.[qIndex];
+  const totalInPart = currentPart?.items?.length || 0;
+  
+  const answeredCount = Object.keys(answers).length;
+  const timeColor = partTimeLeft < 60 ? 'text-red-400' : partTimeLeft < 300 ? 'text-yellow-400' : 'text-emerald-400';
+  
+  const filteredQs = paletteSection === 'All'
+    ? currentPart?.items || []
+    : (currentPart?.items || []).filter(q => q.section === paletteSection);
+
+  // ---- Handlers ----
+  const selectAnswer = (optionIdx) => {
+    if (!currentItem) return;
+    setAnswers((prev) => ({ ...prev, [currentItem.id]: optionIdx }));
   };
 
-  const q = mockQuestions[currentQ];
-  const answered = Object.keys(answers).length;
-  const filteredQs = paletteSection === 'All' ? mockQuestions : mockQuestions.filter(q => q.section === paletteSection);
+  const toggleFlag = () => {
+    if (!currentItem) return;
+    setFlagged((prev) => {
+      const next = new Set(prev);
+      if (next.has(currentItem.id)) next.delete(currentItem.id);
+      else next.add(currentItem.id);
+      return next;
+    });
+  };
 
-  const timePercent = (timeLeft / (105 * 60)) * 100;
-  const timeColor = timeLeft < 300 ? 'text-red-400' : timeLeft < 900 ? 'text-yellow-400' : 'text-emerald-400';
+  const goNext = () => {
+    if (qIndex < totalInPart - 1) setQIndex(qIndex + 1);
+  };
+  const goPrev = () => {
+    if (qIndex > 0) setQIndex(qIndex - 1);
+  };
 
   const handleSubmit = () => {
-    clearInterval(intervalRef.current);
-    navigate(`/exam/${id}/results`);
+    setSubmitModal(true);
   };
+
+  const confirmSubmit = () => {
+    setSubmitModal(false);
+    doSubmit(false);
+  };
+
+  // ---- Loading ----
+  if (phase === 'loading') {
+    return (
+      <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-3 text-white">
+        <Loader2 className="animate-spin text-blue-400" size={32} />
+        <p className="text-gray-400">Preparing your exam...</p>
+      </div>
+    );
+  }
+
+  // ---- Error ----
+  if (phase === 'error') {
+    return (
+      <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
+        <GlassCard className="p-8 max-w-md text-center border-red-500/30 bg-red-500/5">
+          <AlertTriangle className="mx-auto text-red-400 mb-3" size={32} />
+          <h2 className="text-white font-semibold mb-2">Something went wrong</h2>
+          <p className="text-gray-400 text-sm mb-6">{errorMsg}</p>
+          <Button variant="primary" onClick={() => navigate('/student/my-exams')}>Back to My Exams</Button>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  // ---- Intro ----
+  if (phase === 'intro') {
+    return (
+      <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
+        <GlassCard className="p-8 max-w-lg w-full text-center">
+          <h1 className="text-2xl font-bold text-white mb-2">{examMeta?.title}</h1>
+          <p className="text-gray-400 mb-6">{examMeta?.description || 'Good luck!'}</p>
+          <div className="space-y-2 text-sm text-gray-300 mb-8 text-left bg-white/[0.03] border border-white/5 rounded-xl p-4">
+            <p>• This exam runs in {parts.length} part{parts.length > 1 ? 's' : ''}: {parts.map((p) => p.label).join(' → ')}.</p>
+            {parts.some((p) => p.breakAfterSec > 0) && (
+              <p>• Timed breaks are given automatically between parts — you can't skip ahead early.</p>
+            )}
+            {parts.some((p) => p.isAudio) && (
+              <p>• The Listening part plays automatically once — it can't be paused or rewound.</p>
+            )}
+            <p>• Switching away from this tab is tracked. {MAX_VIOLATIONS} warnings will auto-submit.</p>
+            <p>• Your paper auto-submits the moment time runs out.</p>
+          </div>
+          <Button variant="primary" size="lg" className="w-full" onClick={() => beginPart(0)}>
+            Start Exam
+          </Button>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  // ---- Break ----
+  if (phase === 'break') {
+    return (
+      <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
+        <GlassCard className="p-10 max-w-md w-full text-center">
+          <Coffee className="mx-auto text-amber-400 mb-4" size={36} />
+          <h2 className="text-xl font-semibold text-white mb-1">Break time</h2>
+          <p className="text-gray-400 text-sm mb-6">
+            The next part starts automatically when the break ends.
+          </p>
+          <div className="text-5xl font-mono font-bold text-amber-300 mb-2">{fmtClock(breakTimeLeft)}</div>
+          <p className="text-xs text-gray-500">Next up: {parts[partIndex + 1]?.label}</p>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  // ---- Locked ----
+  if (phase === 'locked') {
+    return (
+      <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
+        <GlassCard className="p-8 max-w-md w-full text-center border-red-500/30 bg-red-500/5">
+          <Lock className="mx-auto text-red-400 mb-4" size={32} />
+          <h2 className="text-xl font-semibold text-white mb-2">Attempt locked</h2>
+          <p className="text-gray-400 text-sm mb-4">
+            This attempt was auto-submitted after {MAX_VIOLATIONS} tab-switch warnings.
+          </p>
+          {lockedUntil && (
+            <p className="text-xs text-gray-500 mb-6">
+              You can start a new attempt after {new Date(lockedUntil).toLocaleString()}.
+            </p>
+          )}
+          <Button variant="primary" onClick={() => navigate(`/exam/${attemptId}/results`)}>View My Results</Button>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  // ---- Submitting ----
+  if (phase === 'submitting') {
+    return (
+      <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-3 text-white">
+        <Loader2 className="animate-spin text-blue-400" size={32} />
+        <p className="text-gray-400">Submitting your paper...</p>
+      </div>
+    );
+  }
+
+  // ---- In Part (Main CBT Screen) ----
+  if (!currentItem) {
+    return (
+      <div className="min-h-screen bg-[#030810] flex items-center justify-center">
+        <GlassCard className="p-8 text-center text-gray-500">No questions in this part.</GlassCard>
+      </div>
+    );
+  }
+
+  const isListening = currentPart?.isAudio || currentItem.section?.toLowerCase() === 'listening';
+  const hasAudio = currentItem.audio_url && currentItem.audio_url !== null && currentItem.audio_url.trim() !== '';
+  const hasImage = currentItem.image_url && currentItem.image_url !== null && currentItem.image_url.trim() !== '';
+  const isFlagged = flagged.has(currentItem.id);
+  const selected = answers[currentItem.id];
+  const lowTime = partTimeLeft <= 60;
 
   return (
     <div className="min-h-screen bg-[#030810] text-white">
@@ -79,25 +431,32 @@ export default function ExamTakePage() {
       <div className="fixed top-0 left-0 right-0 z-30 bg-[#030810]/95 backdrop-blur-xl border-b border-white/10">
         <div className="flex items-center justify-between px-3 sm:px-6 py-3">
           <div className="min-w-0 flex-1 mr-3">
-            <h2 className="font-semibold text-white text-sm truncate">JLPT N2 Full Mock Exam 2024</h2>
-            <p className="text-xs text-gray-400 hidden sm:block">{q.section} Section · Q{currentQ + 1}/{mockQuestions.length}</p>
+            <h2 className="font-semibold text-white text-sm truncate">
+              {examMeta?.title || 'Exam'}
+            </h2>
+            <p className="text-xs text-gray-400 hidden sm:block">
+              {currentPart.label} · Q{qIndex + 1}/{totalInPart}
+            </p>
           </div>
           <div className="flex items-center gap-2 sm:gap-6 flex-shrink-0">
             <div className={`flex items-center gap-1.5 font-mono font-bold text-base sm:text-xl ${timeColor}`}>
               <Clock size={16} className="hidden sm:block" />
-              {formatTime(timeLeft)}
+              {fmtClock(partTimeLeft)}
             </div>
             <div className="text-center hidden sm:block">
-              <div className="text-sm font-semibold text-white">{answered}/{mockQuestions.length}</div>
+              <div className="text-sm font-semibold text-white">{answeredCount}/{parts.reduce((s, p) => s + p.items.length, 0)}</div>
               <div className="text-xs text-gray-400">Done</div>
             </div>
-            <button onClick={() => setPaletteOpen(true)} className="lg:hidden p-2 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10">
+            <button
+              onClick={() => setPaletteOpen(true)}
+              className="lg:hidden p-2 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10"
+            >
               <LayoutGrid size={16} className="text-gray-300" />
             </button>
-            <Button variant="danger" size="sm" onClick={() => setSubmitModal(true)} className="hidden sm:flex">
+            <Button variant="danger" size="sm" onClick={handleSubmit} className="hidden sm:flex">
               <Send size={14} /> Submit
             </Button>
-            <Button variant="danger" size="sm" onClick={() => setSubmitModal(true)} className="sm:hidden">
+            <Button variant="danger" size="sm" onClick={handleSubmit} className="sm:hidden">
               <Send size={14} />
             </Button>
           </div>
@@ -105,18 +464,33 @@ export default function ExamTakePage() {
         <div className="h-1 bg-white/10">
           <motion.div
             className="h-full bg-gradient-to-r from-blue-500 to-cyan-500"
-            style={{ width: `${((currentQ + 1) / mockQuestions.length) * 100}%` }}
+            style={{ width: `${((qIndex + 1) / totalInPart) * 100}%` }}
             transition={{ duration: 0.3 }}
           />
         </div>
       </div>
+
+      {/* Warning Banner */}
+      <AnimatePresence>
+        {warningBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="fixed top-[68px] left-1/2 -translate-x-1/2 z-40 w-full max-w-3xl px-4"
+          >
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm rounded-xl px-4 py-3">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+              <p>{warningBanner}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex pt-[68px] min-h-screen">
         {/* Main Question Area */}
         <div className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 lg:max-w-3xl lg:mx-auto">
           <AnimatePresence mode="wait">
             <motion.div
-              key={currentQ}
+              key={qIndex}
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -30 }}
@@ -124,55 +498,101 @@ export default function ExamTakePage() {
               className="flex-1"
             >
               <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6 flex-wrap">
-                <span className="px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-medium border border-blue-500/30">{q.section}</span>
-                <span className="text-gray-500 text-xs sm:text-sm">Q{currentQ + 1}</span>
-                {flagged.has(q.id) && <span className="flex items-center gap-1 text-amber-400 text-xs"><Flag size={11} /> Flagged</span>}
+                <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                  isListening 
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' 
+                    : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                }`}>
+                  {currentItem.section || currentPart.label}
+                </span>
+                <span className="text-gray-500 text-xs sm:text-sm">Q{qIndex + 1}</span>
+                {isFlagged && (
+                  <span className="flex items-center gap-1 text-amber-400 text-xs">
+                    <Flag size={11} /> Flagged
+                  </span>
+                )}
               </div>
 
-              {q.audio && (
-                <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-3 sm:gap-4">
-                  <button
-                    onClick={() => setAudioPlaying(!audioPlaying)}
-                    className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-500 rounded-xl flex items-center justify-center hover:bg-blue-400 transition-colors flex-shrink-0"
-                  >
-                    {audioPlaying ? <SkipForward size={16} className="text-white" /> : <Mic size={16} className="text-white" />}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-gray-300 mb-2">Audio Track {currentQ - 11}</p>
-                    <div className="h-1.5 bg-white/10 rounded-full">
-                      <div className="h-full w-1/3 bg-blue-500 rounded-full" />
+              {/* Listening Banner */}
+              {isListening && hasAudio && (
+                <div className={`mb-4 sm:mb-6 p-3 sm:p-4 rounded-2xl border transition-all duration-300 ${
+                  audioPlaying 
+                    ? 'bg-purple-500/10 border-purple-500/30 shadow-lg shadow-purple-500/10' 
+                    : 'bg-white/5 border-white/10'
+                }`}>
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm text-gray-300">
+                        <Volume2 size={14} className="inline mr-2" />
+                        Audio is playing automatically — listen carefully.
+                      </p>
                     </div>
                   </div>
-                  <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">0:45 / 1:20</span>
+                  <audio src={currentItem.audio_url} autoPlay className="hidden" />
                 </div>
               )}
 
+              {/* Question Text */}
+              {currentItem.problem_title && (
+                <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">{currentItem.problem_title}</p>
+              )}
+              {currentItem.passage_text && (
+                <div className="text-sm text-gray-400 mb-3 leading-relaxed bg-white/[0.02] border border-white/5 rounded-lg p-3">
+                  {currentItem.passage_text}
+                </div>
+              )}
               <div className="mb-6 sm:mb-8">
-                <h3 className="text-base sm:text-xl font-semibold text-white leading-relaxed">{q.text}</h3>
+                <h3 className="text-base sm:text-xl font-semibold text-white leading-relaxed">
+                  {currentItem.text}
+                </h3>
               </div>
 
+              {/* Image Display */}
+              {hasImage && (
+                <div className="mb-6 sm:mb-8">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-center">
+                    <img 
+                      src={currentItem.image_url} 
+                      alt={`Question ${qIndex + 1} image`}
+                      className="max-w-full max-h-64 object-contain rounded-lg"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.style.display = 'none';
+                        e.target.parentElement.innerHTML = `
+                          <div class="flex flex-col items-center gap-2 text-gray-400 py-8">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                            <span class="text-sm">Image could not be loaded</span>
+                          </div>
+                        `;
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Options */}
               <div className="space-y-2.5 sm:space-y-3">
-                {q.options.map((opt, i) => {
-                  const selected = answers[q.id] === i;
+                {(currentItem.options || []).map((opt, idx) => {
+                  const selectedOpt = selected === idx;
                   return (
                     <motion.button
-                      key={i}
+                      key={idx}
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
-                      onClick={() => setAnswers(p => ({ ...p, [q.id]: i }))}
+                      onClick={() => selectAnswer(idx)}
                       className={`w-full text-left p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-200 flex items-center gap-3 sm:gap-4 ${
-                        selected
-                          ? 'border-blue-500/70 bg-blue-500/15 text-white'
+                        selectedOpt
+                          ? 'border-blue-500/70 bg-blue-500/15 text-white shadow-lg shadow-blue-500/10'
                           : 'border-white/10 bg-white/3 text-gray-300 hover:border-white/20 hover:bg-white/6'
                       }`}
                     >
                       <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl border flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0 transition-all ${
-                        selected ? 'border-blue-500 bg-blue-500 text-white' : 'border-white/20 text-gray-400'
+                        selectedOpt ? 'border-blue-500 bg-blue-500 text-white' : 'border-white/20 text-gray-400'
                       }`}>
-                        {String.fromCharCode(65 + i)}
+                        {String.fromCharCode(65 + idx)}
                       </div>
                       <span className="text-xs sm:text-sm leading-relaxed">{opt}</span>
-                      {selected && <CheckCircle size={16} className="ml-auto text-blue-400 flex-shrink-0" />}
+                      {selectedOpt && <CheckCircle size={16} className="ml-auto text-blue-400 flex-shrink-0" />}
                     </motion.button>
                   );
                 })}
@@ -182,20 +602,39 @@ export default function ExamTakePage() {
 
           {/* Navigation */}
           <div className="flex items-center justify-between mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-white/10">
-            <Button variant="secondary" size="sm" disabled={currentQ === 0} onClick={() => setCurrentQ(p => p - 1)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={qIndex === 0}
+              onClick={goPrev}
+            >
               <ChevronLeft size={14} /> <span className="hidden sm:inline">Previous</span>
             </Button>
             <Button
-              variant={flagged.has(q.id) ? 'secondary' : 'ghost'}
+              variant={isFlagged ? 'secondary' : 'ghost'}
               size="sm"
-              onClick={() => setFlagged(p => { const s = new Set(p); s.has(q.id) ? s.delete(q.id) : s.add(q.id); return s; })}
+              onClick={toggleFlag}
             >
-              <Flag size={14} className={flagged.has(q.id) ? 'text-amber-400' : ''} />
-              <span className="hidden sm:inline ml-1">{flagged.has(q.id) ? 'Unflag' : 'Flag'}</span>
+              <Flag size={14} className={isFlagged ? 'text-amber-400' : ''} />
+              <span className="hidden sm:inline ml-1">{isFlagged ? 'Unflag' : 'Flag'}</span>
             </Button>
-            <Button variant="primary" size="sm" disabled={currentQ === mockQuestions.length - 1} onClick={() => setCurrentQ(p => p + 1)}>
-              <span className="hidden sm:inline">Next</span> <ChevronRight size={14} />
-            </Button>
+            {qIndex < totalInPart - 1 ? (
+              <Button variant="primary" size="sm" onClick={goNext}>
+                <span className="hidden sm:inline">Next</span> <ChevronRight size={14} />
+              </Button>
+            ) : (
+              <Button variant="primary" size="sm" onClick={partIndex < parts.length - 1 ? () => {
+                const nextPart = parts[partIndex + 1];
+                if (nextPart.breakAfterSec > 0) {
+                  setBreakTimeLeft(nextPart.breakAfterSec);
+                  setPhase('break');
+                } else {
+                  beginPart(partIndex + 1);
+                }
+              } : handleSubmit}>
+                {partIndex < parts.length - 1 ? 'Finish Part' : 'Submit Exam'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -206,12 +645,12 @@ export default function ExamTakePage() {
             paletteSection={paletteSection}
             setPaletteSection={setPaletteSection}
             filteredQs={filteredQs}
-            mockQuestions={mockQuestions}
+            allQuestions={currentPart?.items || []}
             answers={answers}
             flagged={flagged}
-            currentQ={currentQ}
-            setCurrentQ={setCurrentQ}
-            answered={answered}
+            currentQ={qIndex}
+            setCurrentQ={setQIndex}
+            answeredCount={answeredCount}
           />
         </div>
       </div>
@@ -241,30 +680,16 @@ export default function ExamTakePage() {
                   paletteSection={paletteSection}
                   setPaletteSection={setPaletteSection}
                   filteredQs={filteredQs}
-                  mockQuestions={mockQuestions}
+                  allQuestions={currentPart?.items || []}
                   answers={answers}
                   flagged={flagged}
-                  currentQ={currentQ}
-                  setCurrentQ={(idx) => { setCurrentQ(idx); setPaletteOpen(false); }}
-                  answered={answered}
+                  currentQ={qIndex}
+                  setCurrentQ={(idx) => { setQIndex(idx); setPaletteOpen(false); }}
+                  answeredCount={answeredCount}
                 />
               </div>
             </motion.div>
           </>
-        )}
-      </AnimatePresence>
-
-      {/* Tab Warning */}
-      <AnimatePresence>
-        {tabWarning && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-            className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-red-500/20 border border-red-500/50 text-red-300 px-4 sm:px-6 py-3 rounded-xl flex items-center gap-3 max-w-sm"
-          >
-            <AlertTriangle size={16} className="flex-shrink-0" />
-            <span className="text-sm">Tab switching detected!</span>
-            <button onClick={() => setTabWarning(false)} className="ml-2 text-red-400 hover:text-white flex-shrink-0">Dismiss</button>
-          </motion.div>
         )}
       </AnimatePresence>
 
@@ -273,7 +698,7 @@ export default function ExamTakePage() {
         <div className="space-y-5">
           <div className="grid grid-cols-3 gap-3">
             <div className="text-center p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-              <div className="text-2xl font-bold text-emerald-400">{answered}</div>
+              <div className="text-2xl font-bold text-emerald-400">{answeredCount}</div>
               <div className="text-xs text-gray-400">Answered</div>
             </div>
             <div className="text-center p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
@@ -281,16 +706,18 @@ export default function ExamTakePage() {
               <div className="text-xs text-gray-400">Flagged</div>
             </div>
             <div className="text-center p-3 bg-white/5 border border-white/10 rounded-xl">
-              <div className="text-2xl font-bold text-white">{mockQuestions.length - answered}</div>
+              <div className="text-2xl font-bold text-white">{parts.reduce((s, p) => s + p.items.length, 0) - answeredCount}</div>
               <div className="text-xs text-gray-400">Unanswered</div>
             </div>
           </div>
-          {mockQuestions.length - answered > 0 && (
-            <p className="text-amber-300 text-sm flex items-center gap-2"><AlertTriangle size={14} />{mockQuestions.length - answered} questions are unanswered.</p>
+          {parts.reduce((s, p) => s + p.items.length, 0) - answeredCount > 0 && (
+            <p className="text-amber-300 text-sm flex items-center gap-2">
+              <AlertTriangle size={14} />{parts.reduce((s, p) => s + p.items.length, 0) - answeredCount} questions are unanswered.
+            </p>
           )}
           <div className="flex gap-3">
             <Button variant="secondary" fullWidth onClick={() => setSubmitModal(false)}>Continue Exam</Button>
-            <Button variant="primary" fullWidth onClick={handleSubmit}>Submit Now</Button>
+            <Button variant="primary" fullWidth onClick={confirmSubmit}>Submit Now</Button>
           </div>
         </div>
       </Modal>
@@ -298,41 +725,72 @@ export default function ExamTakePage() {
   );
 }
 
-function PaletteContent({ sections, paletteSection, setPaletteSection, filteredQs, mockQuestions, answers, flagged, currentQ, setCurrentQ, answered }) {
+// ----- Palette Component -----
+function PaletteContent({
+  sections,
+  paletteSection,
+  setPaletteSection,
+  filteredQs,
+  allQuestions,
+  answers,
+  flagged,
+  currentQ,
+  setCurrentQ,
+  answeredCount,
+}) {
   return (
     <>
       <h4 className="text-sm font-semibold text-gray-300 mb-3">Question Navigator</h4>
       <div className="flex flex-wrap gap-1 mb-4">
         {sections.map(s => (
-          <button key={s} onClick={() => setPaletteSection(s)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${paletteSection === s ? 'bg-blue-500 text-white' : 'bg-white/5 text-gray-400'}`}>
+          <button
+            key={s}
+            onClick={() => setPaletteSection(s)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              paletteSection === s ? 'bg-blue-500 text-white' : 'bg-white/5 text-gray-400'
+            }`}
+          >
             {s}
           </button>
         ))}
       </div>
       <div className="grid grid-cols-5 gap-1.5">
-        {filteredQs.map(fq => {
-          const idx = mockQuestions.indexOf(fq);
-          const isAnswered = answers[fq.id] !== undefined;
-          const isFlagged = flagged.has(fq.id);
+        {filteredQs.map((q, idx) => {
+          const isAnswered = answers[q.id] !== undefined;
+          const isFlagged = flagged.has(q.id);
           const isCurrent = idx === currentQ;
           return (
-            <button key={fq.id} onClick={() => setCurrentQ(idx)}
+            <button
+              key={q.id || idx}
+              onClick={() => setCurrentQ(idx)}
               className={`w-9 h-9 rounded-lg text-xs font-bold transition-all border ${
-                isCurrent ? 'bg-blue-500 border-blue-400 text-white' :
-                isFlagged ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' :
-                isAnswered ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' :
-                'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'
-              }`}>
+                isCurrent
+                  ? 'bg-blue-500 border-blue-400 text-white'
+                  : isFlagged
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                  : isAnswered
+                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                  : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'
+              }`}
+            >
               {idx + 1}
             </button>
           );
         })}
       </div>
       <div className="mt-4 space-y-2 text-xs">
-        <div className="flex items-center gap-2"><div className="w-4 h-4 bg-emerald-500/20 border border-emerald-500/30 rounded" /><span className="text-gray-400">Answered ({answered})</span></div>
-        <div className="flex items-center gap-2"><div className="w-4 h-4 bg-amber-500/20 border border-amber-500/50 rounded" /><span className="text-gray-400">Flagged ({flagged.size})</span></div>
-        <div className="flex items-center gap-2"><div className="w-4 h-4 bg-white/5 border border-white/10 rounded" /><span className="text-gray-400">Unanswered ({mockQuestions.length - answered})</span></div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-emerald-500/20 border border-emerald-500/30 rounded" />
+          <span className="text-gray-400">Answered ({answeredCount})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-amber-500/20 border border-amber-500/50 rounded" />
+          <span className="text-gray-400">Flagged ({flagged.size})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-white/5 border border-white/10 rounded" />
+          <span className="text-gray-400">Unanswered ({allQuestions.length - answeredCount})</span>
+        </div>
       </div>
     </>
   );

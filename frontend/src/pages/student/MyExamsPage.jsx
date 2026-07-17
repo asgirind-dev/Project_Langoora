@@ -1,85 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BookOpen, Play, BarChart2, Clock, CheckCircle, XCircle, Trash2, Plus, CalendarPlus, Check, User } from 'lucide-react';
-import axios from 'axios'; 
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
+import studentApi from '../../services/studentExamService';
 
-// 📚 Langoora System-Aligned Mock Data Cluster (With Tutors)
-// 📚 Langoora System-Aligned Mock Data Cluster (With Real-Themed Visuals)
-const initialExams = [
-  { 
-    id: '1', 
-    title: 'JLPT N5 Full Mock Exam - Paper 01', 
-    tutor: 'Dinushi Perera', 
-    category: 'JLPT', 
-    level: 'N5', 
-    duration: '105 min', 
-    questions: 108, 
-    lastScore: 78, 
-    attempts: 2, 
-    status: 'in-progress', 
-    thumbnail: 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400' // Mt. Fuji & Sakura Theme
-  },
-  { 
-    id: '2', 
-    title: 'EPS-TOPIK Standard Full Simulation 2026', 
-    tutor: 'Ashan Fernando', 
-    category: 'EPS-TOPIK', 
-    level: 'Standard', 
-    duration: '70 min', 
-    questions: 80, 
-    lastScore: 62, 
-    attempts: 1, 
-    status: 'completed', 
-    thumbnail: 'https://images.pexels.com/photos/2389171/pexels-photo-2389171.jpeg?w=400' // Traditional Korean Palace / Seoul Theme
-  },
-  { 
-    id: '3', 
-    title: 'JLPT N4 Grammar & Vocabulary Mastery Test', 
-    tutor: 'Rohan Ranasinghe', 
-    category: 'JLPT', 
-    level: 'N4', 
-    duration: '90 min', 
-    questions: 75, 
-    lastScore: null, 
-    attempts: 0, 
-    status: 'not-started', 
-    thumbnail: 'https://images.pexels.com/photos/1440476/pexels-photo-1440476.jpeg?w=400' // Japanese Architecture / Torii Gate Theme
-  },
-  { 
-    id: '4', 
-    title: 'JLPT N5 Listening Rehearsal Module', 
-    tutor: 'Shilpa Pieris', 
-    category: 'JLPT', 
-    level: 'N5', 
-    duration: '45 min', 
-    questions: 40, 
-    lastScore: 88, 
-    attempts: 3, 
-    status: 'completed', 
-    thumbnail: 'https://images.pexels.com/photos/1822605/pexels-photo-1822605.jpeg?w=400' // Tokyo Streets Neon / Modern Japan Theme
-  },
-];
-
-const statusColors = { 'completed': 'green', 'in-progress': 'yellow', 'not-started': 'gray' };
-const statusLabels = { 'completed': 'Completed', 'in-progress': 'In Progress', 'not-started': 'Not Started' };
+const statusColors = { 'published': 'green', 'draft': 'gray', 'archived': 'red' };
 
 export default function MyExamsPage() {
   const navigate = useNavigate();
-  const [exams, setExams] = useState(initialExams); 
-  const [filter, setFilter] = useState('all'); 
+  const [exams, setExams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
 
-  // --- Modal Control States ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedExamId, setSelectedExamId] = useState(null);
-
-  // --- Planner Integration States ---
-  const [schedulingExamId, setSchedulingExamId] = useState(null); 
+  const [schedulingExamId, setSchedulingExamId] = useState(null);
   const [selectedDate, setSelectedDate] = useState('');
-  const [successExamId, setSuccessExamId] = useState(null); 
+  const [successExamId, setSuccessExamId] = useState(null);
+
+  useEffect(() => {
+    const fetchExams = async () => {
+      try {
+        const res = await studentApi.get('/exams/available');
+        setExams(res.data.data);
+        setLoading(false);
+      } catch (error) {
+        console.error('Failed to fetch exams:', error);
+        alert('Could not load exams. Please try again.');
+        setLoading(false);
+      }
+    };
+    fetchExams();
+  }, []);
 
   const openDeleteConfirm = (id) => {
     setSelectedExamId(id);
@@ -88,11 +43,11 @@ export default function MyExamsPage() {
 
   const handleConfirmDelete = async () => {
     try {
-      await axios.delete(`http://localhost:5000/api/student-exams/${selectedExamId}`);
+      await studentApi.delete(`/exams/student-exams/${selectedExamId}`);
       setExams(exams.filter(exam => exam.id !== selectedExamId));
-      setIsModalOpen(false); 
+      setIsModalOpen(false);
     } catch (error) {
-      console.error("Backend Error, but deleting from UI for testing:", error);
+      console.error("Delete error:", error);
       setExams(exams.filter(exam => exam.id !== selectedExamId));
       setIsModalOpen(false);
     }
@@ -100,7 +55,6 @@ export default function MyExamsPage() {
 
   const handleAddToPlanner = async (exam) => {
     if (!selectedDate) return alert("Please select a valid study execution date.");
-
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('http://localhost:5000/api/planner/add', {
@@ -111,13 +65,11 @@ export default function MyExamsPage() {
         },
         body: JSON.stringify({
           title: `Complete ${exam.title}`,
-          description: `Tutor: ${exam.tutor} · Expected duration: ${exam.duration}. Purchased module rehearsal.`,
+          description: `Tutor: ${exam.tutor_name || 'Expert'} · Expected duration: ${exam.duration_minutes} min.`,
           scheduled_date: selectedDate
         })
       });
-
       const result = await response.json();
-
       if (response.status === 403 || !result.success) {
         alert("🔒 Subscription Premium Locked: Please check your active subscription cluster.");
       } else if (result.success) {
@@ -127,29 +79,34 @@ export default function MyExamsPage() {
         setTimeout(() => setSuccessExamId(null), 2500);
       }
     } catch (error) {
-      console.error("Cross-module planner authorization failed:", error);
+      console.error("Planner error:", error);
     }
   };
 
   const filtered = filter === 'all' ? exams : exams.filter(e => e.status === filter);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#030810] flex items-center justify-center">
+        <div className="text-white text-xl">Loading your exams...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 relative">
-      {/* Header Section */}
       <div className="flex justify-between items-center">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-3xl font-bold text-white mb-1">My Exams</h1>
           <p className="text-gray-400">All your purchased exam packs in one place</p>
         </motion.div>
-        
         <Button variant="primary" onClick={() => navigate('/student/marketplace')}>
           <Plus size={16} /> Buy New Exams
         </Button>
       </div>
 
-      {/* FILTER BUTTONS */}
       <div className="flex gap-2">
-        {[['all', 'All'], ['not-started', 'Not Started'], ['in-progress', 'In Progress'], ['completed', 'Completed']].map(([val, label]) => (
+        {[['all', 'All'], ['draft', 'Draft'], ['published', 'Published'], ['archived', 'Archived']].map(([val, label]) => (
           <button
             key={val}
             onClick={() => setFilter(val)}
@@ -160,10 +117,9 @@ export default function MyExamsPage() {
         ))}
       </div>
 
-      {/* EXAMS GRID */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-500 border border-dashed border-white/10 rounded-2xl">
-          No active exam assets mapped in this node branch.
+          No exams available in this category.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -171,58 +127,40 @@ export default function MyExamsPage() {
             <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
               <GlassCard className="overflow-hidden relative group border-white/5 hover:border-white/10 transition-all h-full">
                 <div className="flex h-full min-h-[165px]">
-                  <img src={exam.thumbnail} alt={exam.title} className="w-32 object-cover flex-shrink-0 group-hover:scale-105 transition-transform duration-500" />
-                  
-                 
+                  <img src={exam.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400'} alt={exam.title} className="w-32 object-cover flex-shrink-0 group-hover:scale-105 transition-transform duration-500" />
                   <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
-                    
                     <div className="space-y-2">
-                      {/* Top Row: Title & Badge Container */}
                       <div className="flex items-start justify-between gap-4">
                         <h3 className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors flex-1 break-words">
                           {exam.title}
                         </h3>
                         <div className="flex-shrink-0 mt-0.5">
-                          <Badge color={statusColors[exam.status]}>{statusLabels[exam.status]}</Badge>
+                          <Badge color={statusColors[exam.status] || 'gray'}>{exam.status || 'draft'}</Badge>
                         </div>
                       </div>
-
-                      
                       <div className="flex items-center gap-1.5 text-xs text-blue-400/90 font-medium">
                         <User size={13} className="text-blue-400/70" />
-                        <span>Published by: <span className="text-gray-200 font-semibold">{exam.tutor || 'Alternative Tutor'}</span></span>
+                        <span>Published by: <span className="text-gray-200 font-semibold">{exam.tutor_name || 'Expert'}</span></span>
                       </div>
-
-                      {/* Meta Info Row */}
                       <div className="flex items-center gap-3 text-xs text-gray-400 bg-white/[0.02] py-1 px-2 rounded-lg w-max border border-white/5 font-medium">
-                        <span className="flex items-center gap-1 font-mono"><Clock size={11} />{exam.duration}</span>
+                        <span className="flex items-center gap-1 font-mono"><Clock size={11} />{exam.duration_minutes || 60} min</span>
                         <span className="h-2 w-[1px] bg-white/10" />
-                        <span className="flex items-center gap-1 font-mono"><BookOpen size={11} />{exam.questions} Q</span>
+                        <span className="flex items-center gap-1 font-mono"><BookOpen size={11} />{exam.total_questions || 0} Q</span>
                         <span className="h-2 w-[1px] bg-white/10" />
-                        <span>{exam.attempts} attempts</span>
+                        <span>{exam.attempts_count || 0} attempts</span>
                       </div>
-
-                      {exam.lastScore !== null && (
-                        <div className="flex items-center gap-2 pt-1">
-                          {exam.lastScore >= 70 ? <CheckCircle size={13} className="text-emerald-400" /> : <XCircle size={13} className="text-red-400" />}
-                          <span className="text-xs text-gray-300">Last score: <span className={`font-bold ${exam.lastScore >= 70 ? 'text-emerald-400' : 'text-red-400'}`}>{exam.lastScore}%</span></span>
-                        </div>
-                      )}
                     </div>
-                    
-                    {/* BUTTON ACTIONS ROW */}
+
                     <div className="flex justify-between items-center mt-3 pt-2 border-t border-white/5">
                       <div className="flex gap-2 items-center">
                         <Button variant="primary" size="sm" onClick={() => navigate(`/exam/${exam.id}/take`)}>
-                          <Play size={12} fill="currentColor" /> {exam.attempts > 0 ? 'Retake' : 'Start'}
+                          <Play size={12} fill="currentColor" /> {exam.attempts_count > 0 ? 'Retake' : 'Start'}
                         </Button>
-                        {exam.attempts > 0 && (
+                        {exam.attempts_count > 0 && (
                           <Button variant="secondary" size="sm" onClick={() => navigate(`/exam/${exam.id}/results`)}>
                             <BarChart2 size={12} /> Results
                           </Button>
                         )}
-
-                        {/* 📅 SCHEDULE TO PLANNER CONTROL HOOK */}
                         {successExamId === exam.id ? (
                           <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-medium">
                             <Check size={12} /> Scheduled!
@@ -259,10 +197,7 @@ export default function MyExamsPage() {
                           </button>
                         )}
                       </div>
-
-                     
                     </div>
-
                   </div>
                 </div>
               </GlassCard>
@@ -271,7 +206,6 @@ export default function MyExamsPage() {
         </div>
       )}
 
-      {/* PREMIUM GLASSMORPHIC CONFIRMATION MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <motion.div 

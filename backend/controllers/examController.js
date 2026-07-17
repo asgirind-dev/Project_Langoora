@@ -76,7 +76,29 @@ const createExam = async (req, res) => {
 };
 
 /**
- * 📊 2. Fetch All Student Exam Attempts
+ * 📚 2. Get all exams available for students to browse (MyExamsPage / marketplace)
+ *
+ * NOTE: purchase/entitlement flow doesn't exist yet, so — same as before — this
+ * returns every exam in the collection. Once purchases are tracked, filter this
+ * by the student's owned exam IDs instead of returning everything.
+ * GET /api/exams/available
+ */
+const getAllExams = async (req, res) => {
+  try {
+    const snapshot = await db.collection('exams').get();
+    const examsList = [];
+    snapshot.forEach(doc => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    return res.status(200).json({ success: true, data: examsList });
+  } catch (error) {
+    console.error('Get all exams error:', error.message);
+    return res.status(500).json({ success: false, message: 'Error fetching exams', error: error.message });
+  }
+};
+
+/**
+ * 📊 3. Fetch All Student Exam Attempts
  */
 const getStudentExams = async (req, res) => {
   try {
@@ -95,7 +117,7 @@ const getStudentExams = async (req, res) => {
 };
 
 /**
- * 🗑️ 3. Delete a Student Exam Attempt Node
+ * 🗑️ 4. Delete a Student Exam Attempt Node
  */
 const deleteStudentExam = async (req, res) => {
   try {
@@ -117,6 +139,7 @@ const deleteStudentExam = async (req, res) => {
 
 module.exports = {
   createExam,
+  getAllExams,
   getStudentExams,
   deleteStudentExam
 };
