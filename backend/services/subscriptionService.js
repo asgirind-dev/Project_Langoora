@@ -83,6 +83,13 @@ class SubscriptionService {
   async deleteExistingCategory(id) {
     return await db.collection('exam_categories').doc(id).delete();
   }
+
+  async getAllExams() {
+    const snapshot = await db.collection('exams').get(); 
+    const exams = [];
+    snapshot.forEach(doc => exams.push({ id: doc.id, ...doc.data() }));
+    return exams;
+  }
 }
 
 module.exports = new SubscriptionService();

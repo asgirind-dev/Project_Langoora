@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const path = require('path'); 
+
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 // Configs
 require('./config/firebase'); 
@@ -11,13 +14,17 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const studyPlannerRoutes = require('./routes/studyPlannerRoutes'); 
-const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
+const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
 const languageRoutes = require('./routes/languageRoutes');
+<<<<<<< HEAD
 const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const studentExamRoutes = require('./routes/studentExamRoutes');
 
+=======
+const financeRoutes = require('./routes/financeRoutes'); 
+>>>>>>> 57579db562e1755d1a82f73d9c1974d1f59db47c
 
 const app = express();
 
@@ -36,10 +43,14 @@ app.use('/api/student', studentProfileRoutes);
 app.use('/api/planner', studyPlannerRoutes); 
 app.use('/api/validator/tutors', tutorValidationRoutes);
 app.use('/api/languages', languageRoutes);
+<<<<<<< HEAD
 app.use('/api/system-settings', systemSettingsRoutes);
 app.use('/api/student-exams', studentExamRoutes);
 
 
+=======
+app.use('/api/finance', financeRoutes); 
+>>>>>>> 57579db562e1755d1a82f73d9c1974d1f59db47c
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
