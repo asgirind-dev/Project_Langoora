@@ -64,15 +64,9 @@ const createExam = async (req, res) => {
   }
 };
 
-<<<<<<< HEAD
-/**
- * 📚 2. Get all exams available for students to browse (MyExamsPage / marketplace)
- *
- * NOTE: purchase/entitlement flow doesn't exist yet, so — same as before — this
- * returns every exam in the collection. Once purchases are tracked, filter this
- * by the student's owned exam IDs instead of returning everything.
- * GET /api/exams/available
- */
+// =========================================================================
+// 📚 2. Get all exams available for students
+// =========================================================================
 const getAllExams = async (req, res) => {
   try {
     const snapshot = await db.collection('exams').get();
@@ -87,14 +81,9 @@ const getAllExams = async (req, res) => {
   }
 };
 
-/**
- * 📊 3. Fetch All Student Exam Attempts
- */
-=======
 // =========================================================================
-// 📊 2. Get Student Exams - Using Service Layer
+// 📊 3. Get Student Exams - Using Service Layer
 // =========================================================================
->>>>>>> 57579db562e1755d1a82f73d9c1974d1f59db47c
 const getStudentExams = async (req, res) => {
   try {
     const examsList = await examServices.getStudentExamsFromDB();
@@ -108,13 +97,8 @@ const getStudentExams = async (req, res) => {
   }
 };
 
-<<<<<<< HEAD
-/**
- * 🗑️ 4. Delete a Student Exam Attempt Node
- */
-=======
 // =========================================================================
-// 🚀 3. Upload Asset (Audios to Cloudinary | Images to Base64)
+// 🚀 4. Upload Asset (Audios to Cloudinary | Images to Base64)
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -230,7 +214,7 @@ const uploadAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 4. Delete Asset from Cloudinary
+// 🗑️ 5. Delete Asset from Cloudinary
 // =========================================================================
 const deleteAsset = async (req, res) => {
   try {
@@ -289,9 +273,8 @@ const deleteAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 5. Delete Student Exam - Using Service Layer
+// 🗑️ 6. Delete Student Exam - Using Service Layer
 // =========================================================================
->>>>>>> 57579db562e1755d1a82f73d9c1974d1f59db47c
 const deleteStudentExam = async (req, res) => {
   try {
     const examDocId = req.params.id;

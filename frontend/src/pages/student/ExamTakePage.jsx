@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Clock, AlertTriangle, ChevronLeft, ChevronRight,
-  Flag, CheckCircle, Mic, SkipForward, Send, LayoutGrid, X,
+  Flag, CheckCircle, Send, LayoutGrid, X,
   Volume2, Coffee, Lock, Loader2
 } from 'lucide-react';
 import Modal from '../../components/ui/Modal';
@@ -12,7 +12,6 @@ import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
 import studentApi from '../../services/studentExamService';
 
-const sections = ['All', 'Grammar', 'Vocabulary', 'Listening', 'Reading'];
 const MAX_VIOLATIONS = 3;
 
 function fmtClock(totalSeconds) {
@@ -27,7 +26,7 @@ export default function ExamTakePage() {
   const navigate = useNavigate();
 
   // State
-  const [phase, setPhase] = useState('loading'); // loading | intro | in_part | break | locked | submitting | error
+  const [phase, setPhase] = useState('loading');
   const [errorMsg, setErrorMsg] = useState('');
   const [examMeta, setExamMeta] = useState(null);
   const [parts, setParts] = useState([]);
@@ -47,7 +46,6 @@ export default function ExamTakePage() {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [submitModal, setSubmitModal] = useState(false);
-  const [paletteSection, setPaletteSection] = useState('All'); // ✅ FIX: Added this
 
   // Refs for safe callbacks
   const phaseRef = useRef(phase);
@@ -57,6 +55,7 @@ export default function ExamTakePage() {
   const partsRef = useRef(parts);
   const partIndexRef = useRef(partIndex);
   const qIndexRef = useRef(qIndex);
+  const audioRef = useRef(null);
   
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { attemptIdRef.current = attemptId; }, [attemptId]);
@@ -73,50 +72,31 @@ export default function ExamTakePage() {
     (meta.sections || []).forEach((s) => { sectionTime[s.name] = s.time; });
     const listeningAudio = (meta.sections || []).find((s) => s.name === 'Listening')?.audio_url || null;
 
-    if (isJLPT) {
-      const parts = [];
-      if (itemsBySection['Vocabulary']?.length) {
-        parts.push({
-          key: 'vocabulary', label: 'Vocabulary', sections: ['Vocabulary'],
-          items: itemsBySection['Vocabulary'],
-          durationSec: (sectionTime['Vocabulary'] || 15) * 60,
-          breakAfterSec: 5 * 60,
-          isAudio: false,
-        });
-      }
-      const grammarReading = [...(itemsBySection['Grammar'] || []), ...(itemsBySection['Reading'] || [])];
-      if (grammarReading.length) {
-        const dur = (sectionTime['Grammar'] || 0) + (sectionTime['Reading'] || 0) || 25;
-        parts.push({
-          key: 'grammar_reading', label: 'Grammar & Reading', sections: ['Grammar', 'Reading'],
-          items: grammarReading,
-          durationSec: dur * 60,
-          breakAfterSec: 10 * 60,
-          isAudio: false,
-        });
-      }
-      if (itemsBySection['Listening']?.length) {
-        parts.push({
-          key: 'listening', label: 'Listening', sections: ['Listening'],
-          items: itemsBySection['Listening'],
-          durationSec: (sectionTime['Listening'] || 20) * 60,
-          breakAfterSec: 0,
-          isAudio: true,
-          audioUrl: listeningAudio,
-        });
-      }
-      return parts.length ? parts : [{
-        key: 'main', label: meta.title, sections: Object.keys(itemsBySection),
-        items: Object.values(itemsBySection).flat(),
-        durationSec: (meta.duration_minutes || 60) * 60, breakAfterSec: 0, isAudio: false,
-      }];
-    }
+    const parts = [];
+    const sectionOrder = ['Vocabulary', 'Grammar', 'Listening'];
 
-    // EPS-TOPIK / other: no breaks
-    const allItems = Object.values(itemsBySection).flat();
-    return [{
-      key: 'main', label: meta.title, sections: Object.keys(itemsBySection),
-      items: allItems,
+    sectionOrder.forEach((sectionName) => {
+      const items = itemsBySection[sectionName] || [];
+      if (items.length > 0) {
+        const isListening = sectionName === 'Listening';
+        parts.push({
+          key: sectionName.toLowerCase(),
+          label: sectionName,
+          sections: [sectionName],
+          items: items,
+          durationSec: (sectionTime[sectionName] || 15) * 60,
+          breakAfterSec: isListening ? 0 : 25, // 25 second break
+          isAudio: isListening,
+          audioUrl: isListening ? listeningAudio : null,
+        });
+      }
+    });
+
+    return parts.length > 0 ? parts : [{
+      key: 'main',
+      label: meta.title,
+      sections: Object.keys(itemsBySection),
+      items: Object.values(itemsBySection).flat(),
       durationSec: (meta.duration_minutes || 60) * 60,
       breakAfterSec: 0,
       isAudio: false,
@@ -246,9 +226,7 @@ export default function ExamTakePage() {
         doSubmit(true);
       } else {
         setWarningBanner(
-          `Warning ${tabSwitchCount}/${MAX_VIOLATIONS}: leaving this tab during your exam is recorded as a rule violation. ${
-            MAX_VIOLATIONS - tabSwitchCount
-          } more and your paper will be auto-submitted and locked.`
+          `Warning ${tabSwitchCount}/${MAX_VIOLATIONS}: leaving this tab during your exam is recorded as a rule violation.`
         );
         setTimeout(() => setWarningBanner(null), 6000);
       }
@@ -267,17 +245,48 @@ export default function ExamTakePage() {
     return () => document.removeEventListener('visibilitychange', handler);
   }, [reportViolation]);
 
-  // ---- Derived state ----
-  const currentPart = parts[partIndex];
-  const currentItem = currentPart?.items?.[qIndex];
-  const totalInPart = currentPart?.items?.length || 0;
-  
-  const answeredCount = Object.keys(answers).length;
-  const timeColor = partTimeLeft < 60 ? 'text-red-400' : partTimeLeft < 300 ? 'text-yellow-400' : 'text-emerald-400';
-  
-  const filteredQs = paletteSection === 'All'
-    ? currentPart?.items || []
-    : (currentPart?.items || []).filter(q => q.section === paletteSection);
+  // ---- Audio for Listening ----
+  useEffect(() => {
+    if (phase !== 'in_part') return;
+
+    const currentPart = partsRef.current[partIndexRef.current];
+    const isListening = currentPart?.isAudio;
+    const audioUrl = currentPart?.audioUrl;
+
+    if (isListening && audioUrl) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+
+      audioRef.current = new Audio(audioUrl);
+      audioRef.current.loop = false;
+      audioRef.current.controls = false;
+
+      audioRef.current.addEventListener('play', () => setAudioPlaying(true));
+      audioRef.current.addEventListener('pause', () => setAudioPlaying(false));
+      audioRef.current.addEventListener('ended', () => {
+        setAudioPlaying(false);
+      });
+
+      audioRef.current.play().catch(() => {
+        console.log('Autoplay blocked. User interaction required.');
+      });
+    } else {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+        setAudioPlaying(false);
+      }
+    }
+
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, [phase, partIndex]);
 
   // ---- Handlers ----
   const selectAnswer = (optionIdx) => {
@@ -298,18 +307,53 @@ export default function ExamTakePage() {
   const goNext = () => {
     if (qIndex < totalInPart - 1) setQIndex(qIndex + 1);
   };
+
   const goPrev = () => {
+    // ⛔ CANNOT GO BACK TO PREVIOUS SECTION
+    // Only allows going back within the current section
     if (qIndex > 0) setQIndex(qIndex - 1);
   };
 
-  const handleSubmit = () => {
-    setSubmitModal(true);
-  };
+  const handleSubmit = () => setSubmitModal(true);
 
   const confirmSubmit = () => {
     setSubmitModal(false);
     doSubmit(false);
   };
+
+  const handleFinishPart = () => {
+    const nextPart = parts[partIndex + 1];
+    if (nextPart?.breakAfterSec > 0) {
+      setBreakTimeLeft(nextPart.breakAfterSec);
+      setPhase('break');
+    } else {
+      beginPart(partIndex + 1);
+    }
+  };
+
+  // ---- Derived state ----
+  const currentPart = parts[partIndex];
+  const currentItem = currentPart?.items?.[qIndex];
+  const totalInPart = currentPart?.items?.length || 0;
+
+  const totalQuestions = parts.reduce((sum, p) => sum + p.items.length, 0);
+  const answeredCount = Object.keys(answers).length;
+  const timeColor = partTimeLeft < 60 ? 'text-red-400' : partTimeLeft < 300 ? 'text-yellow-400' : 'text-emerald-400';
+
+  const isListening = currentPart?.isAudio;
+  const hasAudio = currentPart?.audioUrl && currentPart.audioUrl.trim() !== '';
+  const hasImage = currentItem?.image_url && currentItem.image_url.trim() !== '';
+  const isFlagged = currentItem && flagged.has(currentItem.id);
+  const selected = currentItem ? answers[currentItem.id] : undefined;
+
+  // ─── Get Section Buttons (No "All" button) ────────────────────────────
+  const sectionButtons = parts.map((part, idx) => ({
+    key: part.key,
+    label: part.label,
+    index: idx,
+    isActive: idx === partIndex,
+    isCompleted: idx < partIndex,
+  }));
 
   // ---- Loading ----
   if (phase === 'loading') {
@@ -343,15 +387,13 @@ export default function ExamTakePage() {
           <h1 className="text-2xl font-bold text-white mb-2">{examMeta?.title}</h1>
           <p className="text-gray-400 mb-6">{examMeta?.description || 'Good luck!'}</p>
           <div className="space-y-2 text-sm text-gray-300 mb-8 text-left bg-white/[0.03] border border-white/5 rounded-xl p-4">
-            <p>• This exam runs in {parts.length} part{parts.length > 1 ? 's' : ''}: {parts.map((p) => p.label).join(' → ')}.</p>
-            {parts.some((p) => p.breakAfterSec > 0) && (
-              <p>• Timed breaks are given automatically between parts — you can't skip ahead early.</p>
-            )}
+            <p>• This exam has {parts.length} sections: {parts.map((p) => p.label).join(' → ')}.</p>
+            <p>• 25-second breaks are given automatically between sections.</p>
             {parts.some((p) => p.isAudio) && (
-              <p>• The Listening part plays automatically once — it can't be paused or rewound.</p>
+              <p>• The Listening section plays audio automatically — you cannot pause or rewind it.</p>
             )}
+            <p>• You cannot go back to previous sections once you move forward.</p>
             <p>• Switching away from this tab is tracked. {MAX_VIOLATIONS} warnings will auto-submit.</p>
-            <p>• Your paper auto-submits the moment time runs out.</p>
           </div>
           <Button variant="primary" size="lg" className="w-full" onClick={() => beginPart(0)}>
             Start Exam
@@ -369,7 +411,7 @@ export default function ExamTakePage() {
           <Coffee className="mx-auto text-amber-400 mb-4" size={36} />
           <h2 className="text-xl font-semibold text-white mb-1">Break time</h2>
           <p className="text-gray-400 text-sm mb-6">
-            The next part starts automatically when the break ends.
+            The next section starts automatically when the break ends.
           </p>
           <div className="text-5xl font-mono font-bold text-amber-300 mb-2">{fmtClock(breakTimeLeft)}</div>
           <p className="text-xs text-gray-500">Next up: {parts[partIndex + 1]?.label}</p>
@@ -413,17 +455,10 @@ export default function ExamTakePage() {
   if (!currentItem) {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center">
-        <GlassCard className="p-8 text-center text-gray-500">No questions in this part.</GlassCard>
+        <GlassCard className="p-8 text-center text-gray-500">No questions in this section.</GlassCard>
       </div>
     );
   }
-
-  const isListening = currentPart?.isAudio || currentItem.section?.toLowerCase() === 'listening';
-  const hasAudio = currentItem.audio_url && currentItem.audio_url !== null && currentItem.audio_url.trim() !== '';
-  const hasImage = currentItem.image_url && currentItem.image_url !== null && currentItem.image_url.trim() !== '';
-  const isFlagged = flagged.has(currentItem.id);
-  const selected = answers[currentItem.id];
-  const lowTime = partTimeLeft <= 60;
 
   return (
     <div className="min-h-screen bg-[#030810] text-white">
@@ -444,7 +479,7 @@ export default function ExamTakePage() {
               {fmtClock(partTimeLeft)}
             </div>
             <div className="text-center hidden sm:block">
-              <div className="text-sm font-semibold text-white">{answeredCount}/{parts.reduce((s, p) => s + p.items.length, 0)}</div>
+              <div className="text-sm font-semibold text-white">{answeredCount}/{totalQuestions}</div>
               <div className="text-xs text-gray-400">Done</div>
             </div>
             <button
@@ -488,6 +523,24 @@ export default function ExamTakePage() {
       <div className="flex pt-[68px] min-h-screen">
         {/* Main Question Area */}
         <div className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 lg:max-w-3xl lg:mx-auto">
+          {/* Section Buttons - No "All" button */}
+          <div className="flex gap-2 mb-4 sm:mb-6 flex-wrap">
+            {sectionButtons.map((sec) => (
+              <Badge
+                key={sec.key}
+                color={sec.isActive ? 'blue' : sec.isCompleted ? 'green' : 'gray'}
+                className={`text-xs px-3 py-1.5 ${
+                  sec.isActive ? 'bg-blue-500/20 border-blue-500/30' :
+                  sec.isCompleted ? 'bg-emerald-500/20 border-emerald-500/30' :
+                  'bg-white/5 border-white/10'
+                }`}
+              >
+                {sec.isCompleted && '✓ '}{sec.label}
+                {sec.isActive && ' (Current)'}
+              </Badge>
+            ))}
+          </div>
+
           <AnimatePresence mode="wait">
             <motion.div
               key={qIndex}
@@ -513,22 +566,18 @@ export default function ExamTakePage() {
                 )}
               </div>
 
-              {/* Listening Banner */}
+              {/* Listening Audio - Uncontrollable */}
               {isListening && hasAudio && (
-                <div className={`mb-4 sm:mb-6 p-3 sm:p-4 rounded-2xl border transition-all duration-300 ${
-                  audioPlaying 
-                    ? 'bg-purple-500/10 border-purple-500/30 shadow-lg shadow-purple-500/10' 
-                    : 'bg-white/5 border-white/10'
-                }`}>
+                <div className="mb-4 sm:mb-6 p-3 sm:p-4 rounded-2xl border bg-purple-500/10 border-purple-500/30">
                   <div className="flex items-center gap-3 sm:gap-4">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs sm:text-sm text-gray-300">
+                      <p className="text-xs sm:text-sm text-purple-300">
                         <Volume2 size={14} className="inline mr-2" />
-                        Audio is playing automatically — listen carefully.
+                        {audioPlaying ? '🔊 Audio playing...' : '⏸ Audio ready'}
                       </p>
                     </div>
                   </div>
-                  <audio src={currentItem.audio_url} autoPlay className="hidden" />
+                  <audio ref={audioRef} src={currentPart.audioUrl} autoPlay className="hidden" />
                 </div>
               )}
 
@@ -623,16 +672,8 @@ export default function ExamTakePage() {
                 <span className="hidden sm:inline">Next</span> <ChevronRight size={14} />
               </Button>
             ) : (
-              <Button variant="primary" size="sm" onClick={partIndex < parts.length - 1 ? () => {
-                const nextPart = parts[partIndex + 1];
-                if (nextPart.breakAfterSec > 0) {
-                  setBreakTimeLeft(nextPart.breakAfterSec);
-                  setPhase('break');
-                } else {
-                  beginPart(partIndex + 1);
-                }
-              } : handleSubmit}>
-                {partIndex < parts.length - 1 ? 'Finish Part' : 'Submit Exam'}
+              <Button variant="primary" size="sm" onClick={partIndex < parts.length - 1 ? handleFinishPart : handleSubmit}>
+                {partIndex < parts.length - 1 ? 'Finish Section' : 'Submit Exam'}
               </Button>
             )}
           </div>
@@ -641,10 +682,10 @@ export default function ExamTakePage() {
         {/* Question Palette - Desktop */}
         <div className="hidden lg:block w-64 xl:w-72 flex-shrink-0 p-5 border-l border-white/10 fixed right-0 top-[68px] bottom-0 overflow-y-auto bg-[#060d1f]/50">
           <PaletteContent
-            sections={sections}
-            paletteSection={paletteSection}
-            setPaletteSection={setPaletteSection}
-            filteredQs={filteredQs}
+            sections={parts.map(p => p.label)}
+            paletteSection={currentPart?.label || ''}
+            setPaletteSection={() => {}} // No-op - no section switching
+            filteredQs={currentPart?.items || []}
             allQuestions={currentPart?.items || []}
             answers={answers}
             flagged={flagged}
@@ -676,10 +717,10 @@ export default function ExamTakePage() {
               </div>
               <div className="p-4">
                 <PaletteContent
-                  sections={sections}
-                  paletteSection={paletteSection}
-                  setPaletteSection={setPaletteSection}
-                  filteredQs={filteredQs}
+                  sections={parts.map(p => p.label)}
+                  paletteSection={currentPart?.label || ''}
+                  setPaletteSection={() => {}}
+                  filteredQs={currentPart?.items || []}
                   allQuestions={currentPart?.items || []}
                   answers={answers}
                   flagged={flagged}
@@ -706,13 +747,13 @@ export default function ExamTakePage() {
               <div className="text-xs text-gray-400">Flagged</div>
             </div>
             <div className="text-center p-3 bg-white/5 border border-white/10 rounded-xl">
-              <div className="text-2xl font-bold text-white">{parts.reduce((s, p) => s + p.items.length, 0) - answeredCount}</div>
+              <div className="text-2xl font-bold text-white">{totalQuestions - answeredCount}</div>
               <div className="text-xs text-gray-400">Unanswered</div>
             </div>
           </div>
-          {parts.reduce((s, p) => s + p.items.length, 0) - answeredCount > 0 && (
+          {totalQuestions - answeredCount > 0 && (
             <p className="text-amber-300 text-sm flex items-center gap-2">
-              <AlertTriangle size={14} />{parts.reduce((s, p) => s + p.items.length, 0) - answeredCount} questions are unanswered.
+              <AlertTriangle size={14} />{totalQuestions - answeredCount} questions are unanswered.
             </p>
           )}
           <div className="flex gap-3">
@@ -741,19 +782,7 @@ function PaletteContent({
   return (
     <>
       <h4 className="text-sm font-semibold text-gray-300 mb-3">Question Navigator</h4>
-      <div className="flex flex-wrap gap-1 mb-4">
-        {sections.map(s => (
-          <button
-            key={s}
-            onClick={() => setPaletteSection(s)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-              paletteSection === s ? 'bg-blue-500 text-white' : 'bg-white/5 text-gray-400'
-            }`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      <div className="text-xs text-gray-500 mb-3">{paletteSection} Section</div>
       <div className="grid grid-cols-5 gap-1.5">
         {filteredQs.map((q, idx) => {
           const isAnswered = answers[q.id] !== undefined;

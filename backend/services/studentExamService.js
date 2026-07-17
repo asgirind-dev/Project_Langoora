@@ -2,54 +2,52 @@ const { db } = require('../config/firebase');
 
 // ── CBT Engine Configuration ─────────────────────────────────────────────
 const MAX_TAB_VIOLATIONS = 3;
-const VIOLATION_LOCK_MINUTES = 30; // "fair" cooldown once a student is locked out for cheating flags
+const VIOLATION_LOCK_MINUTES = 30;
 
 /**
- * 🧩 Normalize a single question document into one or more gradable "items".
- *
- * Two schemas exist in the wild:
- *  1) Flat (older wizard / examController.createExam): { text, options, correct_answer_index }
- *  2) Grouped (JLPT/EPS-TOPIK style, per your Firestore dump): { problem_title, sub_questions: [...] }
- *
- * This returns a flat array of items regardless of which shape the doc uses,
- * so the rest of the CBT engine never has to care which wizard produced the exam.
+ * 🧩 Normalize a problem document into gradable "items".
+ * Handles both empty and non-empty sub_questions arrays.
  */
-function normalizeQuestionDoc(doc) {
-  const data = doc.data();
+function normalizeProblemDoc(problemDoc) {
+  const data = problemDoc.data();
   const items = [];
 
+  // Check if this problem has sub_questions
   if (Array.isArray(data.sub_questions) && data.sub_questions.length > 0) {
     data.sub_questions.forEach((sq, idx) => {
       items.push({
-        itemId: `${doc.id}__${sq.sub_question_id || `sq${idx + 1}`}`,
-        questionDocId: doc.id,
-        problem_number: data.problem_number ?? null,
+        itemId: `${problemDoc.id}__${idx}`,
+        questionDocId: problemDoc.id,
+        problem_number: data.problem_number || null,
         problem_title: data.problem_title || null,
-        passage_text: data.passage_text || null,
+        passage_text: data.example?.text || null,
         section: data.section || 'General',
-        image_url: sq.image_url || data.image_url || null,
-        audio_url: sq.audio_url || data.audio_url || null,
+        image_url: sq.image_url || null,
+        audio_url: sq.audio_url || null,
         text: sq.text || '',
-        options: sq.options || [],
-        _correct: sq.correct_answer_index,
-        _explanation: sq.explanation || '',
+        options: sq.options || ['', '', '', ''],
+        _correct: sq.correct_answer_index !== undefined ? sq.correct_answer_index : 0,
+        _explanation: sq.explanation || data.explanation || '',
       });
     });
   } else {
-    items.push({
-      itemId: doc.id,
-      questionDocId: doc.id,
-      problem_number: data.problem_number ?? data.question_number ?? null,
-      problem_title: data.problem_title || null,
-      passage_text: data.passage_text || null,
-      section: data.section || 'General',
-      image_url: data.image_url || null,
-      audio_url: data.audio_url || null,
-      text: data.text || '',
-      options: data.options || [],
-      _correct: data.correct_answer_index,
-      _explanation: data.explanation || '',
-    });
+    // If no sub_questions, use the problem itself (if it has example data)
+    if (data.example && data.example.text) {
+      items.push({
+        itemId: problemDoc.id,
+        questionDocId: problemDoc.id,
+        problem_number: data.problem_number || null,
+        problem_title: data.problem_title || null,
+        passage_text: data.example?.text || null,
+        section: data.section || 'General',
+        image_url: data.image_url || null,
+        audio_url: data.audio_url || null,
+        text: data.example?.text || '',
+        options: data.example?.options || ['', '', '', ''],
+        _correct: data.example?.correct_answer_index !== undefined ? data.example.correct_answer_index : 0,
+        _explanation: data.explanation || '',
+      });
+    }
   }
 
   return items;
@@ -61,35 +59,81 @@ function toStudentFacing(item) {
   return safe;
 }
 
+// ─── GET EXAM METADATA ────────────────────────────────────────────────────
+
 const getExamMetadata = async (examId) => {
   const doc = await db.collection('exams').doc(examId).get();
   if (!doc.exists) throw new Error('Exam not found');
   return { id: doc.id, ...doc.data() };
 };
 
-/** Full items, WITH answer keys — server-side use only (grading). */
-const getGradableItems = async (examId) => {
-  const snapshot = await db
-    .collection(`exams/${examId}/questions`)
-    .orderBy('question_number')
-    .get()
-    .catch(() =>
-      // question_number doesn't exist on the grouped schema — fall back to problem_number ordering
-      db.collection(`exams/${examId}/questions`).orderBy('problem_number').get()
-    );
+// ─── GET GRADABLE ITEMS (WITH ANSWER KEYS) ──────────────────────────────
 
-  let items = [];
-  snapshot.docs.forEach((doc) => {
-    items = items.concat(normalizeQuestionDoc(doc));
-  });
-  return items;
+const getGradableItems = async (examId) => {
+  try {
+    // Try to get from 'problems' sub-collection first (new structure)
+    const problemsSnapshot = await db
+      .collection(`exams/${examId}/problems`)
+      .orderBy('problem_number')
+      .get();
+
+    if (!problemsSnapshot.empty) {
+      let items = [];
+      problemsSnapshot.docs.forEach((doc) => {
+        const normalizedItems = normalizeProblemDoc(doc);
+        items = items.concat(normalizedItems);
+      });
+      console.log(`📚 Found ${items.length} items from problems sub-collection`);
+      return items;
+    }
+
+    // Fallback: try 'questions' sub-collection (old structure)
+    const questionsSnapshot = await db
+      .collection(`exams/${examId}/questions`)
+      .orderBy('question_number')
+      .get();
+
+    if (!questionsSnapshot.empty) {
+      let items = [];
+      questionsSnapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        items.push({
+          itemId: doc.id,
+          questionDocId: doc.id,
+          problem_number: data.question_number || null,
+          problem_title: data.problem_title || null,
+          passage_text: data.passage_text || null,
+          section: data.section || 'General',
+          image_url: data.image_url || null,
+          audio_url: data.audio_url || null,
+          text: data.text || '',
+          options: data.options || [],
+          _correct: data.correct_answer_index !== undefined ? data.correct_answer_index : 0,
+          _explanation: data.explanation || '',
+        });
+      });
+      console.log(`📚 Found ${items.length} items from questions sub-collection`);
+      return items;
+    }
+
+    console.warn(`⚠️ No questions found for exam: ${examId}`);
+    return [];
+  } catch (error) {
+    console.error('Error fetching gradable items:', error);
+    return [];
+  }
 };
 
-/** Student-facing items — answer keys stripped. */
+// ─── GET QUESTIONS FOR STUDENT (WITHOUT ANSWER KEYS) ────────────────────
+
 const getQuestionsForStudent = async (examId) => {
   const items = await getGradableItems(examId);
-  return items.map(toStudentFacing);
+  const studentItems = items.map(toStudentFacing);
+  console.log(`📤 Sending ${studentItems.length} questions to student (keys stripped)`);
+  return studentItems;
 };
+
+// ─── START EXAM ───────────────────────────────────────────────────────────
 
 const startExam = async (examId, studentId) => {
   const examMeta = await getExamMetadata(examId);
@@ -112,7 +156,6 @@ const startExam = async (examId, studentId) => {
     sectionScores: null,
     questionResults: null,
     endTime: null,
-    // Anti-cheating / integrity tracking
     tabSwitchCount: 0,
     locked: false,
     lockedUntil: null,
@@ -122,11 +165,8 @@ const startExam = async (examId, studentId) => {
   return { attemptId: attemptRef.id, ...attemptData };
 };
 
-/**
- * 🚨 Record a tab-switch / focus-loss violation for an in-progress attempt.
- * On the 3rd strike, the attempt is locked out for a cooldown period so the
- * student isn't shut out of the platform forever, but can't keep gaming this exam.
- */
+// ─── REGISTER VIOLATION ──────────────────────────────────────────────────
+
 const registerViolation = async (attemptId) => {
   const attemptRef = db.collection('student_exams').doc(attemptId);
   const doc = await attemptRef.get();
@@ -156,9 +196,11 @@ const registerViolation = async (attemptId) => {
     tabSwitchCount,
     locked: shouldLock,
     lockedUntil,
-    shouldAutoSubmit: shouldLock, // the caller (route) triggers the actual auto-submit
+    shouldAutoSubmit: shouldLock,
   };
 };
+
+// ─── GET ATTEMPT STATUS ──────────────────────────────────────────────────
 
 const getAttemptStatus = async (attemptId) => {
   const doc = await db.collection('student_exams').doc(attemptId).get();
@@ -172,6 +214,8 @@ const getAttemptStatus = async (attemptId) => {
     lockedUntil: data.lockedUntil || null,
   };
 };
+
+// ─── SUBMIT EXAM ─────────────────────────────────────────────────────────
 
 const submitExam = async (attemptId, answers, flagged, autoSubmitted = false) => {
   const attemptRef = db.collection('student_exams').doc(attemptId);
@@ -241,6 +285,8 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted = false) =>
   await attemptRef.update(updateData);
   return { attemptId, ...attemptData, ...updateData };
 };
+
+// ─── GET RESULTS ─────────────────────────────────────────────────────────
 
 const getResults = async (attemptId) => {
   const doc = await db.collection('student_exams').doc(attemptId).get();
