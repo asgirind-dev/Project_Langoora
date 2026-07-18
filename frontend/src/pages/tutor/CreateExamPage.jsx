@@ -6,7 +6,7 @@ import {
   GripVertical, Upload, Save, Send, CheckCircle, 
   Mic, ShieldAlert, Loader, X, AlertCircle, Info, FileText, HelpCircle, Image
 } from 'lucide-react';
-import { createTutorExam , uploadExamAsset } from '../../services/examService';
+import { createTutorExam, uploadExamAsset } from '../../services/examService';
 import { fetchActiveExamSchema } from '../../services/languageService';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -32,18 +32,15 @@ export default function CreateExamPage() {
   
   // 🧭 Default initial sections setup
   const [sections, setSections] = useState([
-    { id: 1, name: 'Vocabulary', questions: 0, time: 25 },
-    { id: 2, name: 'Grammar', questions: 0, time: 35 },
-    { id: 3, name: 'Listening', questions: 0, time: 30 }
+    { id: 1, name: 'Vocabulary', questions: 5, time: 25 },
+    { id: 2, name: 'Grammar', questions: 5, time: 35 },
+    { id: 3, name: 'Listening', questions: 5, time: 30 }
   ]);
   
   // 📝 Questions - Start with empty array
   const [questions, setQuestions] = useState([]);
   
   const [activeQuestionId, setActiveQuestionId] = useState(null);
-
-  // 👂 Listening specific state - image preview for current question
-  const [listeningImagePreview, setListeningImagePreview] = useState(null);
 
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -67,9 +64,10 @@ export default function CreateExamPage() {
         }
         
         setActiveSchema(extractedSchema);
+        console.log('✅ Categories loaded from database:', extractedSchema.length);
       } catch (err) {
         console.error("Schema Fetch Error:", err);
-        showNotification(err.message || 'Matrix sync connection dropped.', 'error');
+        showNotification('Failed to load exam categories from database. Please refresh and try again.', 'error');
       } finally {
         setGlobalLoading(false);
       }
@@ -83,27 +81,38 @@ export default function CreateExamPage() {
     setMeta(p => ({ ...p, duration_minutes: totalTime }));
   }, [sections]);
 
-  // 🎯 Handle Category Change + Auto Setup Sections for JLPT
+  // 🎯 Handle Category Change - Load levels from database
   const handleCategoryChange = (catId) => {
     setMeta(p => ({ ...p, category_id: catId, level_id: '' }));
+    setAvailableLevels([]);
+    
+    if (!catId) {
+      return;
+    }
     
     const targetCluster = activeSchema.find(c => c.id === catId || c.category_name === catId);
     
+    console.log('🔍 Selected category:', catId);
+    console.log('📂 Target cluster:', targetCluster);
+    
     if (targetCluster && targetCluster.levels && targetCluster.levels.length > 0) {
-      setAvailableLevels(targetCluster.levels);
-    } else if (catId.toUpperCase() === 'JLPT' || (targetCluster && targetCluster.category_name.toUpperCase() === 'JLPT')) {
-      setAvailableLevels([
-        { id: 'n5', level_name: 'N5 (Beginner)' },
-        { id: 'n4', level_name: 'N4 (Basic)' },
-        { id: 'n3', level_name: 'N3 (Intermediate)' },
-        { id: 'n2', level_name: 'N2 (Pre-Advanced)' },
-        { id: 'n1', level_name: 'N1 (Advanced)' }
-      ]);
+      const levels = targetCluster.levels.map(level => ({
+        id: level.id || level.level_id || level.level_name,
+        level_name: level.level_name || level.name || level.id,
+        credit_cost: level.credit_cost || 0,
+        isCreditSet: level.isCreditSet || false,
+        ...level
+      }));
+      setAvailableLevels(levels);
+      console.log('✅ Levels loaded from database:', levels.length, levels);
     } else {
       setAvailableLevels([]);
+      console.log('ℹ️ No levels found for this category');
     }
 
-    const isJlpt = catId.toUpperCase() === 'JLPT' || (targetCluster && targetCluster.category_name.toUpperCase() === 'JLPT');
+    const isJlpt = catId.toUpperCase() === 'JLPT' || 
+                   (targetCluster && targetCluster.category_name?.toUpperCase() === 'JLPT');
+    
     if (isJlpt) {
       setSections([
         { id: Date.now() + 1, name: 'Vocabulary', questions: 0, time: '' },
@@ -130,7 +139,7 @@ export default function CreateExamPage() {
       }
     } catch (err) {
       console.error("Thumbnail Cloud Upload Error:", err);
-      showNotification(err.message || 'Image cloud upload failed.', 'error');
+      showNotification(err.message || 'Image upload failed. Please try again.', 'error');
     }
   };
 
@@ -173,7 +182,8 @@ export default function CreateExamPage() {
       explanation: '',
       example_question: '',
       example_correct_option: 0,
-      options: ['', '', '', '']
+      options: ['', '', '', ''],
+      example_image_url: null  // 👈 Listening example image
     };
 
     setQuestions(p => [...p, newProblem]);
@@ -181,7 +191,7 @@ export default function CreateExamPage() {
     showNotification(`New Problem Block created inside ${sectionName}!`);
   };
 
-  // ➕ Add Standard Question - MANUAL ADD (Works for all sections including Listening)
+  // ➕ Add Standard Question - MANUAL ADD
   const addStandardQuestion = (sectionName) => {
     const newId = Date.now();
     
@@ -190,6 +200,15 @@ export default function CreateExamPage() {
     
     // Check if it's Listening section
     const isListening = sectionName.toLowerCase().includes('listen');
+
+    // ✅ VALIDATION: Check if section has reached max questions
+    const targetSection = sections.find(s => s.name === sectionName);
+    const currentQuestionsInSection = questions.filter(q => q.section === sectionName && !q.is_problem).length;
+    
+    if (targetSection && targetSection.questions > 0 && currentQuestionsInSection >= Number(targetSection.questions)) {
+      showNotification(`⚠️ Maximum limit of ${targetSection.questions} questions reached for ${sectionName}.`, 'error');
+      return;
+    }
 
     const newQ = {
       id: newId,
@@ -201,18 +220,26 @@ export default function CreateExamPage() {
       options: ['', '', '', ''],
       correct: 0,
       explanation: '',
-      image_url: null // 👈 For listening question image (1,2,3,4 marked)
+      image_url: null
     };
 
     setQuestions(p => [...p, newQ]);
     setActiveQuestionId(newId);
-    setListeningImagePreview(null);
     showNotification(`New ${isListening ? 'Listening' : ''} question added to ${sectionName}!`);
   };
 
   // 👂 Add Listening Question
   const addListeningQuestion = (sectionName) => {
     const newId = Date.now();
+    
+    // ✅ VALIDATION: Check if section has reached max questions
+    const targetSection = sections.find(s => s.name === sectionName);
+    const currentQuestionsInSection = questions.filter(q => q.section === sectionName && !q.is_problem).length;
+    
+    if (targetSection && targetSection.questions > 0 && currentQuestionsInSection >= Number(targetSection.questions)) {
+      showNotification(`⚠️ Maximum limit of ${targetSection.questions} questions reached for ${sectionName}.`, 'error');
+      return;
+    }
     
     const newQ = {
       id: newId,
@@ -224,13 +251,46 @@ export default function CreateExamPage() {
       options: ['', '', '', ''],
       correct: 0,
       explanation: '',
-      image_url: null // 👈 Image with 1,2,3,4 marked
+      image_url: null
     };
 
     setQuestions(p => [...p, newQ]);
     setActiveQuestionId(newId);
-    setListeningImagePreview(null);
     showNotification(`New Listening question added!`);
+  };
+
+  // ➕ Add Question under a specific Problem
+  const addQuestionUnderProblem = (problemId) => {
+    const problem = questions.find(q => q.id === problemId);
+    if (!problem) return;
+    
+    // ✅ VALIDATION: Check if section has reached max questions
+    const targetSection = sections.find(s => s.name === problem.section);
+    const currentQuestionsInSection = questions.filter(q => q.section === problem.section && !q.is_problem).length;
+    
+    if (targetSection && targetSection.questions > 0 && currentQuestionsInSection >= Number(targetSection.questions)) {
+      showNotification(`⚠️ Maximum limit of ${targetSection.questions} questions reached for ${problem.section}.`, 'error');
+      return;
+    }
+    
+    const newId = Date.now();
+
+    const newQ = {
+      id: newId,
+      section: problem.section,
+      is_problem: false,
+      parent_problem_id: problemId,
+      type: problem.section.toLowerCase().includes('listen') ? 'listening' : 'mcq',
+      text: '',
+      options: ['', '', '', ''],
+      correct: 0,
+      explanation: '',
+      image_url: null
+    };
+
+    setQuestions(p => [...p, newQ]);
+    setActiveQuestionId(newId);
+    showNotification(`New question added under ${problem.problem_title}!`);
   };
 
   // 📷 Upload Listening Question Image (1,2,3,4 marked)
@@ -244,11 +304,29 @@ export default function CreateExamPage() {
       
       if (result && result.success) {
         updateItemField(questionId, 'image_url', result.fileUrl);
-        setListeningImagePreview(result.fileUrl);
         showNotification('Listening image uploaded successfully!', 'success');
       }
     } catch (err) {
       console.error("Image Upload Error:", err);
+      showNotification(err.message || 'Image upload failed.', 'error');
+    }
+  };
+
+  // 📷 Upload Example Image for Problem (Listening)
+  const handleExampleImageUpload = async (problemId, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      showNotification('Uploading example image...', 'info');
+      const result = await uploadExamAsset(file);
+      
+      if (result && result.success) {
+        updateItemField(problemId, 'example_image_url', result.fileUrl);
+        showNotification('Example image uploaded successfully!', 'success');
+      }
+    } catch (err) {
+      console.error("Example Image Upload Error:", err);
       showNotification(err.message || 'Image upload failed.', 'error');
     }
   };
@@ -320,37 +398,44 @@ export default function CreateExamPage() {
       setError('');
       setSubmitLoading(true);
 
-      if (!meta.title.trim()) throw new Error('Exam Architecture Node requires a Title.');
-      if (!meta.category_id) throw new Error('Language Cluster mapping is missing.');
-      if (!meta.level_id) throw new Error('Target Structural Level mapping is missing.');
+      if (!meta.title.trim()) throw new Error('Please enter an exam title.');
+      if (!meta.category_id) throw new Error('Please select an exam category.');
+      if (availableLevels.length > 0 && !meta.level_id) {
+        throw new Error('Please select an exam level.');
+      }
 
       const examPayload = {
         title: meta.title.trim(),
         category_id: meta.category_id,
-        level_id: meta.level_id,
+        level_id: meta.level_id || '',
         duration_minutes: Number(meta.duration_minutes),
-        description: meta.description,
+        description: meta.description || '',
         thumbnail: meta.thumbnail || '',
         status: statusType,
         sections: sections.map(s => ({
           name: s.name,
-          questions: Number(s.questions),
-          time: Number(s.time),
-          audio_url: s.audio_url || null // 👈 Global audio for listening section
+          questions: Number(s.questions || 0),
+          time: Number(s.time || 0),
+          audio_url: s.audio_url || null
         })),
         questions: questions.map(q => {
           if (q.is_problem) {
+            // ✅ PROBLEM = උපදෙස් + Example data (with image for listening)
             return {
+              id: q.id,
               is_problem: true,
               section: q.section,
-              problem_title: q.problem_title,
-              explanation: q.explanation,
+              problem_title: q.problem_title || `Problem`,
+              explanation: q.explanation || '',
               example_question: q.example_question || '',
               example_correct_option: Number(q.example_correct_option || 0),
-              options: q.options
+              options: q.options || ['', '', '', ''],
+              example_image_url: q.example_image_url || null  // 👈 Listening example image
             };
           } else {
+            // ✅ SUB-QUESTION = ඇත්ත ප්‍රශ්නය + answer
             return {
+              id: q.id,
               is_problem: false,
               section: q.section,
               parent_problem_id: q.parent_problem_id || null,
@@ -359,22 +444,24 @@ export default function CreateExamPage() {
               options: q.options || ['', '', '', ''],
               correct: Number(q.correct || 0),
               explanation: q.explanation || '',
-              image_url: q.image_url || null // 👈 Image for listening question
+              image_url: q.image_url || null
             };
           }
         })
       };
 
+      console.log('📤 Sending exam payload:', JSON.stringify(examPayload, null, 2));
+
       const response = await createTutorExam(examPayload);
 
       if (response && response.success) {
-        showNotification(statusType === 'active' ? 'Exam Matrix Deployed Successfully!' : 'Blueprint saved as Draft Node!', 'success');
+        showNotification(statusType === 'active' ? '✅ Exam deployed successfully!' : '✅ Draft saved successfully!', 'success');
         setTimeout(() => navigate('/tutor/dashboard'), 2500); 
       }
     } catch (err) {
-      console.error("Submission Error Matrix:", err);
-      setError(err.message || 'Database blueprint commit exception occurred.');
-      showNotification(err.message || 'Deployment aborted.', 'error');
+      console.error("Submission Error:", err);
+      setError(err.message || 'Failed to create exam.');
+      showNotification(err.message || 'Failed to create exam. Please try again.', 'error');
     } finally {
       setSubmitLoading(false);
     }
@@ -404,7 +491,7 @@ export default function CreateExamPage() {
           >
             {toast.type === 'success' ? <CheckCircle size={16} className="text-emerald-400" /> : <AlertCircle size={16} className="text-rose-400" />}
             <div className="flex-1">
-              <p className="text-[10px] font-mono uppercase tracking-widest opacity-50">Exam Config System</p>
+              <p className="text-[10px] font-mono uppercase tracking-widest opacity-50">Exam System</p>
               <p className="text-xs font-semibold mt-0.5 leading-tight">{toast.message}</p>
             </div>
             <button onClick={() => setToast(p => ({ ...p, show: false }))} className="text-slate-400 hover:text-white transition-colors ml-2">
@@ -415,8 +502,8 @@ export default function CreateExamPage() {
       </AnimatePresence>
 
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-3xl font-black bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Create Exam Node</h1>
-        <p className="text-gray-400 text-xs mt-0.5">Build, auto-calculate components, and deploy fully structural mock environments</p>
+        <h1 className="text-3xl font-black bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Create New Exam</h1>
+        <p className="text-gray-400 text-xs mt-0.5">Build and deploy your custom exam structure</p>
       </motion.div>
 
       {/* Progress Wizard Tracker */}
@@ -443,77 +530,125 @@ export default function CreateExamPage() {
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} transition={{ duration: 0.15 }}>
           
-          {/* PHASE 01: EXAM DETAILS */}
+          {/* ============================================================
+              PHASE 01: EXAM DETAILS
+          ============================================================ */}
           {step === 0 && (
             <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl">
-              <h2 className="text-base font-bold text-white uppercase tracking-wider mb-2">Exam Structural Setup</h2>
-              {error && <div className="bg-rose-500/5 border border-rose-500/20 text-rose-400 p-3 rounded-xl flex items-center gap-2 text-xs font-semibold"><ShieldAlert size={14}/>{error}</div>}
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <h2 className="text-base font-bold text-white uppercase tracking-wider">Exam Details</h2>
+                {globalLoading && (
+                  <div className="flex items-center gap-2 text-xs text-blue-400">
+                    <Loader size={14} className="animate-spin" />
+                    Loading categories...
+                  </div>
+                )}
+              </div>
               
-              <Input label="Exam Paper Title" placeholder="e.g., JLPT N4 Official Full Length Mock - Paper 01" value={meta.title} onChange={e => setMeta(p => ({ ...p, title: e.target.value }))} />
+              {error && (
+                <div className="bg-rose-500/5 border border-rose-500/20 text-rose-400 p-3 rounded-xl flex items-center gap-2 text-xs font-semibold">
+                  <ShieldAlert size={14} />
+                  {error}
+                </div>
+              )}
+              
+              <Input 
+                label="Exam Title" 
+                placeholder="e.g., JLPT N5 Full Mock Test - Paper 01" 
+                value={meta.title} 
+                onChange={e => setMeta(p => ({ ...p, title: e.target.value }))} 
+              />
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Language Cluster Category</label>
-                  <select value={meta.category_id} onChange={e => handleCategoryChange(e.target.value)} className="bg-slate-950/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50">
-                    <option value="" className="bg-[#070c19]">Select Language Cluster</option>
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Exam Category <span className="text-rose-400">*</span>
+                  </label>
+                  <select 
+                    value={meta.category_id} 
+                    onChange={e => handleCategoryChange(e.target.value)} 
+                    className="bg-slate-950/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50"
+                    disabled={globalLoading}
+                  >
+                    <option value="" className="bg-[#070c19]">Select Exam Category</option>
                     {activeSchema && activeSchema.map(c => (
                       <option key={c.id || c.category_name} value={c.id || c.category_name} className="bg-[#070c19]">
-                        {c.category_name}
+                        {c.category_name || c.name || c.id}
                       </option>
                     ))}
-                    <option value="JLPT" className="bg-[#070c19]">JLPT (Japanese Language Proficiency Test)</option>
                   </select>
+                  {globalLoading && (
+                    <p className="text-[9px] text-slate-500">Loading categories from database...</p>
+                  )}
+                  {!globalLoading && activeSchema.length === 0 && (
+                    <p className="text-[9px] text-amber-400">⚠️ No active categories found in database</p>
+                  )}
                 </div>
                 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Target Structural Level</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Exam Level <span className="text-rose-400">*</span>
+                  </label>
                   <select 
-                    disabled={availableLevels.length === 0} 
+                    disabled={availableLevels.length === 0 || globalLoading} 
                     value={meta.level_id} 
                     onChange={e => setMeta(p => ({ ...p, level_id: e.target.value }))} 
                     className="bg-slate-950/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 disabled:opacity-40"
                   >
-                    <option value="" className="bg-[#070c19]">Select Mapped Level Node</option>
+                    <option value="" className="bg-[#070c19]">
+                      {availableLevels.length === 0 ? 'No levels available' : 'Select Exam Level'}
+                    </option>
                     {availableLevels.map(l => (
                       <option key={l.id || l.level_name} value={l.id || l.level_name} className="bg-[#070c19]">
-                        {l.level_name}
+                        {l.level_name || l.name || l.id}
+                        {l.credit_cost > 0 && ` (${l.credit_cost} credits)`}
                       </option>
                     ))}
                   </select>
+                  {availableLevels.length === 0 && meta.category_id && !globalLoading && (
+                    <p className="text-[9px] text-amber-400">⚠️ No levels found for this category</p>
+                  )}
+                  {availableLevels.length > 0 && (
+                    <p className="text-[9px] text-slate-500">{availableLevels.length} level(s) available</p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-4">
                 <div className="flex flex-col gap-1.5 relative">
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Total Calculated Duration (Minutes)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Total Duration (Minutes)</label>
                   <div className="flex items-center gap-3 bg-slate-950/40 border border-white/10 rounded-xl px-4 py-3 text-blue-400 font-mono font-bold text-base">
-                    <span>{meta.duration_minutes} Mins</span>
+                    <span>{meta.duration_minutes} mins</span>
                     <div className="ml-auto text-[10px] uppercase bg-blue-500/10 border border-blue-500/20 text-blue-300 font-sans tracking-widest px-2 py-1 rounded-md flex items-center gap-1">
-                      <Info size={12}/> Auto-Calculated via Section Segments
+                      <Info size={12}/> Auto-calculated from sections
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Strategic Overview Description</label>
-                <textarea rows={3} placeholder="Describe what components students will evaluate inside this bundle mapping..."
-                  value={meta.description} onChange={e => setMeta(p => ({ ...p, description: e.target.value }))}
-                  className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500/50 resize-none" />
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Description (Optional)</label>
+                <textarea 
+                  rows={3} 
+                  placeholder="Describe the exam structure and what students will be tested on..."
+                  value={meta.description} 
+                  onChange={e => setMeta(p => ({ ...p, description: e.target.value }))}
+                  className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500/50 resize-none" 
+                />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Thumbnail Image Base</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Exam Thumbnail (Optional)</label>
                 <label className="flex items-center gap-3 px-4 py-5 bg-white/5 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-blue-500/30 transition-colors relative overflow-hidden h-20">
                   {meta.thumbnail ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                      <img src={meta.thumbnail} alt="Thumbnail preview" className="h-full w-full object-cover" />
-                      <div className="absolute bg-black/60 text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md text-white">Change Image Asset</div>
+                      <img src={meta.thumbnail} alt="Thumbnail" className="h-full w-full object-cover" />
+                      <div className="absolute bg-black/60 text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md text-white">Change Image</div>
                     </div>
                   ) : (
                     <>
                       <Upload size={20} className="text-blue-400" />
-                      <span className="text-xs text-gray-400">Click to attach mock cover matrix string</span>
+                      <span className="text-xs text-gray-400">Click to upload a cover image</span>
                     </>
                   )}
                   <input type="file" accept="image/*" className="hidden" onChange={handleThumbnailUpload} />
@@ -522,17 +657,23 @@ export default function CreateExamPage() {
             </GlassCard>
           )}
 
-          {/* PHASE 02: OPERATIONAL SECTIONS SEPARATION */}
+          {/* ============================================================
+              PHASE 02: SECTIONS
+          ============================================================ */}
           {step === 1 && (
             <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl">
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
                 <div>
-                  <h2 className="text-base font-bold uppercase tracking-wider">Exam Segment Matrix Partitioning</h2>
+                  <h2 className="text-base font-bold uppercase tracking-wider">Exam Sections</h2>
                   {meta.category_id?.toUpperCase() === 'JLPT' && (
-                    <p className="text-emerald-400 font-mono text-[10px] mt-0.5 tracking-wider uppercase">🎯 Auto-Generated 3-Core Framework Loaded for JLPT</p>
+                    <p className="text-emerald-400 font-mono text-[10px] mt-0.5 tracking-wider uppercase">
+                      🎯 Auto-configured for JLPT structure
+                    </p>
                   )}
                 </div>
-                <Button variant="secondary" size="sm" onClick={addSection} className="bg-white/5 border-white/10 text-gray-300"><Plus size={14} /> Insert Segment Node</Button>
+                <Button variant="secondary" size="sm" onClick={addSection} className="bg-white/5 border-white/10 text-gray-300">
+                  <Plus size={14} /> Add Section
+                </Button>
               </div>
 
               <div className="space-y-3">
@@ -541,16 +682,16 @@ export default function CreateExamPage() {
                     <GripVertical size={16} className="text-slate-600 flex-shrink-0" />
                     <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
-                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Component Layer Name</label>
-                        <Input placeholder="e.g., Vocabulary / Grammar" value={s.name} onChange={e => updateSection(s.id, 'name', e.target.value)} />
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Section Name</label>
+                        <Input placeholder="e.g., Vocabulary" value={s.name} onChange={e => updateSection(s.id, 'name', e.target.value)} />
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Questions Count (Manual)</label>
-                        <Input type="number" placeholder="Target Qs" value={s.questions} onChange={e => updateSection(s.id, 'questions', e.target.value)} />
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Questions Count</label>
+                        <Input type="number" placeholder="0" value={s.questions} onChange={e => updateSection(s.id, 'questions', e.target.value)} />
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Allocated Time Block (Mins)</label>
-                        <Input type="number" placeholder="Allocated Block Mins" value={s.time} onChange={e => updateSection(s.id, 'time', e.target.value)} />
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Time (Minutes)</label>
+                        <Input type="number" placeholder="0" value={s.time} onChange={e => updateSection(s.id, 'time', e.target.value)} />
                       </div>
                     </div>
                     <button onClick={() => removeSection(s.id)} className="text-rose-400 hover:text-rose-300 p-1 flex-shrink-0 self-end mb-2">
@@ -561,13 +702,15 @@ export default function CreateExamPage() {
               </div>
 
               <div className="p-4 bg-blue-500/5 border border-blue-500/15 rounded-2xl flex justify-between text-xs font-mono font-bold tracking-wide uppercase">
-                <div>Total Operational Items: <span className="text-blue-400 ml-1">{sections.reduce((s, r) => s + Number(r.questions || 0), 0)} Items</span></div>
-                <div>Aggregated Master Clock: <span className="text-blue-400 ml-1">{meta.duration_minutes} Minutes</span></div>
+                <div>Total Questions: <span className="text-blue-400 ml-1">{sections.reduce((s, r) => s + Number(r.questions || 0), 0)}</span></div>
+                <div>Total Time: <span className="text-blue-400 ml-1">{meta.duration_minutes} mins</span></div>
               </div>
             </GlassCard>
           )}
 
-          {/* PHASE 03: QUESTIONS - WITH LISTENING SUPPORT (No ばん, only Q1, Q2...) */}
+          {/* ============================================================
+              PHASE 03: QUESTIONS - UPDATED
+          ============================================================ */}
           {step === 2 && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
               
@@ -577,6 +720,11 @@ export default function CreateExamPage() {
                   const secProblems = questions.filter(q => q.section === sec.name && q.is_problem);
                   const secQuestions = getQuestionsForSection(sec.name);
                   const isListening = isListeningSection(sec.name);
+                  
+                  // Check if section has reached max questions
+                  const maxQuestions = Number(sec.questions || 0);
+                  const currentQuestions = secQuestions.length;
+                  const isFull = maxQuestions > 0 && currentQuestions >= maxQuestions;
 
                   return (
                     <div key={sec.id} className="bg-slate-950/40 border border-white/5 rounded-2xl p-3">
@@ -587,8 +735,9 @@ export default function CreateExamPage() {
                           </h3>
                           {isListening && <Mic size={12} className="text-blue-400 flex-shrink-0" />}
                         </div>
+                        {/* ✅ Show QUESTIONS count */}
                         <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">
-                          {secProblems.length + secQuestions.length} / {sec.questions || 0}
+                          {currentQuestions} / {maxQuestions || 0}
                         </span>
                       </div>
 
@@ -599,15 +748,15 @@ export default function CreateExamPage() {
                             sec.audio_url ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-slate-400 hover:border-blue-500/30'
                           }`}>
                             <Mic size={12} />
-                            {sec.audio_url ? '🎧 Audio Track Attached ✓' : 'Attach Listening Audio (Single Track)'}
+                            {sec.audio_url ? '🎧 Audio Attached' : 'Attach Audio Track'}
                             <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleSectionAudioUpload(sec.id, e)} />
                           </label>
 
                           {sec.audio_url && (
                             <div className="bg-slate-900/80 p-2 rounded-xl border border-white/5 space-y-1">
-                              <p className="text-[9px] font-mono uppercase tracking-widest text-emerald-400 flex items-center gap-1">
+                              <p className="text-[9px] font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                Audio Preview (Shared for all questions)
+                                Audio Preview
                               </p>
                               <audio 
                                 src={sec.audio_url} 
@@ -669,7 +818,7 @@ export default function CreateExamPage() {
                         );
                       })}
 
-                      {/* 📝 Questions (not linked to problem) */}
+                      {/* 📝 Standalone Questions (not linked to any problem) */}
                       {secQuestions.filter(q => !q.parent_problem_id).map((q) => {
                         const sectionQuestions = getQuestionsForSection(q.section);
                         const globalIndex = sectionQuestions.findIndex(item => item.id === q.id);
@@ -701,7 +850,7 @@ export default function CreateExamPage() {
                         );
                       })}
 
-                      {/* 🛠️ ACTION BUTTONS */}
+                      {/* 🛠️ ACTION BUTTONS with validation */}
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 mt-2">
                         <button 
                           onClick={() => addProblemContext(sec.name)}
@@ -711,6 +860,10 @@ export default function CreateExamPage() {
                         </button>
                         <button 
                           onClick={() => {
+                            if (isFull) {
+                              showNotification(`⚠️ Maximum limit of ${maxQuestions} questions reached for ${sec.name}.`, 'error');
+                              return;
+                            }
                             if (isListening) {
                               addListeningQuestion(sec.name);
                             } else {
@@ -718,14 +871,34 @@ export default function CreateExamPage() {
                             }
                           }}
                           className={`w-full py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${
-                            isListening 
-                              ? 'bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400'
-                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400'
+                            isFull 
+                              ? 'bg-gray-500/10 border-gray-500/20 text-gray-400 cursor-not-allowed opacity-50'
+                              : isListening 
+                                ? 'bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400'
+                                : 'bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400'
                           }`}
+                          disabled={isFull}
                         >
                           <Plus size={12} /> Add Question
                         </button>
                       </div>
+                      
+                      {/* ✅ Show question count progress bar */}
+                      {maxQuestions > 0 && (
+                        <div className="mt-2">
+                          <div className="w-full bg-slate-700/30 rounded-full h-1">
+                            <div 
+                              className={`h-1 rounded-full transition-all ${
+                                currentQuestions >= maxQuestions ? 'bg-emerald-500' : 'bg-blue-500'
+                              }`}
+                              style={{ width: `${Math.min((currentQuestions / maxQuestions) * 100, 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[8px] text-slate-500 mt-0.5 text-right">
+                            {currentQuestions} / {maxQuestions} questions
+                          </p>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -784,6 +957,31 @@ export default function CreateExamPage() {
                             <input type="text" placeholder="e.g. Example Question Context..." value={activeItem.example_question || ''} onChange={e => updateItemField(activeItem.id, 'example_question', e.target.value)} className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none" />
                           </div>
 
+                          {/* 👂 LISTENING EXAMPLE IMAGE UPLOAD */}
+                          {activeItem.section?.toLowerCase().includes('listen') && (
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block">
+                                📷 Example Image (1, 2, 3, 4 marked)
+                              </label>
+                              <label className="flex items-center gap-3 px-4 py-3 bg-white/5 border-2 border-dashed border-purple-500/30 rounded-xl cursor-pointer hover:border-purple-500/50 transition-colors relative overflow-hidden h-24">
+                                {activeItem.example_image_url ? (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                    <img src={activeItem.example_image_url} alt="Example" className="h-full w-full object-contain" />
+                                    <div className="absolute bg-black/60 text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md text-white">Change Image</div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col items-center gap-1 w-full">
+                                    <Image size={20} className="text-purple-400" />
+                                    <span className="text-[10px] text-gray-400">Click to upload example image</span>
+                                    <span className="text-[8px] text-gray-500">(Image should have 1, 2, 3, 4 marked)</span>
+                                  </div>
+                                )}
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleExampleImageUpload(activeItem.id, e)} />
+                              </label>
+                            </div>
+                          )}
+
+                          {/* Example Options (4 Options) */}
                           <div className="space-y-2">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Example Options (4 Options)</label>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -828,7 +1026,6 @@ export default function CreateExamPage() {
                       // 🔹 CONDITION B: STANDARD / LISTENING QUESTION EDITOR
                       <div className="space-y-4">
                         
-                        {/* Question Number Display */}
                         <div className="bg-slate-950/30 p-2 rounded-xl border border-white/5 flex items-center justify-between">
                           <p className="text-[10px] font-mono text-slate-400">
                             Question Number: <span className="text-emerald-400 font-bold">{getQuestionLabel(activeItem)}</span>
@@ -840,40 +1037,34 @@ export default function CreateExamPage() {
                           )}
                         </div>
 
-                        {/* 🔗 PARENT PROBLEM SELECTOR */}
                         <div className="flex flex-col gap-1.5 bg-blue-500/5 p-3 rounded-2xl border border-blue-500/10">
-                          <label className="text-[11px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
-                            Link Parent Problem Cluster Context
-                          </label>
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-blue-400">Link to Problem</label>
                           <select 
                             value={activeItem.parent_problem_id || ''} 
                             onChange={e => updateItemField(activeItem.id, 'parent_problem_id', e.target.value)}
                             className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none w-full"
                           >
-                            <option value="">-- Standalone Question (No Parent Block) --</option>
+                            <option value="">-- Standalone (No Parent) --</option>
                             {questions
                               .filter(q => q.section === activeItem.section && q.is_problem)
                               .map(p => (
-                                <option key={p.id} value={p.id}>{p.problem_title} : {p.explanation?.substring(0, 45)}...</option>
+                                <option key={p.id} value={p.id}>{p.problem_title}</option>
                               ))
                             }
                           </select>
                         </div>
 
-                        {/* 📝 Question Text - Auto Update කරන්න පුළුවන් */}
                         <div className="flex flex-col gap-1.5">
                           <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Question Text</label>
                           <textarea 
                             rows={2} 
-                            placeholder="Type your question here..." 
+                            placeholder="Type your question..." 
                             value={activeItem.text || ''} 
                             onChange={e => updateItemField(activeItem.id, 'text', e.target.value)} 
                             className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 resize-none"
                           />
-                          <p className="text-[9px] text-slate-500">💡 Question text will be displayed as: Q{getQuestionsForSection(activeItem.section).findIndex(q => q.id === activeItem.id) + 1}: {activeItem.text || 'Empty'}</p>
                         </div>
 
-                        {/* 👂 LISTENING SPECIFIC FIELDS - Image Upload below Question Text */}
                         {activeItem.type === 'listening' && (
                           <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-2xl">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-2">
@@ -895,7 +1086,6 @@ export default function CreateExamPage() {
                               <input type="file" accept="image/*" className="hidden" onChange={(e) => handleListeningImageUpload(activeItem.id, e)} />
                             </label>
                             
-                            {/* Show which audio will be used */}
                             <div className="mt-2 text-[9px] text-slate-400 flex items-center gap-1">
                               <Mic size={12} className="text-blue-400" />
                               Audio: Using section-level audio track
@@ -903,9 +1093,8 @@ export default function CreateExamPage() {
                           </div>
                         )}
 
-                        {/* Options Array (4 Options) */}
                         <div className="space-y-3 bg-slate-950/40 p-4 border border-white/5 rounded-2xl">
-                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400 block">Response Options (4 Options)</label>
+                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400 block">Options (4)</label>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {activeItem.options?.map((opt, oIdx) => (
                               <div key={oIdx} className="flex items-center gap-3">
@@ -922,10 +1111,9 @@ export default function CreateExamPage() {
                           </div>
                         </div>
 
-                        {/* Explanation */}
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Explanation / Resolution</label>
-                          <textarea rows={2} placeholder="Explain why this option is correct..." value={activeItem.explanation || ''} onChange={e => updateItemField(activeItem.id, 'explanation', e.target.value)} className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none resize-none" />
+                          <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Explanation</label>
+                          <textarea rows={2} placeholder="Explain the correct answer..." value={activeItem.explanation || ''} onChange={e => updateItemField(activeItem.id, 'explanation', e.target.value)} className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none resize-none" />
                         </div>
                       </div>
                     )}
@@ -934,26 +1122,28 @@ export default function CreateExamPage() {
                   <div className="flex flex-col items-center justify-center h-full text-slate-500 min-h-[300px]">
                     <BookOpen size={40} className="opacity-20 mb-3" />
                     <p className="text-sm font-semibold">No items created yet.</p>
-                    <p className="text-xs opacity-60">Click "Add Problem" or "Add Question" from the sidebar to start building your exam.</p>
+                    <p className="text-xs opacity-60">Add a Problem or Question from the sidebar</p>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* PHASE 04: PREVIEW & FINAL DEPLOYMENT */}
+          {/* ============================================================
+              PHASE 04: PREVIEW & FINAL DEPLOYMENT
+          ============================================================ */}
           {step === 3 && (
             <div className="space-y-6">
               <GlassCard className="p-6 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl space-y-6">
-                <h2 className="text-base font-bold uppercase tracking-wider border-b border-white/5 pb-2">Final Matrix Assembly Summary</h2>
+                <h2 className="text-base font-bold uppercase tracking-wider border-b border-white/5 pb-2">Final Review</h2>
                 {error && <div className="bg-rose-500/5 border border-rose-500/20 text-rose-400 p-3 rounded-xl flex items-center gap-2 text-xs font-semibold"><ShieldAlert size={14}/>{error}</div>}
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {[
-                    { label: 'Exam Node Title', value: meta.title || 'Draft Blueprint Node' },
-                    { label: 'Cluster Group Matrix', value: meta.category_id ? meta.category_id.toUpperCase() : 'Void Node' },
-                    { label: 'Master Clock Bound', value: `${meta.duration_minutes} Minutes` },
-                    { label: 'Execution Level Target', value: meta.level_id ? meta.level_id.toUpperCase() : 'Unmapped' },
+                    { label: 'Exam Title', value: meta.title || 'Untitled' },
+                    { label: 'Category', value: meta.category_id ? meta.category_id.toUpperCase() : 'Not selected' },
+                    { label: 'Duration', value: `${meta.duration_minutes} mins` },
+                    { label: 'Level', value: meta.level_id ? meta.level_id.toUpperCase() : 'Not selected' },
                   ].map((s, i) => (
                     <div key={i} className="p-4 bg-slate-950/40 border border-white/5 rounded-2xl shadow-md">
                       <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">{s.label}</p>
@@ -963,22 +1153,32 @@ export default function CreateExamPage() {
                 </div>
                 
                 <div className="space-y-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Partition Layer Matrix Validation</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Sections</h4>
                   {sections.map((s, i) => {
                     const sectionQuestions = getQuestionsForSection(s.name);
+                    const maxQuestions = Number(s.questions || 0);
+                    const isComplete = maxQuestions > 0 && sectionQuestions.length >= maxQuestions;
+                    
                     return (
                       <div key={i} className="flex justify-between items-center px-4 py-3 bg-slate-900/20 border border-white/5 rounded-xl text-xs font-medium">
                         <span className="text-slate-300 font-bold">{s.name}</span>
                         <div className="flex gap-4 text-slate-500 font-mono">
-                          <span>{sectionQuestions.length} Questions</span>
-                          <span>{s.time} Mins</span>
+                          <span className={isComplete ? 'text-emerald-400' : 'text-slate-500'}>
+                            {sectionQuestions.length} / {maxQuestions || 0} Questions
+                          </span>
+                          <span>{s.time || 0} mins</span>
                           {isListeningSection(s.name) && s.audio_url && (
-                            <span className="text-emerald-400">🎧 Audio Attached</span>
+                            <span className="text-emerald-400">🎧 Audio</span>
                           )}
                         </div>
                       </div>
                     );
                   })}
+                </div>
+
+                <div className="text-xs text-slate-500">
+                  <p>Total Problems: {questions.filter(q => q.is_problem).length}</p>
+                  <p>Total Questions: {questions.filter(q => !q.is_problem).length}</p>
                 </div>
               </GlassCard>
               
@@ -988,14 +1188,14 @@ export default function CreateExamPage() {
                   onClick={() => handlePublishExam('draft')} 
                   className="px-5 py-3 bg-white/5 hover:bg-white/10 text-xs font-bold uppercase tracking-wider border border-white/10 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-40"
                 >
-                  <Save size={15} /> Save Blueprint Draft
+                  <Save size={15} /> Save Draft
                 </button>
                 <button 
                   disabled={submitLoading} 
                   onClick={() => handlePublishExam('active')} 
                   className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 text-xs font-bold uppercase tracking-wider text-white rounded-xl shadow-lg shadow-blue-950/30 transition-all flex items-center gap-1.5 disabled:opacity-40"
                 >
-                  {submitLoading ? <Loader size={15} className="animate-spin" /> : <Send size={15} />} Authorize & Deploy Matrix
+                  {submitLoading ? <Loader size={15} className="animate-spin" /> : <Send size={15} />} Deploy Exam
                 </button>
               </div>
             </div>
@@ -1006,11 +1206,11 @@ export default function CreateExamPage() {
       {/* Navigation Footer */}
       <div className="flex justify-between pt-4 border-t border-white/5">
         <Button variant="secondary" disabled={step === 0 || submitLoading} onClick={() => setStep(p => p - 1)} className="bg-white/5 text-gray-400 border border-white/10">
-          <ChevronLeft size={16} /> Previous Phase
+          <ChevronLeft size={16} /> Previous
         </Button>
         {step < STEPS.length - 1 && (
           <Button variant="primary" onClick={() => setStep(p => p + 1)} className="bg-blue-600 text-white">
-            Advance Phase <ChevronRight size={16} />
+            Next <ChevronRight size={16} />
           </Button>
         )}
       </div>
