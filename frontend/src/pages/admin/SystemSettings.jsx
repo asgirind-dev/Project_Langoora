@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, Shield, Layout, Globe, Sliders, RefreshCw, AlertTriangle, Plus, Trash2, Image, Upload, Type, Eye, ToggleLeft, Languages, Edit3, Hourglass, Power } from 'lucide-react';
+import { 
+  Save, Shield, Layout, Globe, Sliders, RefreshCw, AlertTriangle, 
+  Plus, Trash2, Image, Upload, Type, Eye, ToggleLeft, Languages, 
+  Edit3, Hourglass, Power, DollarSign, TrendingUp, Mail 
+} from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import { fetchHeroBanners, saveHeroBanners } from '../../services/cmsService';
+import { fetchGlobalConfig, saveGlobalConfig, sendTestEmail } from '../../services/globalConfigService';
 import imageCompression from 'browser-image-compression'; 
 import studentApi from '../../services/examExecutionService'; 
 
@@ -28,6 +33,20 @@ export default function SystemSettings() {
     sessionTimeouts: { admin: 15, tutor: 20, student: 45, finance: 10, validator: 15 }
   });
   const [isSecurityLoading, setIsSecurityLoading] = useState(false);
+
+  // 🌐 Global Config State - Sender Name "Langoora" විතරයි!
+  const [globalConfig, setGlobalConfig] = useState({
+    creditPrice: 50,
+    signupBonus: 10,
+    platformCommission: 20,
+    minPayoutThreshold: 5000,
+    senderEmail: 'asgirind186@gmail.com',
+    senderName: 'Langoora',              // ← "Langoora" විතරයි!
+    showAnnouncement: false,
+    announcementText: '',
+    announcementColor: 'amber'
+  });
+  const [isGlobalLoading, setIsGlobalLoading] = useState(false);
 
   const [selectedBannerId, setSelectedBannerId] = useState(null);
   const badgeOptions = ['', '🔥 New', '🚀 Target', '💎 Premium', '⚡ Hot', '📢 Notice'];
@@ -71,8 +90,26 @@ export default function SystemSettings() {
       }
     };
 
+    // 🌐 Load Global Config
+    const loadGlobalConfigData = async () => {
+      if (activeTab === 'global') {
+        try {
+          setIsGlobalLoading(true);
+          const config = await fetchGlobalConfig();
+          if (config) {
+            setGlobalConfig(config);
+          }
+        } catch (error) {
+          console.error("Error fetching global configurations:", error);
+        } finally {
+          setIsGlobalLoading(false);
+        }
+      }
+    };
+
     loadConfiguredBanners();
     loadSecuritySpecs();
+    loadGlobalConfigData();
   }, [activeTab]);
 
   const handleFileConversion = async (e) => {
@@ -159,6 +196,21 @@ export default function SystemSettings() {
     }));
   };
 
+  // 🌐 Update Global Config Field
+  const updateGlobalConfig = (field, value) => {
+    setGlobalConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  // 🌐 Handle Test Email
+  const handleTestEmail = async () => {
+    try {
+      await sendTestEmail(globalConfig.senderEmail, globalConfig.senderName);
+      alert('✅ Test email sent successfully! Check your inbox.');
+    } catch (error) {
+      alert('❌ Failed to send test email: ' + error.message);
+    }
+  };
+
   const activeBanner = heroBanners.find(b => b.id === selectedBannerId) || null;
 
   const handleActualSave = async () => {
@@ -170,6 +222,9 @@ export default function SystemSettings() {
       } else if (activeTab === 'security') {
         await studentApi.post('/system-settings/security', securityConfig);
         alert('Global governance and platform security policies committed successfully!');
+      } else if (activeTab === 'global') {
+        await saveGlobalConfig(globalConfig);
+        alert('✅ Global configurations updated successfully!');
       }
     } catch (error) {
       alert('Error updating configuration: ' + error.message);
@@ -187,7 +242,11 @@ export default function SystemSettings() {
             <h1 className="text-3xl font-bold text-white mb-1">System Settings</h1>
             <p className="text-gray-400">Manage platform assets and overlay configurations</p>
           </div>
-          <Button variant="primary" onClick={handleActualSave} disabled={isSaving || isLoading || isCompressing || isReplacing || isSecurityLoading}>
+          <Button 
+            variant="primary" 
+            onClick={handleActualSave} 
+            disabled={isSaving || isLoading || isCompressing || isReplacing || isSecurityLoading || isGlobalLoading}
+          >
             <Save size={16} /> {isSaving ? 'Syncing...' : 'Save Configuration'}
           </Button>
         </div>
@@ -365,7 +424,7 @@ export default function SystemSettings() {
           </div>
         )}
 
-        {/* 🛡️ 100% COMPLETED DYNAMIC GOVERNANCE & SECURITY TAB PANEL */}
+        {/* 🛡️ GOVERNANCE & SECURITY TAB PANEL */}
         {activeTab === 'security' && (
           <div className="max-w-4xl space-y-6 mx-auto">
             
@@ -459,6 +518,233 @@ export default function SystemSettings() {
                     <input type="checkbox" checked={securityConfig.maintenanceMode} onChange={(e) => setSecurityConfig(p => ({ ...p, maintenanceMode: e.target.checked }))} className="sr-only peer"/>
                     <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:bg-white"></div>
                   </label>
+                </div>
+              )}
+            </GlassCard>
+
+          </div>
+        )}
+
+        {/* 🌐 GLOBAL CONFIGURATIONS TAB PANEL */}
+        {activeTab === 'global' && (
+          <div className="max-w-4xl space-y-6 mx-auto">
+            
+            {/* 1. Currency & Credit Configuration */}
+            <GlassCard className="p-6 space-y-6 border-white/10">
+              <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                <DollarSign className="text-emerald-400" size={22} />
+                <div>
+                  <h3 className="text-lg font-bold text-white">Currency & Credit Framework</h3>
+                  <p className="text-xs text-gray-400">Core financial parameters for the Langoora ecosystem</p>
+                </div>
+              </div>
+
+              {isGlobalLoading ? (
+                <div className="flex items-center justify-center py-6 text-xs text-gray-400 font-mono">
+                  <RefreshCw className="animate-spin mr-2" size={14} /> Loading configurations...
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                    <label className="text-xs text-gray-400 font-medium block">Base Credit Price (LKR)</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 text-sm">LKR</span>
+                      <input 
+                        type="number" 
+                        min="10" 
+                        max="1000"
+                        value={globalConfig.creditPrice || ''}
+                        onChange={(e) => updateGlobalConfig('creditPrice', Number(e.target.value))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50" 
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-500">1 Credit = LKR {globalConfig.creditPrice || 'N/A'}</p>
+                  </div>
+
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                    <label className="text-xs text-gray-400 font-medium block">Signup Bonus Credits</label>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      max="100"
+                      value={globalConfig.signupBonus || ''}
+                      onChange={(e) => updateGlobalConfig('signupBonus', Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50" 
+                    />
+                    <p className="text-[10px] text-gray-500">New students get {globalConfig.signupBonus || 0} free credits</p>
+                  </div>
+                </div>
+              )}
+            </GlassCard>
+
+            {/* 2. Platform Fee & Revenue Share */}
+            <GlassCard className="p-6 space-y-6 border-white/10">
+              <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                <TrendingUp className="text-cyan-400" size={22} />
+                <div>
+                  <h3 className="text-lg font-bold text-white">Revenue & Commission Structure</h3>
+                  <p className="text-xs text-gray-400">Platform commission and tutor payout configurations</p>
+                </div>
+              </div>
+
+              {!isGlobalLoading && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                    <label className="text-xs text-gray-400 font-medium block">Platform Commission (%)</label>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="number" 
+                        min="0" 
+                        max="100"
+                        step="0.5"
+                        value={globalConfig.platformCommission || ''}
+                        onChange={(e) => updateGlobalConfig('platformCommission', Number(e.target.value))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50" 
+                      />
+                      <span className="text-gray-500 text-sm">%</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500">
+                      Platform: {globalConfig.platformCommission || 0}% | 
+                      Tutor: {100 - (globalConfig.platformCommission || 20)}%
+                    </p>
+                  </div>
+
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                    <label className="text-xs text-gray-400 font-medium block">Min Tutor Payout (LKR)</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 text-sm">LKR</span>
+                      <input 
+                        type="number" 
+                        min="100" 
+                        max="100000"
+                        step="100"
+                        value={globalConfig.minPayoutThreshold || ''}
+                        onChange={(e) => updateGlobalConfig('minPayoutThreshold', Number(e.target.value))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50" 
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-500">
+                      Minimum earnings for tutor payout: LKR {globalConfig.minPayoutThreshold || 0}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </GlassCard>
+
+            {/* 3. Email Templates & Notifications */}
+            <GlassCard className="p-6 space-y-6 border-white/10">
+              <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                <Mail className="text-purple-400" size={22} />
+                <div>
+                  <h3 className="text-lg font-bold text-white">Email System Configuration</h3>
+                  <p className="text-xs text-gray-400">Automated email sender details and templates</p>
+                </div>
+              </div>
+
+              {!isGlobalLoading && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                      <label className="text-xs text-gray-400 font-medium block">Sender Email Address</label>
+                      <input 
+                        type="email" 
+                        value={globalConfig.senderEmail || ''}
+                        onChange={(e) => updateGlobalConfig('senderEmail', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50" 
+                      />
+                      <p className="text-[10px] text-gray-500">Email address used to send all platform emails</p>
+                    </div>
+
+                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                      <label className="text-xs text-gray-400 font-medium block">Sender Display Name</label>
+                      <input 
+                        type="text" 
+                        value="Langoora"
+                        disabled
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm opacity-60 cursor-not-allowed" 
+                      />
+                      <p className="text-[10px] text-amber-400">⚠️ Fixed: Langoora (Cannot be changed)</p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={18} className="text-amber-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-amber-300 font-medium">Test Email Configuration</p>
+                        <p className="text-[10px] text-amber-400/70">Send a test email to verify SMTP settings are working correctly</p>
+                        <Button 
+                          variant="warning" 
+                          size="sm" 
+                          className="mt-2"
+                          onClick={handleTestEmail}
+                        >
+                          <Mail size={12} /> Send Test Email
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </GlassCard>
+
+            {/* 4. System Maintenance Banner (Homepage Notice) */}
+            <GlassCard className="p-6 space-y-6 border-white/10">
+              <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                <AlertTriangle className="text-amber-400" size={22} />
+                <div>
+                  <h3 className="text-lg font-bold text-white">Public Notice / Announcement Banner</h3>
+                  <p className="text-xs text-gray-400">Display global announcements on the homepage</p>
+                </div>
+              </div>
+
+              {!isGlobalLoading && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={globalConfig.showAnnouncement || false} 
+                        onChange={(e) => updateGlobalConfig('showAnnouncement', e.target.checked)} 
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600 peer-checked:after:bg-white"></div>
+                    </label>
+                    <span className="text-sm text-white">Display Announcement Banner</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-gray-400 font-medium block">Announcement Message</label>
+                    <textarea 
+                      rows={2}
+                      value={globalConfig.announcementText || ''}
+                      onChange={(e) => updateGlobalConfig('announcementText', e.target.value)}
+                      placeholder="e.g., Next Sunday system update from 2.00 AM to 4.00 AM"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm resize-none focus:outline-none focus:border-blue-500/50" 
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs text-gray-400 font-medium block">Banner Color</label>
+                      <select 
+                        value={globalConfig.announcementColor || 'amber'}
+                        onChange={(e) => updateGlobalConfig('announcementColor', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
+                      >
+                        <option value="amber">Amber (Warning)</option>
+                        <option value="blue">Blue (Info)</option>
+                        <option value="red">Red (Critical)</option>
+                        <option value="green">Green (Success)</option>
+                        <option value="purple">Purple (Event)</option>
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      <div className={`p-3 rounded-xl w-full text-center text-xs font-medium border border-${globalConfig.announcementColor || 'amber'}-500/20 bg-${globalConfig.announcementColor || 'amber'}-500/10 text-${globalConfig.announcementColor || 'amber'}-400`}>
+                        Preview: {globalConfig.announcementText || 'Announcement will appear here'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </GlassCard>

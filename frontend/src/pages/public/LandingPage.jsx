@@ -15,6 +15,7 @@ import StarRating from '../../components/ui/StarRating';
 import Badge from '../../components/ui/Badge';
 import { useAuth } from '../../context/AuthContext';
 import { fetchHeroBanners } from '../../services/cmsService';
+import { fetchGlobalConfig } from '../../services/globalConfigService';
 
 const iconMap = { Zap, Rocket, Crown, Infinity: InfinityIcon, Star, Award, Layers };
 const fadeUp = { initial: { opacity: 0, y: 30 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.5 } };
@@ -35,6 +36,17 @@ export default function LandingPage() {
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const timerRef = useRef(null);
+
+  // 🌐 Global Config State for Announcement Banner
+  const [globalConfig, setGlobalConfig] = useState({
+    showAnnouncement: false,
+    announcementText: '',
+    announcementColor: 'amber'
+  });
+  const [isGlobalLoading, setIsGlobalLoading] = useState(true);
+
+  // 🆕 Banner Dismiss State
+  const [isBannerDismissed, setIsBannerDismissed] = useState(false);
 
   const handleTutorOnboarding = () => {
     if (user) {
@@ -79,7 +91,29 @@ export default function LandingPage() {
     getBanners();
   }, []);
 
-  // 🎯 OPTIMIZED TIMING: ස්පීඩ් එක වැඩි නිසා බැනරයක රැඳෙන කාලය 12000ms (තත්පර 12) දක්වා වැඩි කලා මචන්
+  // 🌐 Fetch Global Config for Announcement Banner
+  useEffect(() => {
+    const loadGlobalConfig = async () => {
+      try {
+        setIsGlobalLoading(true);
+        const config = await fetchGlobalConfig();
+        if (config) {
+          setGlobalConfig({
+            showAnnouncement: config.showAnnouncement || false,
+            announcementText: config.announcementText || '',
+            announcementColor: config.announcementColor || 'amber'
+          });
+        }
+      } catch (error) {
+        console.error("Error loading global config:", error);
+      } finally {
+        setIsGlobalLoading(false);
+      }
+    };
+    loadGlobalConfig();
+  }, []);
+
+  // 🎯 Banner timing
   useEffect(() => {
     if (bannerImages.length <= 1 || isPaused) return;
     timerRef.current = setInterval(() => {
@@ -96,7 +130,6 @@ export default function LandingPage() {
   const goToBanner = (index) => {
     setCurrentBannerIndex(index);
     clearInterval(timerRef.current);
-    // Indicator බටන් එකක් එබුවමත් තත්පර 12 ක කවුන්ට් ඩවුන් එකක් රීසෙට් වෙනවා
     timerRef.current = setInterval(() => {
       setCurrentBannerIndex((prev) => (prev + 1) % bannerImages.length);
     }, 12000);
@@ -109,6 +142,66 @@ export default function LandingPage() {
   const prevBanner = () => {
     goToBanner((currentBannerIndex - 1 + bannerImages.length) % bannerImages.length);
   };
+
+  // ===================== BANNER STYLES =====================
+
+  const getBannerColorClasses = (color) => {
+    const colors = {
+      amber: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
+      blue: 'bg-blue-500/10 border-blue-500/20 text-blue-400',
+      red: 'bg-red-500/10 border-red-500/20 text-red-400',
+      green: 'bg-green-500/10 border-green-500/20 text-green-400',
+      purple: 'bg-purple-500/10 border-purple-500/20 text-purple-400'
+    };
+    return colors[color] || colors.amber;
+  };
+
+  const getBannerIcon = (color) => {
+    const icons = {
+      amber: '⚠️',
+      blue: 'ℹ️',
+      red: '🚨',
+      green: '✅',
+      purple: '🎉'
+    };
+    return icons[color] || '📢';
+  };
+
+  // 🆕 Countdown Style Helper Functions
+  const getProgressColor = (color) => {
+    const colors = {
+      amber: 'bg-gradient-to-r from-amber-400 to-orange-500',
+      blue: 'bg-gradient-to-r from-blue-400 to-cyan-500',
+      red: 'bg-gradient-to-r from-red-400 to-pink-500',
+      green: 'bg-gradient-to-r from-green-400 to-emerald-500',
+      purple: 'bg-gradient-to-r from-purple-400 to-violet-500'
+    };
+    return colors[color] || colors.amber;
+  };
+
+  const getBadgeColor = (color) => {
+    const badges = {
+      amber: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+      blue: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
+      red: 'bg-red-500/20 text-red-400 border border-red-500/30',
+      green: 'bg-green-500/20 text-green-400 border border-green-500/30',
+      purple: 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+    };
+    return badges[color] || badges.amber;
+  };
+
+  const getBorderGlow = (color) => {
+    const glows = {
+      amber: 'shadow-[0_0_30px_rgba(245,158,11,0.1)]',
+      blue: 'shadow-[0_0_30px_rgba(59,130,246,0.1)]',
+      red: 'shadow-[0_0_30px_rgba(239,68,68,0.1)]',
+      green: 'shadow-[0_0_30px_rgba(16,185,129,0.1)]',
+      purple: 'shadow-[0_0_30px_rgba(139,92,246,0.1)]'
+    };
+    return glows[color] || glows.amber;
+  };
+
+  // =========================================================
 
   const features = [
     { icon: BookOpen, title: 'Authentic Simulations', desc: 'Exams mirror the real JLPT, EPS-TOPIK, and TOPIK I in format, timing, and difficulty.' },
@@ -128,12 +221,113 @@ export default function LandingPage() {
 
   const activeBanner = bannerImages[currentBannerIndex] || null;
 
+  // Check if banner should be shown
+  const shouldShowBanner = !isGlobalLoading && 
+                           globalConfig.showAnnouncement && 
+                           globalConfig.announcementText && 
+                           !isBannerDismissed;
+
   return (
     <div className="text-white overflow-x-hidden bg-[#040814]">
       
+      {/* ============================================================
+          🌐 COUNTDOWN STYLE ANNOUNCEMENT BANNER
+          ============================================================ */}
+      {shouldShowBanner && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.5 }}
+          className={`relative overflow-hidden border-b border-white/5 ${getBorderGlow(globalConfig.announcementColor)}`}
+        >
+          {/* Background Gradient */}
+          <div className={`absolute inset-0 ${getBannerColorClasses(globalConfig.announcementColor)} opacity-50`} />
+          
+          {/* Animated Progress Bar - Bottom */}
+          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/5">
+            <motion.div 
+              initial={{ width: '0%' }}
+              animate={{ width: '100%' }}
+              transition={{ duration: 10, ease: 'linear' }}
+              className={`h-full ${getProgressColor(globalConfig.announcementColor)}`}
+            />
+          </div>
+
+          {/* Animated Progress Bar - Top */}
+          <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/5">
+            <motion.div 
+              initial={{ width: '0%' }}
+              animate={{ width: '100%' }}
+              transition={{ duration: 8, ease: 'linear' }}
+              className={`h-full ${getProgressColor(globalConfig.announcementColor)} opacity-50`}
+            />
+          </div>
+
+          {/* Main Content */}
+          <div className="relative z-10 max-w-7xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-3">
+            {/* Left Side - Icon & Message */}
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Animated Icon */}
+              <motion.span 
+                animate={{ 
+                  rotate: [0, 5, -5, 0],
+                  scale: [1, 1.1, 1]
+                }}
+                transition={{ duration: 3, repeat: Infinity }}
+                className="text-lg"
+              >
+                {getBannerIcon(globalConfig.announcementColor || 'amber')}
+              </motion.span>
+              
+              {/* Message */}
+              <span className="text-white/90 text-sm md:text-base font-medium">
+                {globalConfig.announcementText}
+              </span>
+              
+              {/* URGENT Badge for Red Color */}
+              {globalConfig.announcementColor === 'red' && (
+                <span className="text-[10px] px-2 py-0.5 bg-red-500/20 text-red-400 rounded-full animate-pulse border border-red-500/30">
+                  URGENT
+                </span>
+              )}
+              
+              {/* LIVE Badge for other colors */}
+              {globalConfig.announcementColor !== 'red' && (
+                <span className={`text-[9px] px-2 py-0.5 rounded-full ${getBadgeColor(globalConfig.announcementColor)} animate-pulse`}>
+                  ● LIVE
+                </span>
+              )}
+            </div>
+
+            {/* Right Side - Time & Close Button */}
+            <div className="flex items-center gap-3">
+              {/* Time Display */}
+              <span className="text-[10px] text-white/40 flex items-center gap-1 font-mono">
+                <Clock size={12} />
+                {new Date().toLocaleTimeString('en-US', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: true 
+                })}
+              </span>
+              
+              {/* Close/Dismiss Button */}
+              <button 
+                onClick={() => setIsBannerDismissed(true)}
+                className="text-white/30 hover:text-white/70 transition-colors text-xs p-1 rounded-full hover:bg-white/5"
+                aria-label="Dismiss announcement"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* ================= HERO CAROUSEL BLOCK ================= */}
       <section 
-        className="relative w-full min-h-[580px] md:min-h-[640px] lg:min-h-[680px] flex items-center justify-center group overflow-hidden bg-[#050b1a]" 
+        className={`relative w-full min-h-[580px] md:min-h-[640px] lg:min-h-[680px] flex items-center justify-center group overflow-hidden bg-[#050b1a] ${shouldShowBanner ? '' : ''}`}
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
@@ -157,7 +351,6 @@ export default function LandingPage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }} 
                   exit={{ opacity: 0 }}
-                  // 🎯 ULTRA SMOOTH FADE: Cross fade වෙන එක තවත් ලස්සන කරන්න duration එක 1.2s කළා
                   transition={{ duration: 1.2, ease: 'easeInOut' }}
                   className="w-full h-full object-cover object-center brightness-95 contrast-[1.03]"
                 />
@@ -436,9 +629,9 @@ export default function LandingPage() {
             <p className="text-gray-400 text-lg">Real students, real results</p>
           </motion.div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {testimonials.map((t, i) => (
-              <motion.div key={t.id} {...stagger} transition={{ duration: 0.4, delay: i * 0.1 }}>
-                <GlassCard className={`p-5 h-full transition-all duration-300 ${i === activeTestimonial ? 'border-blue-500/40 bg-blue-500/5 shadow-lg shadow-blue-500/5' : ''}`}>
+            {testimonials.map((t) => (
+              <motion.div key={t.id} {...stagger} transition={{ duration: 0.4 }}>
+                <GlassCard className={`p-5 h-full transition-all duration-300 ${t.id === activeTestimonial ? 'border-blue-500/40 bg-blue-500/5 shadow-lg shadow-blue-500/5' : ''}`}>
                   <div className="flex items-center gap-3 mb-4">
                     <img src={t.avatar} alt={t.name} className="w-12 h-12 rounded-full object-cover" />
                     <div>
@@ -498,7 +691,6 @@ export default function LandingPage() {
                       <span className="text-gray-400 text-sm font-light ml-1">/mo</span>
                     </div>
                     
-                    {/* ✅ FIXED: Safe features rendering with proper array check */}
                     <ul className="space-y-4 mb-8 flex-grow mt-4">
                       {Array.isArray(plan.features) && plan.features.length > 0 ? (
                         plan.features.map((feature, idx) => (
