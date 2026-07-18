@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 const studentApi = axios.create({
-  baseURL: 'http://localhost:5000/api',   // adjust to your backend URL
+  baseURL: 'http://localhost:5000/api',   // Backend core node setup entry point
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach token to every request
+// Attach token to every request context automatically
 studentApi.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');

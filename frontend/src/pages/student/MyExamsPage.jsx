@@ -5,7 +5,7 @@ import { BookOpen, Play, BarChart2, Clock, CheckCircle, XCircle, Trash2, Plus, C
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import studentApi from '../../services/studentExamService';
+import studentApi from '../../services/examExecutionService';
 
 const statusColors = { 'published': 'green', 'draft': 'gray', 'archived': 'red' };
 

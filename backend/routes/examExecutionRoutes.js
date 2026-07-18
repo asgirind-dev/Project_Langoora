@@ -8,9 +8,9 @@ const {
   status,
   submit,
   results,
-} = require('../controllers/studentExamController');
+} = require('../controllers/examExecutionController'); // 🎯 Updated module pointer mapping
 
-// (optional auth middleware — plug in real student auth once available)
+// (optional auth middleware logic plug-in context)
 // router.use(require('../middleware/auth'));
 
 router.post('/:examId/start', start);
