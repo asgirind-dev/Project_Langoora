@@ -7,7 +7,7 @@ import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import CircularProgress from '../../components/ui/CircularProgress';
-import studentApi from '../../services/studentExamService';
+import studentApi from '../../services/examExecutionService';
 
 export default function ExamResultsPage() {
   const { id: attemptId } = useParams();
@@ -22,7 +22,8 @@ export default function ExamResultsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await studentApi.get(`/student-exams/${attemptId}/results`);
+        // ✅ CORRECTED: Use exam-execution endpoint
+        const res = await studentApi.get(`/exam-execution/${attemptId}/results`);
         if (!cancelled) {
           setResult(res.data.data);
         }
@@ -63,7 +64,7 @@ export default function ExamResultsPage() {
   }
 
   // ----- Not Submitted State -----
-  if (result.status !== 'completed') {
+  if (result.status !== 'completed' && result.status !== 'completed') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
         <GlassCard className="p-8 max-w-md text-center">
@@ -92,20 +93,49 @@ export default function ExamResultsPage() {
 
   // ----- Format Section Data for Charts -----
   const sectionData = sectionScores.length > 0 ? sectionScores : [];
-  const radarData = sectionData.map(s => ({ 
-    section: s.section, 
-    score: s.pct, 
-    fullMark: 100 
-  }));
 
   // ----- Build Review Questions -----
-  const reviewQuestions = (questionResults || []).map((q, index) => ({
-    q: q.problem_title ? `${q.problem_title}: ${q.text || `Question ${index + 1}`}` : (q.text || `Question ${index + 1}`),
-    userAns: q.userAnswer !== null && q.userAnswer !== undefined ? String.fromCharCode(65 + q.userAnswer) : '—',
-    correct: q.correct !== null && q.correct !== undefined ? String.fromCharCode(65 + q.correct) : '—',
-    explanation: q.explanation || 'No explanation provided.',
-    wrong: !q.isCorrect,
-  }));
+  const reviewQuestions = (questionResults || []).map((q, index) => {
+    // Handle different possible data structures
+    const questionText = q.problem_title 
+      ? `${q.problem_title}: ${q.text || `Question ${index + 1}`}` 
+      : (q.text || `Question ${index + 1}`);
+    
+    // Get user answer as letter (A, B, C, D) or '—'
+    let userAnswerDisplay = '—';
+    if (q.userAnswer !== null && q.userAnswer !== undefined && q.userAnswer !== 'Not Answered') {
+      // If userAnswer is a string (the actual answer text), use it directly
+      if (typeof q.userAnswer === 'string' && q.userAnswer.length > 1) {
+        userAnswerDisplay = q.userAnswer;
+      } else if (typeof q.userAnswer === 'number' && q.options && q.options[q.userAnswer]) {
+        // If it's an index, show the option text
+        userAnswerDisplay = q.options[q.userAnswer];
+      } else if (typeof q.userAnswer === 'number') {
+        // Just show the letter
+        userAnswerDisplay = String.fromCharCode(65 + q.userAnswer);
+      }
+    }
+    
+    // Get correct answer as letter (A, B, C, D)
+    let correctDisplay = '—';
+    if (q.correct !== null && q.correct !== undefined) {
+      if (typeof q.correct === 'string' && q.correct.length > 1) {
+        correctDisplay = q.correct;
+      } else if (typeof q.correct === 'number' && q.options && q.options[q.correct]) {
+        correctDisplay = q.options[q.correct];
+      } else if (typeof q.correct === 'number') {
+        correctDisplay = String.fromCharCode(65 + q.correct);
+      }
+    }
+
+    return {
+      q: questionText,
+      userAns: userAnswerDisplay,
+      correct: correctDisplay,
+      explanation: q.explanation || 'No explanation provided.',
+      wrong: !q.isCorrect,
+    };
+  });
 
   const displayQuestions = showAllAnswers ? reviewQuestions : reviewQuestions.slice(0, 5);
 
@@ -119,7 +149,9 @@ export default function ExamResultsPage() {
           </div>
           <h1 className="text-4xl font-bold text-white mb-2">{passed ? 'Congratulations!' : 'Keep Practicing!'}</h1>
           <p className="text-gray-300 mb-4">
-            {passed ? `You passed ${examTitle || 'the exam'}` : `You did not pass ${examTitle || 'the exam'} this time, but you can retake it`}
+            {passed 
+              ? `You passed ${examTitle || 'the exam'}!` 
+              : `You did not pass ${examTitle || 'the exam'} this time, but you can retake it`}
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <Badge color={passed ? 'green' : 'red'} className="text-base px-4 py-2">

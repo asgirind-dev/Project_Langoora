@@ -10,7 +10,7 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
-import studentApi from '../../services/studentExamService';
+import studentApi from '../../services/examExecutionService';
 
 const MAX_VIOLATIONS = 3;
 
@@ -25,7 +25,7 @@ export default function ExamTakePage() {
   const { id: examId } = useParams();
   const navigate = useNavigate();
 
-  // State
+  // ─── State ────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState('loading');
   const [errorMsg, setErrorMsg] = useState('');
   const [examMeta, setExamMeta] = useState(null);
@@ -47,7 +47,7 @@ export default function ExamTakePage() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [submitModal, setSubmitModal] = useState(false);
 
-  // Refs for safe callbacks
+  // ─── Refs ─────────────────────────────────────────────────────────────
   const phaseRef = useRef(phase);
   const attemptIdRef = useRef(attemptId);
   const answersRef = useRef(answers);
@@ -56,6 +56,8 @@ export default function ExamTakePage() {
   const partIndexRef = useRef(partIndex);
   const qIndexRef = useRef(qIndex);
   const audioRef = useRef(null);
+  const timerRef = useRef(null);
+  const breakTimerRef = useRef(null);
   
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { attemptIdRef.current = attemptId; }, [attemptId]);
@@ -65,9 +67,8 @@ export default function ExamTakePage() {
   useEffect(() => { partIndexRef.current = partIndex; }, [partIndex]);
   useEffect(() => { qIndexRef.current = qIndex; }, [qIndex]);
 
-  // ---- Build parts from exam data ----
+  // ─── Build Parts from Exam Data ──────────────────────────────────────
   const buildParts = useCallback((meta, itemsBySection) => {
-    const isJLPT = meta.category_id === 'jlpt';
     const sectionTime = {};
     (meta.sections || []).forEach((s) => { sectionTime[s.name] = s.time; });
     const listeningAudio = (meta.sections || []).find((s) => s.name === 'Listening')?.audio_url || null;
@@ -85,7 +86,7 @@ export default function ExamTakePage() {
           sections: [sectionName],
           items: items,
           durationSec: (sectionTime[sectionName] || 15) * 60,
-          breakAfterSec: isListening ? 0 : 25, // 25 second break
+          breakAfterSec: isListening ? 0 : 25,
           isAudio: isListening,
           audioUrl: isListening ? listeningAudio : null,
         });
@@ -103,18 +104,19 @@ export default function ExamTakePage() {
     }];
   }, []);
 
-  // ---- Fetch exam data and start attempt ----
+  // ─── Fetch Exam Data & Start Attempt ────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const [metaRes, qRes] = await Promise.all([
-          studentApi.get(`/student-exams/${examId}/metadata`),
-          studentApi.get(`/student-exams/${examId}/questions`),
+          studentApi.get(`/exam-execution/${examId}/metadata`),
+          studentApi.get(`/exam-execution/${examId}/questions`),
         ]);
         const meta = metaRes.data.data;
         const items = qRes.data.data;
 
+        // Group questions by section
         const bySection = {};
         items.forEach((it) => {
           const sec = it.section || 'General';
@@ -122,7 +124,7 @@ export default function ExamTakePage() {
           bySection[sec].push(it);
         });
 
-        const startRes = await studentApi.post(`/student-exams/${examId}/start`);
+        const startRes = await studentApi.post(`/exam-execution/${examId}/start`);
         const attempt = startRes.data.data;
 
         if (cancelled) return;
@@ -141,7 +143,7 @@ export default function ExamTakePage() {
     return () => { cancelled = true; };
   }, [examId, buildParts]);
 
-  // ---- Begin a part ----
+  // ─── Begin a Part ────────────────────────────────────────────────────
   const beginPart = useCallback((idx) => {
     const part = partsRef.current[idx];
     if (!part) return;
@@ -151,7 +153,7 @@ export default function ExamTakePage() {
     setPhase('in_part');
   }, []);
 
-  // ---- Submit exam ----
+  // ─── Submit Exam ─────────────────────────────────────────────────────
   const doSubmit = useCallback(async (autoSubmitted = false) => {
     if (!attemptIdRef.current) return;
     setPhase('submitting');
@@ -161,7 +163,7 @@ export default function ExamTakePage() {
         flagged: Array.from(flaggedRef.current),
         autoSubmitted,
       };
-      await studentApi.post(`/student-exams/${attemptIdRef.current}/submit`, payload);
+      await studentApi.post(`/exam-execution/${attemptIdRef.current}/submit`, payload);
       navigate(`/exam/${attemptIdRef.current}/results`);
     } catch (err) {
       console.error('Submit failed:', err);
@@ -170,16 +172,22 @@ export default function ExamTakePage() {
     }
   }, [navigate]);
 
-  // ---- Part timer ----
+  // ─── Part Timer ──────────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'in_part') return;
-    const t = setInterval(() => {
+    
+    if (timerRef.current) clearInterval(timerRef.current);
+    
+    timerRef.current = setInterval(() => {
       setPartTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(t);
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+          
           const idx = partIndexRef.current;
           const part = partsRef.current[idx];
           const isLast = idx >= partsRef.current.length - 1;
+          
           if (isLast) {
             doSubmit(true);
           } else if (part.breakAfterSec > 0) {
@@ -193,40 +201,56 @@ export default function ExamTakePage() {
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(t);
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [phase, beginPart, doSubmit]);
 
-  // ---- Break timer ----
+  // ─── Break Timer ─────────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'break') return;
-    const t = setInterval(() => {
+    
+    if (breakTimerRef.current) clearInterval(breakTimerRef.current);
+    
+    breakTimerRef.current = setInterval(() => {
       setBreakTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(t);
+          clearInterval(breakTimerRef.current);
+          breakTimerRef.current = null;
           beginPart(partIndexRef.current + 1);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(t);
+    
+    return () => {
+      if (breakTimerRef.current) {
+        clearInterval(breakTimerRef.current);
+        breakTimerRef.current = null;
+      }
+    };
   }, [phase, beginPart]);
 
-  // ---- Tab switch violation ----
+  // ─── Tab Switch Violation ────────────────────────────────────────────
   const reportViolation = useCallback(async () => {
     if (!attemptIdRef.current) return;
     try {
-      const res = await studentApi.post(`/student-exams/${attemptIdRef.current}/violation`);
-      const { tabSwitchCount, locked, lockedUntil: until } = res.data.data;
-      setViolationCount(tabSwitchCount);
+      const res = await studentApi.post(`/exam-execution/${attemptIdRef.current}/violation`);
+      const { currentViolations, isLocked, lockUntil } = res.data.data;
+      setViolationCount(currentViolations);
 
-      if (locked) {
-        setLockedUntil(until);
+      if (isLocked) {
+        setLockedUntil(lockUntil);
         setPhase('locked');
         doSubmit(true);
       } else {
         setWarningBanner(
-          `Warning ${tabSwitchCount}/${MAX_VIOLATIONS}: leaving this tab during your exam is recorded as a rule violation.`
+          `Warning ${currentViolations}/${MAX_VIOLATIONS}: leaving this tab during your exam is recorded as a rule violation.`
         );
         setTimeout(() => setWarningBanner(null), 6000);
       }
@@ -245,7 +269,7 @@ export default function ExamTakePage() {
     return () => document.removeEventListener('visibilitychange', handler);
   }, [reportViolation]);
 
-  // ---- Audio for Listening ----
+  // ─── Audio for Listening ─────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'in_part') return;
 
@@ -288,7 +312,7 @@ export default function ExamTakePage() {
     };
   }, [phase, partIndex]);
 
-  // ---- Handlers ----
+  // ─── Handlers ────────────────────────────────────────────────────────
   const selectAnswer = (optionIdx) => {
     if (!currentItem) return;
     setAnswers((prev) => ({ ...prev, [currentItem.id]: optionIdx }));
@@ -309,7 +333,6 @@ export default function ExamTakePage() {
   };
 
   const goPrev = () => {
-    // ⛔ CANNOT GO BACK TO PREVIOUS SECTION
     // Only allows going back within the current section
     if (qIndex > 0) setQIndex(qIndex - 1);
   };
@@ -331,7 +354,7 @@ export default function ExamTakePage() {
     }
   };
 
-  // ---- Derived state ----
+  // ─── Derived State ───────────────────────────────────────────────────
   const currentPart = parts[partIndex];
   const currentItem = currentPart?.items?.[qIndex];
   const totalInPart = currentPart?.items?.length || 0;
@@ -346,7 +369,7 @@ export default function ExamTakePage() {
   const isFlagged = currentItem && flagged.has(currentItem.id);
   const selected = currentItem ? answers[currentItem.id] : undefined;
 
-  // ─── Get Section Buttons (No "All" button) ────────────────────────────
+  // Section buttons (No "All" button)
   const sectionButtons = parts.map((part, idx) => ({
     key: part.key,
     label: part.label,
@@ -355,7 +378,7 @@ export default function ExamTakePage() {
     isCompleted: idx < partIndex,
   }));
 
-  // ---- Loading ----
+  // ─── Loading State ───────────────────────────────────────────────────
   if (phase === 'loading') {
     return (
       <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-3 text-white">
@@ -365,7 +388,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ---- Error ----
+  // ─── Error State ─────────────────────────────────────────────────────
   if (phase === 'error') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -373,13 +396,15 @@ export default function ExamTakePage() {
           <AlertTriangle className="mx-auto text-red-400 mb-3" size={32} />
           <h2 className="text-white font-semibold mb-2">Something went wrong</h2>
           <p className="text-gray-400 text-sm mb-6">{errorMsg}</p>
-          <Button variant="primary" onClick={() => navigate('/student/my-exams')}>Back to My Exams</Button>
+          <Button variant="primary" onClick={() => navigate('/student/my-exams')}>
+            Back to My Exams
+          </Button>
         </GlassCard>
       </div>
     );
   }
 
-  // ---- Intro ----
+  // ─── Intro State ─────────────────────────────────────────────────────
   if (phase === 'intro') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -403,7 +428,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ---- Break ----
+  // ─── Break State ─────────────────────────────────────────────────────
   if (phase === 'break') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -420,7 +445,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ---- Locked ----
+  // ─── Locked State ────────────────────────────────────────────────────
   if (phase === 'locked') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -435,13 +460,15 @@ export default function ExamTakePage() {
               You can start a new attempt after {new Date(lockedUntil).toLocaleString()}.
             </p>
           )}
-          <Button variant="primary" onClick={() => navigate(`/exam/${attemptId}/results`)}>View My Results</Button>
+          <Button variant="primary" onClick={() => navigate(`/exam/${attemptId}/results`)}>
+            View My Results
+          </Button>
         </GlassCard>
       </div>
     );
   }
 
-  // ---- Submitting ----
+  // ─── Submitting State ────────────────────────────────────────────────
   if (phase === 'submitting') {
     return (
       <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-3 text-white">
@@ -451,7 +478,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ---- In Part (Main CBT Screen) ----
+  // ─── In Part (Main CBT Screen) ──────────────────────────────────────
   if (!currentItem) {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center">
@@ -462,7 +489,7 @@ export default function ExamTakePage() {
 
   return (
     <div className="min-h-screen bg-[#030810] text-white">
-      {/* Header */}
+      {/* ─── Header ─── */}
       <div className="fixed top-0 left-0 right-0 z-30 bg-[#030810]/95 backdrop-blur-xl border-b border-white/10">
         <div className="flex items-center justify-between px-3 sm:px-6 py-3">
           <div className="min-w-0 flex-1 mr-3">
@@ -505,11 +532,13 @@ export default function ExamTakePage() {
         </div>
       </div>
 
-      {/* Warning Banner */}
+      {/* ─── Warning Banner ─── */}
       <AnimatePresence>
         {warningBanner && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
             className="fixed top-[68px] left-1/2 -translate-x-1/2 z-40 w-full max-w-3xl px-4"
           >
             <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm rounded-xl px-4 py-3">
@@ -521,7 +550,7 @@ export default function ExamTakePage() {
       </AnimatePresence>
 
       <div className="flex pt-[68px] min-h-screen">
-        {/* Main Question Area */}
+        {/* ─── Main Question Area ─── */}
         <div className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 lg:max-w-3xl lg:mx-auto">
           {/* Section Buttons - No "All" button */}
           <div className="flex gap-2 mb-4 sm:mb-6 flex-wrap">
@@ -550,6 +579,7 @@ export default function ExamTakePage() {
               transition={{ duration: 0.2 }}
               className="flex-1"
             >
+              {/* Section Badge */}
               <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6 flex-wrap">
                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
                   isListening 
@@ -649,7 +679,7 @@ export default function ExamTakePage() {
             </motion.div>
           </AnimatePresence>
 
-          {/* Navigation */}
+          {/* ─── Navigation ─── */}
           <div className="flex items-center justify-between mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-white/10">
             <Button
               variant="secondary"
@@ -679,7 +709,7 @@ export default function ExamTakePage() {
           </div>
         </div>
 
-        {/* Question Palette - Desktop */}
+        {/* ─── Question Palette - Desktop ─── */}
         <div className="hidden lg:block w-64 xl:w-72 flex-shrink-0 p-5 border-l border-white/10 fixed right-0 top-[68px] bottom-0 overflow-y-auto bg-[#060d1f]/50">
           <PaletteContent
             sections={parts.map(p => p.label)}
@@ -696,16 +726,21 @@ export default function ExamTakePage() {
         </div>
       </div>
 
-      {/* Question Palette - Mobile Drawer */}
+      {/* ─── Question Palette - Mobile Drawer ─── */}
       <AnimatePresence>
         {paletteOpen && (
           <>
             <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setPaletteOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+              onClick={() => setPaletteOpen(false)}
             />
             <motion.div
-              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               className="fixed right-0 top-0 bottom-0 w-80 max-w-[85vw] bg-[#060d1f] border-l border-white/10 z-50 lg:hidden overflow-y-auto"
             >
@@ -734,7 +769,7 @@ export default function ExamTakePage() {
         )}
       </AnimatePresence>
 
-      {/* Submit Modal */}
+      {/* ─── Submit Modal ─── */}
       <Modal isOpen={submitModal} onClose={() => setSubmitModal(false)} title="Submit Exam?">
         <div className="space-y-5">
           <div className="grid grid-cols-3 gap-3">
@@ -757,8 +792,12 @@ export default function ExamTakePage() {
             </p>
           )}
           <div className="flex gap-3">
-            <Button variant="secondary" fullWidth onClick={() => setSubmitModal(false)}>Continue Exam</Button>
-            <Button variant="primary" fullWidth onClick={confirmSubmit}>Submit Now</Button>
+            <Button variant="secondary" fullWidth onClick={() => setSubmitModal(false)}>
+              Continue Exam
+            </Button>
+            <Button variant="primary" fullWidth onClick={confirmSubmit}>
+              Submit Now
+            </Button>
           </div>
         </div>
       </Modal>
@@ -766,7 +805,7 @@ export default function ExamTakePage() {
   );
 }
 
-// ----- Palette Component -----
+// ─── Palette Component ──────────────────────────────────────────────────
 function PaletteContent({
   sections,
   paletteSection,

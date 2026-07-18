@@ -488,12 +488,33 @@ export default function LandingPage() {
                   <motion.div key={plan._id} whileHover={{ y: -6 }} className={`relative bg-[#0b1221]/60 backdrop-blur-md border rounded-3xl p-8 flex flex-col shadow-2xl transition-all duration-300 ${isPopular ? 'border-blue-500 shadow-blue-500/10' : 'border-white/10'}`}>
                     {isPopular && <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-[11px] font-bold px-4 py-1 rounded-full shadow-lg z-10 tracking-wider uppercase">MOST POPULAR</div>}
                     <div className="flex items-center gap-4 mb-6 mt-2">
-                      <div className={`p-3 rounded-2xl ${isPopular ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-blue-500/10 border border-blue-500/20'}`}><IconComponent className={isPopular ? 'text-cyan-400' : 'text-blue-400'} size={24} /></div>
+                      <div className={`p-3 rounded-2xl ${isPopular ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-blue-500/10 border border-blue-500/20'}`}>
+                        <IconComponent className={isPopular ? 'text-cyan-400' : 'text-blue-400'} size={24} />
+                      </div>
                       <h3 className="text-2xl font-bold capitalize tracking-wide text-white">{plan.name}</h3>
                     </div>
-                    <div className="mb-4"><span className="text-4xl sm:text-5xl font-extrabold text-white">LKR {Number(plan.price).toLocaleString()}</span><span className="text-gray-400 text-sm font-light ml-1">/mo</span></div>
-                    <ul className="space-y-4 mb-8 flex-grow mt-4">{plan.features?.map((feature, idx) => (<li key={idx} className="flex items-start gap-3 text-sm text-gray-300 font-light"><CheckCircle size={16} className={`${isPopular ? 'text-cyan-400' : 'text-emerald-400'} mt-0.5 flex-shrink-0`} /><span>{feature}</span></li>))}</ul>
-                    <Button variant={isPopular ? "primary" : "outline"} size="lg" fullWidth onClick={() => navigate('/pricing')} className="group">Choose {plan.name} <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" /></Button>
+                    <div className="mb-4">
+                      <span className="text-4xl sm:text-5xl font-extrabold text-white">LKR {Number(plan.price).toLocaleString()}</span>
+                      <span className="text-gray-400 text-sm font-light ml-1">/mo</span>
+                    </div>
+                    
+                    {/* ✅ FIXED: Safe features rendering with proper array check */}
+                    <ul className="space-y-4 mb-8 flex-grow mt-4">
+                      {Array.isArray(plan.features) && plan.features.length > 0 ? (
+                        plan.features.map((feature, idx) => (
+                          <li key={idx} className="flex items-start gap-3 text-sm text-gray-300 font-light">
+                            <CheckCircle size={16} className={`${isPopular ? 'text-cyan-400' : 'text-emerald-400'} mt-0.5 flex-shrink-0`} />
+                            <span>{feature}</span>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="text-sm text-gray-500 font-light">No features listed</li>
+                      )}
+                    </ul>
+                    
+                    <Button variant={isPopular ? "primary" : "outline"} size="lg" fullWidth onClick={() => navigate('/pricing')} className="group">
+                      Choose {plan.name} <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" />
+                    </Button>
                   </motion.div>
                 );
               })}
@@ -509,11 +530,15 @@ export default function LandingPage() {
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-cyan-500/20 rounded-3xl blur-xl" />
               <GlassCard className="relative p-14 border-blue-500/30">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/30"><BookOpen size={28} className="text-white" /></div>
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/30">
+                  <BookOpen size={28} className="text-white" />
+                </div>
                 <h2 className="text-4xl font-bold mb-4">Ready to Pass Your Exam?</h2>
                 <p className="text-gray-300 text-lg mb-8 max-w-xl mx-auto">Join {adminStats?.totalUsers?.toLocaleString() || '24,000+'} Sri Lankan students who trust Langoora for their exam preparation.</p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                  <Button variant="primary" size="xl" onClick={() => navigate('/auth/register')} className="group">Start Learning Free <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" /></Button>
+                  <Button variant="primary" size="xl" onClick={() => navigate('/auth/register')} className="group">
+                    Start Learning Free <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                  </Button>
                   <Button variant="secondary" size="xl" onClick={handleTutorOnboarding}>Become a Tutor</Button>
                 </div>
               </GlassCard>
