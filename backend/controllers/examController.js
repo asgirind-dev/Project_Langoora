@@ -43,6 +43,79 @@ const createExam = async (req, res) => {
       tutor_name: req.user?.name || 'Expert Tutor'
     };
 
+
+    // 📡 Commit Payload Data
+const handlePublishExam = async (statusType) => {
+  try {
+    setError('');
+    setSubmitLoading(true);
+
+    if (!meta.title.trim()) throw new Error('Exam title is required.');
+    if (!meta.category_id) throw new Error('Please select an exam category.');
+    
+    // ✅ Level එක optional කරන්න (TOPIK වගේ levels නැති exams වලට)
+    // if (!meta.level_id) throw new Error('Please select an exam level.');
+
+    const examPayload = {
+      title: meta.title.trim(),
+      category_id: meta.category_id,
+      level_id: meta.level_id || '', // 👈 Empty string if no level
+      duration_minutes: Number(meta.duration_minutes),
+      description: meta.description || '',
+      thumbnail: meta.thumbnail || '',
+      status: statusType,
+      sections: sections.map(s => ({
+        name: s.name,
+        questions: Number(s.questions || 0),
+        time: Number(s.time || 0),
+        audio_url: s.audio_url || null
+      })),
+      questions: questions.map(q => {
+        if (q.is_problem) {
+          return {
+            id: q.id,
+            is_problem: true,
+            section: q.section,
+            problem_title: q.problem_title || `Problem`,
+            explanation: q.explanation || '',
+            example_question: q.example_question || '',
+            example_correct_option: Number(q.example_correct_option || 0),
+            options: q.options || ['', '', '', '']
+          };
+        } else {
+          return {
+            id: q.id,
+            is_problem: false,
+            section: q.section,
+            parent_problem_id: q.parent_problem_id || null,
+            type: q.type || 'mcq',
+            text: q.text || '',
+            options: q.options || ['', '', '', ''],
+            correct: Number(q.correct || 0),
+            explanation: q.explanation || '',
+            image_url: q.image_url || null
+          };
+        }
+      })
+    };
+
+    console.log('📤 Sending exam payload:', JSON.stringify(examPayload, null, 2));
+
+    const response = await createTutorExam(examPayload);
+
+    if (response && response.success) {
+      showNotification(statusType === 'active' ? 'Exam deployed successfully!' : 'Draft saved successfully!', 'success');
+      setTimeout(() => navigate('/tutor/dashboard'), 2500); 
+    }
+  } catch (err) {
+    console.error("Submission Error:", err);
+    setError(err.message || 'Failed to create exam.');
+    showNotification(err.message || 'Failed to create exam.', 'error');
+  } finally {
+    setSubmitLoading(false);
+  }
+};
+
     // Call service layer
     const result = await examServices.createExamInDB(examData);
 
