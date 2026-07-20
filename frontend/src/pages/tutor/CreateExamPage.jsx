@@ -6,7 +6,7 @@ import {
   GripVertical, Upload, Save, Send, CheckCircle, 
   Mic, ShieldAlert, Loader, X, AlertCircle, Info, FileText, HelpCircle, Image
 } from 'lucide-react';
-import { createTutorExam, uploadExamAsset } from '../../services/examService';
+import { createTutorExam, uploadExamAsset, getExamById } from '../../services/examService';
 import { fetchActiveExamSchema } from '../../services/languageService';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -80,6 +80,104 @@ export default function CreateExamPage() {
     const totalTime = sections.reduce((sum, currentSec) => sum + Number(currentSec.time || 0), 0);
     setMeta(p => ({ ...p, duration_minutes: totalTime }));
   }, [sections]);
+
+  // 📝 Check if editing existing exam
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const editExamId = searchParams.get('examId');
+    
+    if (editExamId) {
+      loadExamForEdit(editExamId);
+    }
+  }, []);
+
+  // 📝 Load exam data for editing
+  const loadExamForEdit = async (examId) => {
+    try {
+      setGlobalLoading(true);
+      const response = await getExamById(examId);
+      
+      if (response && response.success) {
+        const exam = response.exam;
+        
+        // Set meta data
+        setMeta({
+          title: exam.title || '',
+          category_id: exam.category_id || '',
+          level_id: exam.level_id || '',
+          duration_minutes: exam.duration_minutes || 0,
+          description: exam.description || '',
+          thumbnail: exam.thumbnail || ''
+        });
+        
+        // Set sections
+        if (exam.sections && exam.sections.length > 0) {
+          setSections(exam.sections.map((s, idx) => ({
+            id: idx + 1,
+            name: s.name || '',
+            questions: s.questions || 0,
+            time: s.time || 0,
+            audio_url: s.audio_url || null
+          })));
+        }
+        
+        // Set questions (problems + sub-questions)
+        if (exam.problems && exam.problems.length > 0) {
+          const formattedQuestions = [];
+          
+          exam.problems.forEach((problem, pIdx) => {
+            // Add problem
+            formattedQuestions.push({
+              id: `problem_${pIdx + 1}`,
+              is_problem: true,
+              section: problem.section || '',
+              problem_title: problem.problem_title || `Problem ${pIdx + 1}`,
+              explanation: problem.explanation || '',
+              example_question: problem.example?.text || '',
+              example_correct_option: problem.example?.correct_answer_index || 0,
+              example_explanation: problem.example?.explanation || '',
+              options: problem.example?.options || ['', '', '', ''],
+              example_image_url: problem.example?.image_url || null,
+              example_audio_url: problem.example?.audio_url || null
+            });
+            
+            // Add sub-questions
+            if (problem.sub_questions && problem.sub_questions.length > 0) {
+              problem.sub_questions.forEach((sub) => {
+                formattedQuestions.push({
+                  id: sub.id || `sub_${Date.now()}_${Math.random()}`,
+                  is_problem: false,
+                  section: problem.section || '',
+                  parent_problem_id: `problem_${pIdx + 1}`,
+                  type: problem.section?.toLowerCase().includes('listen') ? 'listening' : 'mcq',
+                  text: sub.text || '',
+                  options: sub.options || ['', '', '', ''],
+                  correct: sub.correct_answer_index || 0,
+                  explanation: sub.explanation || '',
+                  image_url: sub.image_url || null,
+                  audio_url: sub.audio_url || null
+                });
+              });
+            }
+          });
+          
+          setQuestions(formattedQuestions);
+          
+          // Set active question to first problem
+          if (formattedQuestions.length > 0) {
+            setActiveQuestionId(formattedQuestions[0].id);
+          }
+        }
+        
+        showNotification('Exam loaded successfully!', 'success');
+      }
+    } catch (err) {
+      console.error('Load exam error:', err);
+      showNotification('Failed to load exam for editing.', 'error');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
 
   // 🎯 Handle Category Change - Load levels from database
   const handleCategoryChange = (catId) => {
@@ -182,8 +280,10 @@ export default function CreateExamPage() {
       explanation: '',
       example_question: '',
       example_correct_option: 0,
+      example_explanation: '',
       options: ['', '', '', ''],
-      example_image_url: null  // 👈 Listening example image
+      example_image_url: null,
+      example_audio_url: null
     };
 
     setQuestions(p => [...p, newProblem]);
@@ -220,7 +320,8 @@ export default function CreateExamPage() {
       options: ['', '', '', ''],
       correct: 0,
       explanation: '',
-      image_url: null
+      image_url: null,
+      audio_url: null
     };
 
     setQuestions(p => [...p, newQ]);
@@ -251,7 +352,8 @@ export default function CreateExamPage() {
       options: ['', '', '', ''],
       correct: 0,
       explanation: '',
-      image_url: null
+      image_url: null,
+      audio_url: null
     };
 
     setQuestions(p => [...p, newQ]);
@@ -285,7 +387,8 @@ export default function CreateExamPage() {
       options: ['', '', '', ''],
       correct: 0,
       explanation: '',
-      image_url: null
+      image_url: null,
+      audio_url: null
     };
 
     setQuestions(p => [...p, newQ]);
@@ -328,6 +431,25 @@ export default function CreateExamPage() {
     } catch (err) {
       console.error("Example Image Upload Error:", err);
       showNotification(err.message || 'Image upload failed.', 'error');
+    }
+  };
+
+  // 🎵 Upload Example Audio for Problem (Listening)
+  const handleExampleAudioUpload = async (problemId, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      showNotification('Uploading example audio...', 'info');
+      const result = await uploadExamAsset(file);
+      
+      if (result && result.success) {
+        updateItemField(problemId, 'example_audio_url', result.fileUrl);
+        showNotification('Example audio uploaded successfully!', 'success');
+      }
+    } catch (err) {
+      console.error("Example Audio Upload Error:", err);
+      showNotification(err.message || 'Audio upload failed.', 'error');
     }
   };
 
@@ -420,17 +542,20 @@ export default function CreateExamPage() {
         })),
         questions: questions.map(q => {
           if (q.is_problem) {
-            // ✅ PROBLEM = උපදෙස් + Example data (with image for listening)
+            // ✅ PROBLEM = උපදෙස් + Example data (will be saved as sub-collection)
             return {
               id: q.id,
               is_problem: true,
               section: q.section,
               problem_title: q.problem_title || `Problem`,
               explanation: q.explanation || '',
+              // ✅ Example data - will become example_question sub-collection
               example_question: q.example_question || '',
               example_correct_option: Number(q.example_correct_option || 0),
+              example_explanation: q.example_explanation || '',
               options: q.options || ['', '', '', ''],
-              example_image_url: q.example_image_url || null  // 👈 Listening example image
+              example_image_url: q.example_image_url || null,
+              example_audio_url: q.example_audio_url || null
             };
           } else {
             // ✅ SUB-QUESTION = ඇත්ත ප්‍රශ්නය + answer
@@ -444,7 +569,8 @@ export default function CreateExamPage() {
               options: q.options || ['', '', '', ''],
               correct: Number(q.correct || 0),
               explanation: q.explanation || '',
-              image_url: q.image_url || null
+              image_url: q.image_url || null,
+              audio_url: q.audio_url || null
             };
           }
         })
@@ -952,9 +1078,16 @@ export default function CreateExamPage() {
                         <div className="p-4 bg-slate-950/30 border border-white/5 rounded-2xl space-y-4">
                           <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">Example Question Configuration (Optional)</h4>
                           
+                          {/* Example Question Text */}
                           <div className="flex flex-col gap-1.5">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Example Question Text</label>
                             <input type="text" placeholder="e.g. Example Question Context..." value={activeItem.example_question || ''} onChange={e => updateItemField(activeItem.id, 'example_question', e.target.value)} className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none" />
+                          </div>
+
+                          {/* Example Explanation */}
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Example Explanation</label>
+                            <textarea rows={2} placeholder="Explain the example answer..." value={activeItem.example_explanation || ''} onChange={e => updateItemField(activeItem.id, 'example_explanation', e.target.value)} className="bg-slate-950/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none resize-none" />
                           </div>
 
                           {/* 👂 LISTENING EXAMPLE IMAGE UPLOAD */}
@@ -978,6 +1111,32 @@ export default function CreateExamPage() {
                                 )}
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => handleExampleImageUpload(activeItem.id, e)} />
                               </label>
+                            </div>
+                          )}
+
+                          {/* 🎵 Example Audio Upload (Optional - for Listening) */}
+                          {activeItem.section?.toLowerCase().includes('listen') && (
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block">
+                                🎵 Example Audio (Optional)
+                              </label>
+                              <label className={`flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+                                activeItem.example_audio_url ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-purple-500/30 text-slate-400 hover:border-purple-500/50'
+                              }`}>
+                                <Mic size={16} />
+                                {activeItem.example_audio_url ? 'Audio Attached ✓' : 'Upload Example Audio'}
+                                <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleExampleAudioUpload(activeItem.id, e)} />
+                              </label>
+                              
+                              {activeItem.example_audio_url && (
+                                <div className="mt-1 bg-slate-900/80 p-2 rounded-xl border border-white/5">
+                                  <audio 
+                                    src={activeItem.example_audio_url} 
+                                    controls 
+                                    className="w-full h-8 rounded-lg bg-transparent text-white filter invert opacity-80 hover:opacity-100 transition-opacity"
+                                  />
+                                </div>
+                              )}
                             </div>
                           )}
 

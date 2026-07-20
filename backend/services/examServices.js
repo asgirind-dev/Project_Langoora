@@ -1,7 +1,7 @@
 const { db } = require('../config/firebase');
 
 /**
- * 📝 Create a new exam with problems and sub-questions (using sub-collections)
+ * 📝 Create a new exam with problems and sub-questions
  */
 const createExamInDB = async (examData) => {
   try {
@@ -51,13 +51,17 @@ const createExamInDB = async (examData) => {
       isModernExam: true,
       total_problems: problems.length,
       total_questions: subQuestions.length,
+      students: 0,
+      revenue: 0,
+      rating: 0,
+      reviews: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
     await examRef.set(examMetadata);
 
-    // 🚀 Insert Problems with Sub-Questions as SUB-COLLECTIONS
+    // 🚀 Insert Problems with Sub-Questions and Example Question as SUB-COLLECTIONS
     if (problems.length > 0) {
       const batch = db.batch();
       
@@ -68,26 +72,34 @@ const createExamInDB = async (examData) => {
         // Get sub-questions for this problem
         const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
 
-        // ✅ PROBLEM = උපදෙස්/පැහැදිලි කිරීම + Example data
+        // PROBLEM = උපදෙස්/පැහැදිලි කිරීම
         const problemData = {
           problem_number: index + 1,
           section: problem.section,
           problem_title: problem.problem_title ? problem.problem_title.trim() : `Problem ${index + 1}`,
           explanation: problem.explanation || '',
           total_sub_questions: problemSubQuestions.length,
-          created_at: new Date().toISOString(),
-          
-          // ✅ EXAMPLE DATA - Problem collection එක ඇතුළේම save වෙනවා
-          example: problem.example_question ? {
-            text: problem.example_question.trim(),
-            options: problem.options || ['', '', '', ''],
-            correct_answer_index: Number(problem.example_correct_option || 0),
-            image_url: problem.example_image_url || null, // 👈 Listening example image
-            audio_url: problem.example_audio_url || null  // 👈 Listening example audio (optional)
-          } : null
+          created_at: new Date().toISOString()
         };
 
         batch.set(problemRef, problemData);
+
+        // 🚀 Add EXAMPLE QUESTION as a SUB-COLLECTION (example_question)
+        if (problem.example_question && problem.example_question.trim()) {
+          const exampleRef = problemRef.collection('example_question').doc('example');
+          
+          const exampleData = {
+            text: problem.example_question.trim(),
+            options: problem.options || ['', '', '', ''],
+            correct_answer_index: Number(problem.example_correct_option || 0),
+            explanation: problem.example_explanation || '',
+            image_url: problem.example_image_url || null,
+            audio_url: problem.example_audio_url || null,
+            created_at: new Date().toISOString()
+          };
+
+          batch.set(exampleRef, exampleData);
+        }
 
         // 🚀 Add SUB-QUESTIONS as a SUB-COLLECTION
         if (problemSubQuestions.length > 0) {
@@ -104,6 +116,7 @@ const createExamInDB = async (examData) => {
               correct_answer_index: Number(sub.correct || 0),
               explanation: sub.explanation || '',
               image_url: sub.image_url || null,
+              audio_url: sub.audio_url || null,
               created_at: new Date().toISOString()
             };
 
@@ -117,7 +130,6 @@ const createExamInDB = async (examData) => {
 
     console.log(`✅ Exam created: ${cleanExamId}`);
     console.log(`📊 Problems: ${problems.length}, Questions: ${subQuestions.length}`);
-    console.log(`📂 Sections: ${sections.map(s => s.name).join(', ')}`);
     
     return { success: true, examId: cleanExamId };
 
@@ -128,46 +140,192 @@ const createExamInDB = async (examData) => {
 };
 
 /**
- * 📊 Get all student exams
+ * 📊 Get all exams for a tutor
  */
-const getStudentExamsFromDB = async () => {
+const getTutorExamsFromDB = async (tutorId) => {
   try {
-    const snapshot = await db.collection('student_exams').get();
+    let query = db.collection('exams');
+    
+    if (tutorId) {
+      query = query.where('tutor_id', '==', tutorId);
+    }
+    
+    const snapshot = await query.get();
     const examsList = [];
     
     snapshot.forEach(doc => {
       examsList.push({ id: doc.id, ...doc.data() });
     });
     
+    examsList.sort((a, b) => {
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    
     return examsList;
   } catch (error) {
-    console.error('Get Student Exams Service Error:', error);
+    console.error('Get Tutor Exams Service Error:', error);
     throw new Error(error.message);
   }
 };
 
 /**
- * 🗑️ Delete a student exam
+ * 📊 Get a single exam by ID
  */
-const deleteStudentExamFromDB = async (examDocId) => {
+const getExamByIdFromDB = async (examId) => {
   try {
-    const examRef = db.collection('student_exams').doc(examDocId);
-    const doc = await examRef.get();
-
-    if (!doc.exists) {
-      throw new Error('Exam not found in database');
+    const examDoc = await db.collection('exams').doc(examId).get();
+    
+    if (!examDoc.exists) {
+      throw new Error('Exam not found');
     }
-   
-    await examRef.delete();
-    return { success: true, message: 'Exam successfully deleted!' };
+    
+    const examData = examDoc.data();
+    
+    // Get problems and sub-questions
+    const problemsSnapshot = await db.collection('exams')
+      .doc(examId)
+      .collection('problems')
+      .get();
+    
+    const problems = [];
+    
+    for (const problemDoc of problemsSnapshot.docs) {
+      const problemData = problemDoc.data();
+      const problemId = problemDoc.id;
+      
+      // Get example question
+      let example = null;
+      try {
+        const exampleDoc = await db.collection('exams')
+          .doc(examId)
+          .collection('problems')
+          .doc(problemId)
+          .collection('example_question')
+          .doc('example')
+          .get();
+        
+        if (exampleDoc.exists) {
+          example = exampleDoc.data();
+        }
+      } catch (exampleError) {
+        example = null;
+      }
+      
+      // Get sub-questions
+      const subQuestionsSnapshot = await db.collection('exams')
+        .doc(examId)
+        .collection('problems')
+        .doc(problemId)
+        .collection('sub_questions')
+        .get();
+      
+      const subQuestions = subQuestionsSnapshot.docs.map(subDoc => ({
+        id: subDoc.id,
+        ...subDoc.data()
+      }));
+      
+      problems.push({
+        id: problemId,
+        ...problemData,
+        example: example,
+        sub_questions: subQuestions
+      });
+    }
+    
+    return {
+      success: true,
+      exam: {
+        id: examId,
+        ...examData,
+        problems: problems
+      }
+    };
+    
   } catch (error) {
-    console.error('Delete Student Exam Service Error:', error);
+    console.error('Get Exam By ID Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * 🗑️ Delete an exam
+ */
+const deleteExamFromDB = async (examId) => {
+  try {
+    const problemsSnapshot = await db.collection('exams')
+      .doc(examId)
+      .collection('problems')
+      .get();
+    
+    const batch = db.batch();
+    
+    for (const problemDoc of problemsSnapshot.docs) {
+      const problemId = problemDoc.id;
+      
+      // Delete example_question
+      try {
+        const exampleDoc = await db.collection('exams')
+          .doc(examId)
+          .collection('problems')
+          .doc(problemId)
+          .collection('example_question')
+          .doc('example')
+          .get();
+        
+        if (exampleDoc.exists) {
+          batch.delete(exampleDoc.ref);
+        }
+      } catch (e) {}
+      
+      // Delete sub-questions
+      const subQuestionsSnapshot = await db.collection('exams')
+        .doc(examId)
+        .collection('problems')
+        .doc(problemId)
+        .collection('sub_questions')
+        .get();
+      
+      subQuestionsSnapshot.forEach(subDoc => {
+        batch.delete(subDoc.ref);
+      });
+      
+      // Delete problem
+      batch.delete(problemDoc.ref);
+    }
+    
+    // Delete exam document
+    batch.delete(db.collection('exams').doc(examId));
+    
+    await batch.commit();
+    
+    return { success: true, message: 'Exam deleted successfully!' };
+  } catch (error) {
+    console.error('Delete Exam Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * 📝 Update exam status
+ */
+const updateExamStatusInDB = async (examId, status) => {
+  try {
+    await db.collection('exams').doc(examId).update({
+      status: status,
+      updated_at: new Date().toISOString()
+    });
+    
+    return { success: true, message: `Exam status updated to ${status}` };
+  } catch (error) {
+    console.error('Update Exam Status Error:', error);
     throw new Error(error.message);
   }
 };
 
 module.exports = {
   createExamInDB,
-  getStudentExamsFromDB,
-  deleteStudentExamFromDB
+  getTutorExamsFromDB,
+  getExamByIdFromDB,
+  deleteExamFromDB,
+  updateExamStatusInDB
 };
