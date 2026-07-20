@@ -792,7 +792,7 @@ export default function CreateExamPage() {
               {examId ? 'Edit Exam' : 'Create New Exam'}
             </h1>
             <p className="text-gray-400 text-xs mt-0.5">
-              {examId ? 'Modify your existing exam structure' : 'Build and deploy your custom exam structure'}
+              {examId ? 'Modify your existing exam structure' : 'Build and deploy your custom exam structures'}
             </p>
           </div>
           
