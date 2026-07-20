@@ -17,6 +17,7 @@ const tutorValidationRoutes = require('./routes/tutorValidationRoutes');
 const languageRoutes = require('./routes/languageRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 
+
 const app = express();
 
 // Middlewares
@@ -35,6 +36,7 @@ app.use('/api/planner', studyPlannerRoutes);
 app.use('/api/validator/tutors', tutorValidationRoutes);
 app.use('/api/languages', languageRoutes);
 app.use('/api/finance', financeRoutes); 
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

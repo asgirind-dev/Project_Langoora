@@ -6,23 +6,26 @@ import FinanceService from '../../services/financeService';
 import GlassCard from '../../components/ui/GlassCard';
 
 export default function FinanceDashboard() {
-  const [stats, setStats] = useState({ totalRevenue: '0', activeCredits: '0', growth: 0 });
+  const [stats, setStats] = useState({ 
+    totalRevenue: 'LKR 0', 
+    activeCredits: '0', 
+    growth: 0,
+    activeUsers: 0 
+  });
   const [transactions, setTransactions] = useState([]);
   const [chartData, setChartData] = useState([]);
-  const [financeData, setFinanceData] = useState([]); // Chart data සඳහා
   const [loading, setLoading] = useState(true);
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [hoveredCard, setHoveredCard] = useState(null);
 
-  // kpiData එක stats වෙනස් වන සෑම විටම update වීමට useEffect එකක් භාවිතා කරන්න
   const kpiData = [
     { label: 'Total Revenue', value: stats.totalRevenue, icon: DollarSign, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'up', change: '+12%' },
     { label: 'Active Credits', value: stats.activeCredits, icon: Wallet, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: 'up', change: '+8%' },
     { label: 'Growth', value: `${stats.growth}%`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'up', change: '+5%' },
-    { label: 'Active Users', value: '120', icon: Activity, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'down', change: '-2%' }
+    { label: 'Active Users', value: stats.activeUsers, icon: Activity, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'up', change: '+5%' }
   ];
 
- useEffect(() => {
+  useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -32,38 +35,50 @@ export default function FinanceDashboard() {
           FinanceService.getRevenueChartData()
         ]);
 
-        // මෙන්න මෙතන දත්ත ටික Map කරගන්න (Mapping Data)
-       setStats({
-      totalRevenue: statsData?.totalRevenue ? `LKR ${statsData.totalRevenue.toLocaleString()}` : 'LKR 0',
-      activeCredits: statsData?.activeUsers ? statsData.activeUsers.toString() : '0',
-      growth: statsData?.growth || 0
-    });
+        setStats({
+          totalRevenue: statsData?.totalRevenue !== undefined ? `LKR ${statsData.totalRevenue.toLocaleString()}` : 'LKR 0',
+          activeCredits: statsData?.activeCredits?.toString() || '0',
+          growth: statsData?.growth || 0,
+          activeUsers: statsData?.activeUsers || 0
+        });
 
-    setTransactions(txData);
-    setFinanceData(chartDataRes);
-  } catch (err) {
-    console.error("Data load failed", err);
-  } finally {
-    setLoading(false);
-  }
-};
+        setTransactions(txData || []);
+        setChartData(chartDataRes || []);
+      } catch (err) {
+        console.error("Data load failed", err);
+        setStats({ totalRevenue: 'LKR 0', activeCredits: '0', growth: 0, activeUsers: 0 });
+        setTransactions([]);
+        setChartData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchData();
   }, []);
 
   const displayedTransactions = showAllTransactions ? transactions : transactions.slice(0, 3);
 
-  if (loading) return <div className="text-white text-center py-20">Loading Financial Data...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#0a0e1a]">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Loading Financial Data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Animated Background Elements */}
+    <div className="space-y-6 p-6 bg-[#0a0e1a] min-h-screen">
+      {/* Animated Background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl animate-pulse" />
         <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl animate-pulse delay-1000" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-500/3 rounded-full blur-3xl animate-pulse delay-2000" />
       </div>
 
-      {/* Header with Animation */}
+      {/* Header */}
       <motion.div 
         initial={{ opacity: 0, y: -20 }} 
         animate={{ opacity: 1, y: 0 }}
@@ -82,7 +97,7 @@ export default function FinanceDashboard() {
                 <div className="flex items-center gap-3 mt-0.5 ml-1">
                   <span className="text-xs text-gray-400 flex items-center gap-1">
                     <Calendar size={12} />
-                    Last updated: Today, 14:30
+                    Last updated: Today, {new Date().toLocaleTimeString()}
                   </span>
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
@@ -101,10 +116,15 @@ export default function FinanceDashboard() {
         </div>
       </motion.div>
 
-     {/* KPI Metrics */}
+      {/* KPI Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiData.map((kpi, index) => (
-          <motion.div key={index} className="relative group" onMouseEnter={() => setHoveredCard(index)} onMouseLeave={() => setHoveredCard(null)}>
+          <motion.div 
+            key={index} 
+            className="relative group" 
+            onMouseEnter={() => setHoveredCard(index)} 
+            onMouseLeave={() => setHoveredCard(null)}
+          >
             <GlassCard className={`p-5 border-white/10 transition-all duration-500 hover:scale-[1.02] ${hoveredCard === index ? 'shadow-2xl shadow-blue-500/10' : ''}`}>
               <div className="flex items-start justify-between">
                 <div className={`p-2.5 ${kpi.bg} rounded-xl`}>
@@ -126,7 +146,7 @@ export default function FinanceDashboard() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Revenue Chart - Takes 2 columns */}
+        {/* Revenue Chart */}
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -151,14 +171,12 @@ export default function FinanceDashboard() {
                   <div className="w-3 h-3 bg-purple-400 rounded-full" />
                   <span className="text-xs text-gray-400">Credits</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-emerald-400 rounded-full" />
-                  <span className="text-xs text-gray-400">Growth</span>
-                </div>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={financeData}>
+              <AreaChart data={chartData.length > 0 ? chartData : [
+                { month: 'No Data', revenue: 0, credits: 0 }
+              ]}>
                 <defs>
                   <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -167,10 +185,6 @@ export default function FinanceDashboard() {
                   <linearGradient id="credGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.2} />
                     <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
@@ -188,7 +202,6 @@ export default function FinanceDashboard() {
                 />
                 <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} fill="url(#revGrad)" />
                 <Area type="monotone" dataKey="credits" stroke="#8b5cf6" strokeWidth={2} fill="url(#credGrad)" />
-                <Line type="monotone" dataKey="growth" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 4 }} />
               </AreaChart>
             </ResponsiveContainer>
           </GlassCard>
@@ -207,10 +220,10 @@ export default function FinanceDashboard() {
             </h3>
             <div className="space-y-4">
               {[
-                { label: 'Total Transactions', value: '2,492', icon: Activity, color: 'text-blue-400', change: '+18%' },
-                { label: 'Avg. Transaction', value: 'LKR 1,497', icon: DollarSign, color: 'text-emerald-400', change: '+5%' },
-                { label: 'Credit Pool', value: '128,450', icon: Coins, color: 'text-amber-400', change: '+12%' },
-                { label: 'Platform Fee', value: '3.2%', icon: Shield, color: 'text-purple-400', change: '-0.5%' },
+                { label: 'Total Transactions', value: transactions.length.toString(), icon: Activity, color: 'text-blue-400', change: '+18%' },
+                { label: 'Avg. Transaction', value: transactions.length > 0 ? `LKR ${Math.round(transactions.reduce((acc, t) => acc + parseInt(t.amount.replace(/[^0-9]/g,'') || 0), 0) / transactions.length).toLocaleString()}` : 'LKR 0', icon: DollarSign, color: 'text-emerald-400', change: '+5%' },
+                { label: 'Credit Pool', value: stats.activeCredits.toString(), icon: Coins, color: 'text-amber-400', change: '+12%' },
+                { label: 'Active Users', value: stats.activeUsers.toString(), icon: Shield, color: 'text-purple-400', change: '+5%' },
               ].map((stat, idx) => (
                 <motion.div 
                   key={idx}
@@ -220,12 +233,7 @@ export default function FinanceDashboard() {
                   className="flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-all duration-300 group cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 ${stat.color === 'text-blue-400' ? 'bg-blue-400/10' : 
-                   stat.color === 'text-emerald-400' ? 'bg-emerald-400/10' : 
-                   stat.color === 'text-amber-400' ? 'bg-amber-400/10' : 'bg-purple-400/10'} 
-                   rounded-lg group-hover:scale-110 transition-transform duration-300`}> <stat.icon size={14} className={stat.color} />
-                    </div>
-                    <div className={`p-2 bg-${stat.color.split('-')[1]}/10 rounded-lg group-hover:scale-110 transition-transform duration-300`}>
+                    <div className={`p-2 rounded-lg group-hover:scale-110 transition-transform duration-300`}>
                       <stat.icon size={14} className={stat.color} />
                     </div>
                     <div>
@@ -257,74 +265,84 @@ export default function FinanceDashboard() {
               <p className="text-xs text-gray-500 mt-1">Latest platform financial activities</p>
             </div>
             <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setShowAllTransactions(!showAllTransactions)}
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
-              >
-                {showAllTransactions ? 'Show Less' : 'View All'} 
-                <ChevronRight size={12} className={showAllTransactions ? 'rotate-90' : ''} />
-              </button>
+              {transactions.length > 3 && (
+                <button 
+                  onClick={() => setShowAllTransactions(!showAllTransactions)}
+                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+                >
+                  {showAllTransactions ? 'Show Less' : 'View All'} 
+                  <ChevronRight size={12} className={showAllTransactions ? 'rotate-90' : ''} />
+                </button>
+              )}
               <button className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
                 <Download size={12} />
                 Export
               </button>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-xs text-gray-500 border-b border-white/5">
-                  <th className="pb-3 font-medium">User</th>
-                  <th className="pb-3 font-medium">Amount</th>
-                  <th className="pb-3 font-medium">Type</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium text-right">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayedTransactions.map((tx, idx) => (
-                  <motion.tr 
-                    key={tx.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.6 + idx * 0.1 }}
-                    className="border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors group"
-                  >
-                    <td className="py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white">
-                          {tx.avatar}
+          {transactions.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">
+              No transactions found. Start making sales to see data here.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 border-b border-white/5">
+                    <th className="pb-3 font-medium">User</th>
+                    <th className="pb-3 font-medium">Amount</th>
+                    <th className="pb-3 font-medium">Type</th>
+                    <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium text-right">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedTransactions.map((tx, idx) => (
+                    <motion.tr 
+                      key={tx.id || idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.6 + idx * 0.1 }}
+                      className="border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors group"
+                    >
+                      <td className="py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white">
+                            {tx.avatar || 'U'}
+                          </div>
+                          <span className="text-sm text-white">{tx.user}</span>
                         </div>
-                        <span className="text-sm text-white">{tx.user}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 text-sm font-medium text-white">{tx.amount}</td>
-                    <td className="py-3 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        tx.type === 'Payout' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                      }`}>
-                        {tx.type}
-                      </span>
-                    </td>
-                    <td className="py-3 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${
-                        tx.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        tx.status === 'Pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                        'bg-red-500/10 text-red-400 border border-red-500/20'
-                      }`}>
-                        <CircleDot size={10} className={tx.status === 'Completed' ? 'text-emerald-400' : tx.status === 'Pending' ? 'text-amber-400' : 'text-red-400'} />
-                        {tx.status}
-                      </span>
-                    </td>
-                    <td className="py-3 text-sm text-gray-400 text-right flex items-center justify-end gap-1">
-                      <Clock size={12} />
-                      {tx.time}
-                    </td>
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </td>
+                      <td className="py-3 text-sm font-medium text-white">{tx.amount}</td>
+                      <td className="py-3 text-sm">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          tx.type === 'Payout' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 
+                          tx.type === 'Refund' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                          'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                        }`}>
+                          {tx.type}
+                        </span>
+                      </td>
+                      <td className="py-3 text-sm">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${
+                          tx.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                          tx.status === 'Pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                          'bg-red-500/10 text-red-400 border border-red-500/20'
+                        }`}>
+                          <CircleDot size={10} className={tx.status === 'Completed' ? 'text-emerald-400' : tx.status === 'Pending' ? 'text-amber-400' : 'text-red-400'} />
+                          {tx.status}
+                        </span>
+                      </td>
+                      <td className="py-3 text-sm text-gray-400 text-right flex items-center justify-end gap-1">
+                        <Clock size={12} />
+                        {tx.time}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </GlassCard>
       </motion.div>
     </div>
