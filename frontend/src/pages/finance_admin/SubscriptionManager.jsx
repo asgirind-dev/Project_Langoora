@@ -1,50 +1,95 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios'; 
 import { 
   Plus, Edit, Trash2, Crown, Sparkles, 
   Zap, Infinity, CheckCircle,
-  DollarSign, BookOpen, Settings, Save,
-  X, Database, RefreshCw, Rocket, Star, Layers, Award
-} from 'lucide-react';
+  BookOpen, Save, X, RefreshCw, 
+  Rocket, Star, Layers, Award, Database, History 
+} from 'lucide-react'; 
 import GlassCard from '../../components/ui/GlassCard';
+import SubscriptionService from '../../services/subscriptionService'; 
 
-const API_BASE_URL = 'http://localhost:5000/api/subscription-management'; 
-
-const iconMap = {
-  Zap: Zap,
-  Rocket: Rocket,
-  Crown: Crown,
-  Infinity: Infinity,
-  Star: Star
-};
+const iconMap = { Zap, Rocket, Crown, Infinity, Star };
 
 export default function SubscriptionManager() {
   const [activeTab, setActiveTab] = useState('plans');
   const [plans, setPlans] = useState([]);
   const [examCategories, setExamCategories] = useState([]);
+  const [exams, setExams] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('plan');
   const [editingItem, setEditingItem] = useState(null);
   
+  // Credit ඉතිහාසය (History Logs) රඳවා ගැනීමට අලුත් state එකක්
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [creditHistory, setCreditHistory] = useState([
+    // ආරම්භක නියැදි දත්ත (Sample Data) - බැලීමට පමණි
+    { id: 1, category: 'n5', previous: 3, updated: 5, date: '2026-07-06 14:32' },
+    { id: 2, category: 'JLPT N3', previous: 5, updated: 3, date: '2026-07-05 09:15' },
+    { id: 3, category: 'TOPIK-I Level 1', previous: 10, updated: 15, date: '2026-07-02 18:20' },
+  ]);
+  
+  const [tempCredits, setTempCredits] = useState({});
   const [formData, setFormData] = useState({
     name: '', price: '', credits: '', features: [''], popular: false,
   });
-  const [examFormData, setExamFormData] = useState({
-    name: '', credits: '', exams: '', status: 'active'
-  });
 
-  // Fetch initial data from database
+  const handleCreditChange = (id, value) => {
+    setTempCredits((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const handleUpdateSubmit = async (categoryId, currentCredit, categoryName) => {
+    const creditToUpdate = tempCredits[categoryId] !== undefined ? tempCredits[categoryId] : currentCredit;
+    
+    try {
+      setLoadingData(true);
+      await SubscriptionService.updateCategoryCredits(categoryId, { credits: parseInt(creditToUpdate) });
+      
+      // ඉතිහාස ලොගයට අලුත් Record එකක් එක් කිරීම
+      const newHistoryLog = {
+        id: Date.now(),
+        category: categoryName,
+        previous: currentCredit,
+        updated: parseInt(creditToUpdate),
+        date: new Date().toISOString().replace('T', ' ').substring(0, 16) // දැනට පවතින දිනය සහ වෙලාව සකසා ගැනීම
+      };
+      setCreditHistory(prev => [newHistoryLog, ...prev]);
+
+      setExamCategories((prev) =>
+        prev.map((cat) =>
+          cat.id === categoryId ? { ...cat, credits: parseInt(creditToUpdate) } : cat
+        )
+      );
+      
+      setTempCredits((prev) => {
+        const updated = { ...prev };
+        delete updated[categoryId];
+        return updated;
+      });
+      
+      alert('Credits requirement updated successfully!');
+    } catch (error) {
+      console.error("Update failed:", error);
+      alert('Failed to update credits. Please try again.');
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
   const fetchData = async () => {
     setLoadingData(true);
     try {
-      const plansRes = await axios.get(`${API_BASE_URL}/plans`);
-      const catsRes = await axios.get(`${API_BASE_URL}/categories`);
-      setPlans(plansRes.data);
-      setExamCategories(catsRes.data);
+      const [plansData, catsData, examsData] = await Promise.all([
+        SubscriptionService.getAllPlans(),
+        SubscriptionService.getAllCategories(),
+        SubscriptionService.getAllExams()
+      ]);
+      setPlans(plansData);
+      setExamCategories(catsData);
+      setExams(examsData);
     } catch (error) {
-      console.error("Database fetch error: ", error);
+      console.error("Error fetching data:", error);
     } finally {
       setLoadingData(false);
     }
@@ -54,7 +99,6 @@ export default function SubscriptionManager() {
     fetchData();
   }, []);
 
-  // Stats Counters
   const stats = [
     { label: 'Total Plans', value: plans.length, icon: Crown, color: 'text-purple-400' },
     { label: 'Active Plans', value: plans.filter(p => p.active).length, icon: CheckCircle, color: 'text-emerald-400' },
@@ -62,94 +106,38 @@ export default function SubscriptionManager() {
     { label: 'Total Credits Pool', value: examCategories.reduce((acc, cat) => acc + (cat.credits || 0), 0), icon: Database, color: 'text-amber-400' },
   ];
 
-  // ==========================================
-  // DB CRUD Operations for Plans
-  // ==========================================
   const addPlan = async () => {
     try {
-      const res = await axios.post(`${API_BASE_URL}/plans`, formData);
-      setPlans([...plans, res.data]);
+      const res = await SubscriptionService.createNewPlan(formData);
+      setPlans([...plans, res]);
       resetForm();
-    } catch (error) {
-      console.error("Add plan failed:", error);
-    }
+    } catch (error) { console.error("Add plan failed:", error); }
   };
 
   const updatePlan = async () => {
     try {
-      await axios.put(`${API_BASE_URL}/plans/${editingItem.id}`, formData);
+      await SubscriptionService.updateExistingPlan(editingItem.id, formData);
       setPlans(plans.map(p => p.id === editingItem.id ? { ...p, ...formData, price: parseInt(formData.price), credits: parseInt(formData.credits) } : p));
       resetForm();
-    } catch (error) {
-      console.error("Update plan failed:", error);
-    }
+    } catch (error) { console.error("Update plan failed:", error); }
   };
 
   const deletePlan = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this plan?")) return;
+    if (!window.confirm("Are you sure?")) return;
     try {
-      await axios.delete(`${API_BASE_URL}/plans/${id}`);
+      await SubscriptionService.deleteExistingPlan(id);
       setPlans(plans.filter(p => p.id !== id));
-    } catch (error) {
-      console.error("Delete plan failed:", error);
-    }
+    } catch (error) { console.error("Delete failed:", error); }
   };
 
   const togglePlanStatus = async (id, currentStatus) => {
     try {
-      await axios.put(`${API_BASE_URL}/plans/${id}`, { active: !currentStatus });
+      await SubscriptionService.updateExistingPlan(id, { active: !currentStatus });
       setPlans(plans.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
-    } catch (error) {
-      console.error("Toggle plan status failed:", error);
-    }
+    } catch (error) { console.error("Toggle plan status failed:", error); }
   };
 
-  // ==========================================
-  // DB CRUD Operations for Exam Categories
-  // ==========================================
-  const addExamCategory = async () => {
-    try {
-      const res = await axios.post(`${API_BASE_URL}/categories`, examFormData);
-      setExamCategories([...examCategories, res.data]);
-      resetExamForm();
-    } catch (error) {
-      console.error("Add category failed:", error);
-    }
-  };
-
-  const updateExamCategory = async () => {
-    try {
-      await axios.put(`${API_BASE_URL}/categories/${editingItem.id}`, examFormData);
-      setExamCategories(examCategories.map(c => c.id === editingItem.id ? { ...c, ...examFormData, credits: parseInt(examFormData.credits), exams: parseInt(examFormData.exams) } : c));
-      resetExamForm();
-    } catch (error) {
-      console.error("Update category failed:", error);
-    }
-  };
-
-  const deleteExamCategory = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this category?")) return;
-    try {
-      await axios.delete(`${API_BASE_URL}/categories/${id}`);
-      setExamCategories(examCategories.filter(c => c.id !== id));
-    } catch (error) {
-      console.error("Delete category failed:", error);
-    }
-  };
-
-  const toggleExamStatus = async (id, currentStatus) => {
-    const nextStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    try {
-      await axios.put(`${API_BASE_URL}/categories/${id}`, { status: nextStatus });
-      setExamCategories(examCategories.map(c => c.id === id ? { ...c, status: nextStatus } : c));
-    } catch (error) {
-      console.error("Toggle category status failed:", error);
-    }
-  };
-
-  // Helpers
   const resetForm = () => { setFormData({ name: '', price: '', credits: '', features: [''], popular: false }); setEditingItem(null); setShowModal(false); };
-  const resetExamForm = () => { setExamFormData({ name: '', credits: '', exams: '', status: 'active' }); setEditingItem(null); setShowModal(false); };
   const handleFeatureChange = (index, val) => { const f = [...formData.features]; f[index] = val; setFormData({ ...formData, features: f }); };
   const addFeatureField = () => { setFormData({ ...formData, features: [...formData.features, ''] }); };
   const removeFeatureField = (idx) => { setFormData({ ...formData, features: formData.features.filter((_, i) => i !== idx) }); };
@@ -234,27 +222,62 @@ export default function SubscriptionManager() {
             ) : (
               <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <div className="flex justify-between items-center mb-6">
-                  <div><h2 className="text-lg font-semibold text-white">Exam Category Credit Fixer</h2><p className="text-sm text-gray-400">Assign fixed credit costs for entry tokens</p></div>
-                  <button onClick={() => { setModalType('exam'); setEditingItem(null); resetExamForm(); setShowModal(true); }} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-sm font-medium flex items-center gap-2 text-white"><Plus size={16}/>Add Category</button>
+                  <div>
+                    <h2 className="text-xl font-bold text-white tracking-tight">Exam Category Credit Fixer</h2>
+                    <p className="text-sm text-gray-400 mt-1">Assign and manually update fixed credit costs for entry tokens</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowHistoryModal(true)}
+                    className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-xl text-sm font-medium flex items-center gap-2 text-white shadow-lg shadow-blue-500/10 transition-all"
+                  >
+                    <History size={16}/>View History
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {examCategories.map((cat) => (
-                    <GlassCard key={cat.id} className={`p-6 relative transition-all ${cat.status === 'active' ? 'border-white/10' : 'border-red-500/20 opacity-50'}`}>
-                      <div className="flex justify-between items-start mb-4">
-                        <h3 className="text-lg font-bold text-white">{cat.name}</h3>
-                        <span className={`text-[10px] px-2 py-0.5 border rounded-md uppercase font-semibold ${cat.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{cat.status}</span>
-                      </div>
-                      <div className="space-y-2 mb-4">
-                        <div className="flex justify-between text-sm bg-white/5 p-2 rounded-lg"><span className="text-gray-400">Credits Required</span><span className="font-bold text-white">{cat.credits}</span></div>
-                        {/* <div className="flex justify-between text-sm bg-white/5 p-2 rounded-lg"><span className="text-gray-400">Exams Count</span><span className="text-gray-300">{cat.exams}</span></div> */}
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => toggleExamStatus(cat.id, cat.status)} className={`flex-1 py-2 rounded-xl text-xs font-medium ${cat.status === 'active' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>{cat.status === 'active' ? 'Active' : 'Inactive'}</button>
-                        <button onClick={() => { setModalType('exam'); setEditingItem(cat); setExamFormData({ name: cat.name, credits: cat.credits.toString(), exams: cat.exams.toString(), status: cat.status }); setShowModal(true); }} className="p-2 bg-white/5 border border-white/5 rounded-xl text-gray-400 hover:text-white"><Edit size={16}/></button>
-                        <button onClick={() => deleteExamCategory(cat.id)} className="p-2 bg-red-500/10 border border-red-500/10 rounded-xl text-red-400 hover:bg-red-500/20"><Trash2 size={16}/></button>
-                      </div>
-                    </GlassCard>
+                  {examCategories.map((cat, index) => (
+                    <motion.div 
+                      key={cat.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <GlassCard className="p-6 relative border-white/10 hover:border-white/20 transition-all group">
+                        <div className="flex justify-between items-start mb-5">
+                          <div>
+                            <h3 className="text-xl font-bold text-white tracking-wide">{cat.name || cat.category_name}</h3>
+                            {cat.language && (
+                              <span className="text-xs bg-white/5 px-2 py-0.5 rounded-full text-gray-300 mt-2 inline-block">
+                                {cat.language}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md uppercase font-semibold">
+                            {cat.status || 'Active'}
+                          </span>
+                        </div>
+                        
+                        <div className="flex items-center justify-between bg-white/5 rounded-xl p-3 mb-4 border border-white/5">
+                          <span className="text-sm text-gray-400 font-medium">Credits Required</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            value={tempCredits[cat.id] !== undefined ? tempCredits[cat.id] : (cat.credits || 0)} 
+                            onChange={(e) => handleCreditChange(cat.id, e.target.value)}
+                            className="w-20 bg-slate-950/60 border border-white/10 rounded-lg px-2 py-1 text-white text-sm font-bold text-center focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => handleUpdateSubmit(cat.id, cat.credits, (cat.name || cat.category_name))}
+                            className="w-full bg-slate-900 hover:bg-slate-800 text-white border border-white/10 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 active:scale-95"
+                          >
+                            <Save size={16} /> Update
+                          </button>
+                        </div>
+                      </GlassCard>
+                    </motion.div>
                   ))}
                 </div>
               </motion.div>
@@ -263,44 +286,149 @@ export default function SubscriptionManager() {
         </>
       )}
 
-      {/* Shared Configuration Modal */}
+      {/* Plan Add/Edit Modal */}
       <AnimatePresence>
         {showModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-gradient-to-br from-[#0f1629] to-[#1a1f3a] border border-white/10 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-2xl p-6 overflow-y-auto max-h-[90vh] text-white"
+            >
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">{modalType === 'plan' ? (editingItem ? 'Edit Tier' : 'Add New Tier') : (editingItem ? 'Edit Exam Category' : 'Add Category')}</h2>
-                <button onClick={() => setShowModal(false)} className="p-2 bg-white/5 rounded-xl text-gray-400"><X size={16}/></button>
+                <h3 className="text-xl font-bold">{editingItem ? 'Edit Subscription Plan' : 'Create New Plan'}</h3>
+                <button onClick={resetForm} className="p-1 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white">
+                  <X size={20} />
+                </button>
               </div>
 
-              {modalType === 'plan' ? (
-                <div className="space-y-4">
-                  <div><label className="text-xs text-gray-400 block mb-1">Plan Name</label><input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
-                  <div><label className="text-xs text-gray-400 block mb-1">Price (LKR)</label><input type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
-                  <div><label className="text-xs text-gray-400 block mb-1">Credits Per Month</label><input type="number" value={formData.credits} onChange={(e) => setFormData({ ...formData, credits: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Plan Name</label>
+                  <input 
+                    type="text" 
+                    value={formData.name} 
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-purple-500"
+                    placeholder="e.g. Gold Access"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs text-gray-400 block mb-1">Tiers Feature Nodes</label>
-                    {formData.features.map((f, i) => (
-                      <div key={i} className="flex gap-2 mb-2">
-                        <input type="text" value={f} onChange={(e) => handleFeatureChange(i, e.target.value)} className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/>
-                        {formData.features.length > 1 && <button onClick={() => removeFeatureField(i)} className="p-2 bg-red-500/10 rounded-xl text-red-400"><X size={16}/></button>}
+                    <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Price (LKR)</label>
+                    <input 
+                      type="number" 
+                      value={formData.price} 
+                      onChange={e => setFormData({ ...formData, price: e.target.value })}
+                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-purple-500"
+                      placeholder="e.g. 1500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Monthly Credits</label>
+                    <input 
+                      type="number" 
+                      value={formData.credits} 
+                      onChange={e => setFormData({ ...formData, credits: e.target.value })}
+                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-purple-500"
+                      placeholder="e.g. 50"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex justify-between items-center">
+                    <span>Features Included</span>
+                    <button onClick={addFeatureField} className="text-purple-400 hover:text-purple-300 text-xs flex items-center gap-1 font-bold">
+                      <Plus size={14} /> Add Line
+                    </button>
+                  </label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {formData.features.map((feat, index) => (
+                      <div key={index} className="flex gap-2">
+                        <input 
+                          type="text" 
+                          value={feat} 
+                          onChange={e => handleFeatureChange(index, e.target.value)}
+                          className="flex-1 bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
+                          placeholder={`Feature #${index + 1}`}
+                        />
+                        <button onClick={() => removeFeatureField(index)} className="p-2 hover:bg-red-500/10 rounded-xl text-red-400 border border-transparent hover:border-red-500/20">
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     ))}
-                    <button onClick={addFeatureField} className="text-xs text-blue-400 mt-1 flex items-center gap-1">+ Add Node Feature</button>
                   </div>
-                  <div className="flex items-center gap-2"><input type="checkbox" checked={formData.popular} onChange={(e) => setFormData({ ...formData, popular: e.target.checked })} className="accent-purple-500"/><label className="text-xs text-gray-400">Mark Tier as Most Popular</label></div>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div><label className="text-xs text-gray-400 block mb-1">Category Domain Identifier</label><input type="text" value={examFormData.name} onChange={(e) => setExamFormData({ ...examFormData, name: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
-                  <div><label className="text-xs text-gray-400 block mb-1">Valuation Token Weight (Credits)</label><input type="number" value={examFormData.credits} onChange={(e) => setExamFormData({ ...examFormData, credits: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div>
-                  {/* <div><label className="text-xs text-gray-400 block mb-1">Total Loaded Exam Structures</label><input type="number" value={examFormData.exams} onChange={(e) => setExamFormData({ ...examFormData, exams: e.target.value })} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none"/></div> */}
-                </div>
-              )}
 
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 bg-white/5 rounded-xl text-sm font-medium">Cancel</button>
-                <button onClick={modalType === 'plan' ? (editingItem ? updatePlan : addPlan) : (editingItem ? updateExamCategory : addExamCategory)} className="flex-1 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-sm font-medium flex items-center justify-center gap-2 text-white"><Save size={16}/>{editingItem ? 'Update Node' : 'Save Node'}</button>
+                <div className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/5 mt-4">
+                  <input 
+                    type="checkbox" 
+                    id="popular"
+                    checked={formData.popular} 
+                    onChange={e => setFormData({ ...formData, popular: e.target.checked })}
+                    className="w-4 h-4 text-purple-600 bg-black/20 border-white/10 rounded focus:ring-purple-500"
+                  />
+                  <label htmlFor="popular" className="text-sm font-medium text-gray-300 cursor-pointer select-none">
+                    Feature this plan as "Most Popular"
+                  </label>
+                </div>
+
+                <button 
+                  onClick={editingItem ? updatePlan : addPlan}
+                  className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl text-sm font-bold text-white mt-6 transition-all shadow-lg"
+                >
+                  {editingItem ? 'Save Changes' : 'Create Plan'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Credit History Modal */}
+      <AnimatePresence>
+        {showHistoryModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-2xl bg-slate-900 border border-white/10 rounded-2xl p-6 overflow-hidden flex flex-col max-h-[80vh] text-white"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <History className="text-purple-400" size={20}/>
+                  <h3 className="text-xl font-bold">Credit Valuation Logs</h3>
+                </div>
+                <button onClick={() => setShowHistoryModal(false)} className="p-1 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto mt-2">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-xs text-gray-400 uppercase">
+                      <th className="py-3 px-4 font-semibold">Category</th>
+                      <th className="py-3 px-4 font-semibold text-center">Previous</th>
+                      <th className="py-3 px-4 font-semibold text-center">Updated</th>
+                      <th className="py-3 px-4 font-semibold text-right">Date Changed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditHistory.map((log) => (
+                      <tr key={log.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <td className="py-3 px-4 font-medium text-gray-200">{log.category}</td>
+                        <td className="py-3 px-4 text-center text-red-400 font-bold">{log.previous}</td>
+                        <td className="py-3 px-4 text-center text-emerald-400 font-bold">{log.updated}</td>
+                        <td className="py-3 px-4 text-right text-xs text-gray-400">{log.date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </motion.div>
           </div>

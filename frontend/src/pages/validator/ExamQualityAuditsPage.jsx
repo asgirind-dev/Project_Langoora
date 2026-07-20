@@ -43,7 +43,8 @@ const ExamQualityAuditsPage = () => {
   const fetchPendingExams = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/exams/pending-audits");
+      // Route directed to your isolated validator endpoints
+      const response = await fetch("/api/validator-exams/pending-audits");
       const result = await response.json();
       if (result.success) {
         setExams(result.data);
@@ -64,7 +65,8 @@ const ExamQualityAuditsPage = () => {
     setModalLoading(true);
     setModalQuestions([]);
     try {
-      const response = await fetch(`/api/exams/${exam.id}/questions`);
+      // Route directed to your isolated validator endpoints
+      const response = await fetch(`/api/validator-exams/${exam.id}/questions`);
       const result = await response.json();
       if (result.success) {
         setModalQuestions(result.data);
@@ -91,7 +93,8 @@ const ExamQualityAuditsPage = () => {
     setActionLoading(examId);
 
     try {
-      const response = await fetch(`/api/exams/${examId}/status`, {
+      // Route directed to your isolated validator endpoints
+      const response = await fetch(`/api/validator-exams/${examId}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),

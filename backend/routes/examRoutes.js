@@ -1,45 +1,75 @@
 const express = require("express");
 const router = express.Router();
 
-// Destructure all the functions out of the consolidated controller
 const {
   createExam,
+  getAllExams,
   getStudentExams,
   deleteStudentExam,
   uploadAsset,
-  getPendingAudits, // 👈 Added
-  getExamQuestions, // 👈 Added
-  updateExamStatus, // 👈 Added
+  deleteAsset,
 } = require("../controllers/examController");
 
 const { protect, authorizeRoles } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
-// 🔒 Asset Management
+// ============================================================
+//  TUTOR / ADMIN ENDPOINTS (protected)
+// ============================================================
+
+/**
+ * 🔒 Upload exam asset (image/audio)
+ * POST /api/exams/upload-asset
+ */
 router.post(
   "/upload-asset",
-  upload.single("file"),
   protect,
   authorizeRoles("tutor", "admin"),
+  upload.single("file"),
   uploadAsset,
 );
 
-// 📊 Student Attempts Paths
-router.get("/student-exams", getStudentExams);
-router.delete("/student-exams/:id", deleteStudentExam);
+/**
+ * 🔒 Delete exam asset
+ * POST /api/exams/delete-asset
+ */
+router.post(
+  "/delete-asset",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  deleteAsset,
+);
 
-// 🚀 Core Tutor Exam Architecture Creation
+/**
+ * 🔒 Create a new exam with questions
+ * POST /api/exams/create
+ */
 router.post("/create", protect, authorizeRoles("tutor", "admin"), createExam);
 
-// 🔍 --- QUALITY AUDIT ROUTES (Academic Validator Actions) ---
+// ============================================================
+//  STUDENT DASHBOARD ENDPOINT
+// ============================================================
 
-// URL: GET http://localhost:5000/api/exams/pending-audits
-router.get("/pending-audits", getPendingAudits);
+/**
+ * 📚 Get all available exams for students to browse
+ * GET /api/exams/available
+ */
+router.get("/available", getAllExams);
 
-// URL: GET http://localhost:5000/api/exams/:examId/questions
-router.get("/:examId/questions", getExamQuestions);
+// ============================================================
+//  STUDENT EXAM ATTEMPTS MANAGEMENT
+// ============================================================
 
-// URL: PUT http://localhost:5000/api/exams/:examId/status
-router.put("/:examId/status", updateExamStatus);
+/**
+ * 📊 Get all student exam attempts
+ * GET /api/exams/student-exams
+ */
+router.get("/student-exams", getStudentExams);
+
+/**
+ * 🗑️ Delete a student exam attempt
+ * DELETE /api/exams/student-exams/:id
+ */
+router.delete("/student-exams/:id", deleteStudentExam);
 
 module.exports = router;
