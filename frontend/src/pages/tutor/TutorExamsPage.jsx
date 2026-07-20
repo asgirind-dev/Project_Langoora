@@ -72,10 +72,10 @@ export default function TutorExamsPage() {
     }
   };
 
-  // ✏️ Edit exam - navigate to create page with exam ID as query parameter
-const handleEdit = (examId) => {
-  navigate(`/tutor/edit?examId=${examId}`);
-};
+  // ✏️ Edit exam
+  const handleEdit = (examId) => {
+    navigate(`/tutor/edit?examId=${examId}`);
+  };
 
   // 📊 View analytics
   const handleAnalytics = (examId) => {

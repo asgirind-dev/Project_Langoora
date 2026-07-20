@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronRight, ChevronLeft, BookOpen, Plus, Trash2, 
   GripVertical, Upload, Save, Send, CheckCircle, 
-  Mic, ShieldAlert, Loader, X, AlertCircle, Info, FileText, HelpCircle, Image
+  Mic, ShieldAlert, Loader, X, AlertCircle, Info, FileText, HelpCircle, Image, Clock
 } from 'lucide-react';
-import { createTutorExam, uploadExamAsset, getExamById } from '../../services/examService';
+import { createTutorExam, uploadExamAsset, getExamById, updateExamDraft } from '../../services/examService';
 import { fetchActiveExamSchema } from '../../services/languageService';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -14,6 +14,9 @@ import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
 const STEPS = ['Exam Details', 'Sections', 'Questions', 'Preview & Publish'];
+
+// ⏱️ Auto-save interval (5 seconds)
+const AUTO_SAVE_INTERVAL = 5000;
 
 export default function CreateExamPage() {
   const navigate = useNavigate();
@@ -25,6 +28,14 @@ export default function CreateExamPage() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [error, setError] = useState('');
+
+  // 🆕 Auto-save states
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [examId, setExamId] = useState(null); // For existing exam
+  const autoSaveTimerRef = useRef(null);
+  const isSavingRef = useRef(false);
 
   const [meta, setMeta] = useState({
     title: '', category_id: '', level_id: '', duration_minutes: 0, description: '', thumbnail: ''
@@ -81,15 +92,163 @@ export default function CreateExamPage() {
     setMeta(p => ({ ...p, duration_minutes: totalTime }));
   }, [sections]);
 
+  // 🆕 Mark changes when any data changes
+  useEffect(() => {
+    if (!globalLoading) {
+      setHasChanges(true);
+    }
+  }, [meta, sections, questions]);
+
   // 📝 Check if editing existing exam
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const editExamId = searchParams.get('examId');
     
     if (editExamId) {
+      setExamId(editExamId);
       loadExamForEdit(editExamId);
     }
   }, []);
+
+  // 🆕 Auto-save effect
+  useEffect(() => {
+    // Clear existing timer
+    if (autoSaveTimerRef.current) {
+      clearInterval(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+
+    // Start auto-save only if we have changes and not global loading
+    if (hasChanges && !globalLoading && !isSavingRef.current) {
+      autoSaveTimerRef.current = setInterval(() => {
+        handleAutoSave();
+      }, AUTO_SAVE_INTERVAL);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearInterval(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      // Save one last time on unmount
+      if (hasChanges && !isSavingRef.current) {
+        handleAutoSave(true);
+      }
+    };
+  }, [hasChanges, globalLoading, meta, sections, questions]);
+
+  // 🆕 Handle beforeunload event (tab close, refresh, navigation)
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasChanges && !isSavingRef.current) {
+        // Save synchronously before page unload
+        handleAutoSave(true);
+        // Show confirmation dialog
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasChanges]);
+
+  // 🆕 Auto-save function
+  const handleAutoSave = async (isFinal = false) => {
+    // Prevent multiple simultaneous saves
+    if (isSavingRef.current) return;
+    
+    // Check if we have minimal data to save
+    if (!meta.title && sections.every(s => !s.questions) && questions.length === 0) {
+      return;
+    }
+
+    try {
+      isSavingRef.current = true;
+      setIsAutoSaving(true);
+
+      // Prepare draft data
+      const draftData = {
+        title: meta.title.trim() || 'Untitled Draft',
+        category_id: meta.category_id || '',
+        level_id: meta.level_id || '',
+        duration_minutes: Number(meta.duration_minutes),
+        description: meta.description || '',
+        thumbnail: meta.thumbnail || '',
+        status: 'draft',
+        sections: sections.map(s => ({
+          name: s.name,
+          questions: Number(s.questions || 0),
+          time: Number(s.time || 0),
+          audio_url: s.audio_url || null
+        })),
+        questions: questions.map(q => {
+          if (q.is_problem) {
+            return {
+              id: q.id,
+              is_problem: true,
+              section: q.section,
+              problem_title: q.problem_title || `Problem`,
+              explanation: q.explanation || '',
+              example_question: q.example_question || '',
+              example_correct_option: Number(q.example_correct_option || 0),
+              example_explanation: q.example_explanation || '',
+              options: q.options || ['', '', '', ''],
+              example_image_url: q.example_image_url || null,
+              example_audio_url: q.example_audio_url || null
+            };
+          } else {
+            return {
+              id: q.id,
+              is_problem: false,
+              section: q.section,
+              parent_problem_id: q.parent_problem_id || null,
+              type: q.type || 'mcq',
+              text: q.text || '',
+              options: q.options || ['', '', '', ''],
+              correct: Number(q.correct || 0),
+              explanation: q.explanation || '',
+              image_url: q.image_url || null,
+              audio_url: q.audio_url || null
+            };
+          }
+        })
+      };
+
+      // Call API to save draft
+      const response = await createTutorExam(draftData);
+      
+      if (response && response.success) {
+        setHasChanges(false);
+        setLastSavedAt(new Date());
+        if (response.examId && !examId) {
+          setExamId(response.examId);
+          // Update URL with examId for future auto-saves
+          const url = new URL(window.location);
+          url.searchParams.set('examId', response.examId);
+          window.history.replaceState({}, '', url);
+        }
+        
+        // Show notification only for final save or periodic
+        if (isFinal) {
+          showNotification('💾 Draft auto-saved successfully!', 'success');
+        }
+      }
+    } catch (err) {
+      console.error('Auto-save error:', err);
+      if (isFinal) {
+        showNotification('⚠️ Auto-save failed. Please save manually.', 'error');
+      }
+    } finally {
+      isSavingRef.current = false;
+      setIsAutoSaving(false);
+    }
+  };
 
   // 📝 Load exam data for editing
   const loadExamForEdit = async (examId) => {
@@ -169,6 +328,8 @@ export default function CreateExamPage() {
           }
         }
         
+        setHasChanges(false);
+        setLastSavedAt(new Date());
         showNotification('Exam loaded successfully!', 'success');
       }
     } catch (err) {
@@ -514,7 +675,12 @@ export default function CreateExamPage() {
     return questions.filter(q => q.parent_problem_id === problemId);
   };
 
-  // 📡 Commit Payload Data
+  // 📡 Manual Save Draft
+  const handleManualSaveDraft = async () => {
+    await handleAutoSave(true);
+  };
+
+  // 📡 Commit Payload Data (Publish)
   const handlePublishExam = async (statusType) => {
     try {
       setError('');
@@ -525,6 +691,9 @@ export default function CreateExamPage() {
       if (availableLevels.length > 0 && !meta.level_id) {
         throw new Error('Please select an exam level.');
       }
+
+      // First auto-save to ensure latest data
+      await handleAutoSave(true);
 
       const examPayload = {
         title: meta.title.trim(),
@@ -542,14 +711,12 @@ export default function CreateExamPage() {
         })),
         questions: questions.map(q => {
           if (q.is_problem) {
-            // ✅ PROBLEM = උපදෙස් + Example data (will be saved as sub-collection)
             return {
               id: q.id,
               is_problem: true,
               section: q.section,
               problem_title: q.problem_title || `Problem`,
               explanation: q.explanation || '',
-              // ✅ Example data - will become example_question sub-collection
               example_question: q.example_question || '',
               example_correct_option: Number(q.example_correct_option || 0),
               example_explanation: q.example_explanation || '',
@@ -558,7 +725,6 @@ export default function CreateExamPage() {
               example_audio_url: q.example_audio_url || null
             };
           } else {
-            // ✅ SUB-QUESTION = ඇත්ත ප්‍රශ්නය + answer
             return {
               id: q.id,
               is_problem: false,
@@ -581,6 +747,7 @@ export default function CreateExamPage() {
       const response = await createTutorExam(examPayload);
 
       if (response && response.success) {
+        setHasChanges(false);
         showNotification(statusType === 'active' ? '✅ Exam deployed successfully!' : '✅ Draft saved successfully!', 'success');
         setTimeout(() => navigate('/tutor/dashboard'), 2500); 
       }
@@ -599,6 +766,15 @@ export default function CreateExamPage() {
   // Check if listening section
   const isListeningSection = (sectionName) => {
     return sectionName?.toLowerCase().includes('listen');
+  };
+
+  // 🆕 Format last saved time
+  const getLastSavedText = () => {
+    if (!lastSavedAt) return 'Not saved yet';
+    const diff = Math.floor((Date.now() - lastSavedAt.getTime()) / 1000);
+    if (diff < 60) return `Saved ${diff}s ago`;
+    if (diff < 3600) return `Saved ${Math.floor(diff / 60)}m ago`;
+    return `Saved at ${lastSavedAt.toLocaleTimeString()}`;
   };
 
   return (
@@ -628,8 +804,46 @@ export default function CreateExamPage() {
       </AnimatePresence>
 
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-3xl font-black bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Create New Exam</h1>
-        <p className="text-gray-400 text-xs mt-0.5">Build and deploy your custom exam structure</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-black bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">
+              {examId ? 'Edit Exam' : 'Create New Exam'}
+            </h1>
+            <p className="text-gray-400 text-xs mt-0.5">
+              {examId ? 'Modify your existing exam structure' : 'Build and deploy your custom exam structure'}
+            </p>
+          </div>
+          
+          {/* 🆕 Auto-save status indicator */}
+          <div className="flex items-center gap-3">
+            {isAutoSaving && (
+              <div className="flex items-center gap-2 text-xs text-blue-400">
+                <Loader size={14} className="animate-spin" />
+                Saving...
+              </div>
+            )}
+            {!isAutoSaving && lastSavedAt && (
+              <div className="flex items-center gap-2 text-xs text-emerald-400">
+                <CheckCircle size={14} />
+                {getLastSavedText()}
+              </div>
+            )}
+            {!isAutoSaving && !lastSavedAt && (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <Clock size={14} />
+                Auto-save ready
+              </div>
+            )}
+            <button
+              onClick={handleManualSaveDraft}
+              disabled={isAutoSaving || !hasChanges}
+              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium text-gray-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              <Save size={14} />
+              Save Draft
+            </button>
+          </div>
+        </div>
       </motion.div>
 
       {/* Progress Wizard Tracker */}
@@ -653,12 +867,11 @@ export default function CreateExamPage() {
         </div>
       </GlassCard>
 
+      {/* Rest of the UI (Exam Details, Sections, Questions, Preview) - Same as before */}
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} transition={{ duration: 0.15 }}>
           
-          {/* ============================================================
-              PHASE 01: EXAM DETAILS
-          ============================================================ */}
+          {/* PHASE 01: EXAM DETAILS */}
           {step === 0 && (
             <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl">
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
@@ -783,9 +996,7 @@ export default function CreateExamPage() {
             </GlassCard>
           )}
 
-          {/* ============================================================
-              PHASE 02: SECTIONS
-          ============================================================ */}
+          {/* PHASE 02: SECTIONS */}
           {step === 1 && (
             <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl">
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
@@ -834,20 +1045,16 @@ export default function CreateExamPage() {
             </GlassCard>
           )}
 
-          {/* ============================================================
-              PHASE 03: QUESTIONS - UPDATED
-          ============================================================ */}
+          {/* PHASE 03: QUESTIONS */}
           {step === 2 && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-              
-              {/* 📂 SIDEBAR: Problems + Questions Grouped by Section */}
+              {/* Sidebar content - Same as before */}
               <div className="lg:col-span-1 space-y-4 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
                 {sections.map(sec => {
                   const secProblems = questions.filter(q => q.section === sec.name && q.is_problem);
                   const secQuestions = getQuestionsForSection(sec.name);
                   const isListening = isListeningSection(sec.name);
                   
-                  // Check if section has reached max questions
                   const maxQuestions = Number(sec.questions || 0);
                   const currentQuestions = secQuestions.length;
                   const isFull = maxQuestions > 0 && currentQuestions >= maxQuestions;
@@ -861,13 +1068,11 @@ export default function CreateExamPage() {
                           </h3>
                           {isListening && <Mic size={12} className="text-blue-400 flex-shrink-0" />}
                         </div>
-                        {/* ✅ Show QUESTIONS count */}
                         <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">
                           {currentQuestions} / {maxQuestions || 0}
                         </span>
                       </div>
 
-                      {/* 🎵 GLOBAL Audio Upload for Listening Section */}
                       {isListening && (
                         <div className="mb-3 space-y-2">
                           <label className={`flex items-center justify-center gap-2 px-3 py-2 border border-dashed rounded-lg cursor-pointer transition-colors text-[10px] uppercase font-bold tracking-wider ${
@@ -894,7 +1099,6 @@ export default function CreateExamPage() {
                         </div>
                       )}
 
-                      {/* 🔷 Render Problems in this Section */}
                       {secProblems.map((problem) => {
                         const childQuestions = getQuestionsForProblem(problem.id);
                         return (
@@ -944,7 +1148,6 @@ export default function CreateExamPage() {
                         );
                       })}
 
-                      {/* 📝 Standalone Questions (not linked to any problem) */}
                       {secQuestions.filter(q => !q.parent_problem_id).map((q) => {
                         const sectionQuestions = getQuestionsForSection(q.section);
                         const globalIndex = sectionQuestions.findIndex(item => item.id === q.id);
@@ -976,7 +1179,6 @@ export default function CreateExamPage() {
                         );
                       })}
 
-                      {/* 🛠️ ACTION BUTTONS with validation */}
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 mt-2">
                         <button 
                           onClick={() => addProblemContext(sec.name)}
@@ -1009,7 +1211,6 @@ export default function CreateExamPage() {
                         </button>
                       </div>
                       
-                      {/* ✅ Show question count progress bar */}
                       {maxQuestions > 0 && (
                         <div className="mt-2">
                           <div className="w-full bg-slate-700/30 rounded-full h-1">
@@ -1030,7 +1231,7 @@ export default function CreateExamPage() {
                 })}
               </div>
 
-              {/* 🎯 MAIN ACTIVE EDITING BOARD */}
+              {/* MAIN ACTIVE EDITING BOARD */}
               <div className="lg:col-span-3">
                 {activeItem ? (
                   <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl relative">
@@ -1058,7 +1259,7 @@ export default function CreateExamPage() {
                       </button>
                     </div>
 
-                    {/* 🔷 CONDITION A: PROBLEM BLOCK EDITOR */}
+                    {/* PROBLEM BLOCK EDITOR */}
                     {activeItem.is_problem ? (
                       <div className="space-y-4">
                         <div className="grid grid-cols-3 gap-3">
@@ -1078,19 +1279,16 @@ export default function CreateExamPage() {
                         <div className="p-4 bg-slate-950/30 border border-white/5 rounded-2xl space-y-4">
                           <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">Example Question Configuration (Optional)</h4>
                           
-                          {/* Example Question Text */}
                           <div className="flex flex-col gap-1.5">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Example Question Text</label>
                             <input type="text" placeholder="e.g. Example Question Context..." value={activeItem.example_question || ''} onChange={e => updateItemField(activeItem.id, 'example_question', e.target.value)} className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none" />
                           </div>
 
-                          {/* Example Explanation */}
                           <div className="flex flex-col gap-1.5">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Example Explanation</label>
                             <textarea rows={2} placeholder="Explain the example answer..." value={activeItem.example_explanation || ''} onChange={e => updateItemField(activeItem.id, 'example_explanation', e.target.value)} className="bg-slate-950/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none resize-none" />
                           </div>
 
-                          {/* 👂 LISTENING EXAMPLE IMAGE UPLOAD */}
                           {activeItem.section?.toLowerCase().includes('listen') && (
                             <div className="space-y-2">
                               <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block">
@@ -1114,7 +1312,6 @@ export default function CreateExamPage() {
                             </div>
                           )}
 
-                          {/* 🎵 Example Audio Upload (Optional - for Listening) */}
                           {activeItem.section?.toLowerCase().includes('listen') && (
                             <div className="space-y-2">
                               <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block">
@@ -1140,7 +1337,6 @@ export default function CreateExamPage() {
                             </div>
                           )}
 
-                          {/* Example Options (4 Options) */}
                           <div className="space-y-2">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Example Options (4 Options)</label>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1181,10 +1377,8 @@ export default function CreateExamPage() {
                         )}
                       </div>
                     ) : (
-                      
-                      // 🔹 CONDITION B: STANDARD / LISTENING QUESTION EDITOR
+                      // STANDARD / LISTENING QUESTION EDITOR
                       <div className="space-y-4">
-                        
                         <div className="bg-slate-950/30 p-2 rounded-xl border border-white/5 flex items-center justify-between">
                           <p className="text-[10px] font-mono text-slate-400">
                             Question Number: <span className="text-emerald-400 font-bold">{getQuestionLabel(activeItem)}</span>
@@ -1288,9 +1482,7 @@ export default function CreateExamPage() {
             </div>
           )}
 
-          {/* ============================================================
-              PHASE 04: PREVIEW & FINAL DEPLOYMENT
-          ============================================================ */}
+          {/* PHASE 04: PREVIEW & FINAL DEPLOYMENT */}
           {step === 3 && (
             <div className="space-y-6">
               <GlassCard className="p-6 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl space-y-6">
@@ -1344,14 +1536,14 @@ export default function CreateExamPage() {
               <div className="flex gap-3 justify-end">
                 <button 
                   disabled={submitLoading} 
-                  onClick={() => handlePublishExam('draft')} 
+                  onClick={handleManualSaveDraft} 
                   className="px-5 py-3 bg-white/5 hover:bg-white/10 text-xs font-bold uppercase tracking-wider border border-white/10 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-40"
                 >
                   <Save size={15} /> Save Draft
                 </button>
                 <button 
                   disabled={submitLoading} 
-                  onClick={() => handlePublishExam('active')} 
+                  onClick={() => handlePublishExam('published')} 
                   className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 text-xs font-bold uppercase tracking-wider text-white rounded-xl shadow-lg shadow-blue-950/30 transition-all flex items-center gap-1.5 disabled:opacity-40"
                 >
                   {submitLoading ? <Loader size={15} className="animate-spin" /> : <Send size={15} />} Deploy Exam

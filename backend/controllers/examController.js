@@ -20,7 +20,6 @@ const createExam = async (req, res) => {
       thumbnail 
     } = req.body;
 
-    // Validation
     if (!title || !category_id || !duration_minutes) {
       return res.status(400).json({ 
         success: false, 
@@ -28,7 +27,6 @@ const createExam = async (req, res) => {
       });
     }
 
-    // Prepare data for service
     const examData = {
       title,
       category_id,
@@ -43,7 +41,6 @@ const createExam = async (req, res) => {
       tutor_name: req.user?.name || 'Expert Tutor'
     };
 
-    // Call service layer
     const result = await examServices.createExamInDB(examData);
 
     if (result.success) {
@@ -132,7 +129,6 @@ const deleteExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const result = await examServices.deleteExamFromDB(examId);
-    
     return res.status(200).json(result);
   } catch (error) {
     console.error("Delete Exam Error:", error);
@@ -214,7 +210,6 @@ const uploadAsset = async (req, res) => {
       isImage
     });
 
-    // 🎵 AUDIO - Cloudinary Upload
     if (isAudio) {
       cloudinary.config({
         cloud_name: 'akarwtly',
@@ -252,7 +247,6 @@ const uploadAsset = async (req, res) => {
       return cloudinaryStream.end(req.file.buffer);
     }
 
-    // 📷 IMAGE - Base64 Conversion
     else if (isImage) {
       const base64Image = req.file.buffer.toString('base64');
       const dataUriString = `data:${mimeType};base64,${base64Image}`;
