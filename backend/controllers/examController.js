@@ -20,7 +20,6 @@ const createExam = async (req, res) => {
       thumbnail 
     } = req.body;
 
-    // Validation
     if (!title || !category_id || !duration_minutes) {
       return res.status(400).json({ 
         success: false, 
@@ -28,7 +27,6 @@ const createExam = async (req, res) => {
       });
     }
 
-    // Prepare data for service
     const examData = {
       title,
       category_id,
@@ -43,7 +41,6 @@ const createExam = async (req, res) => {
       tutor_name: req.user?.name || 'Expert Tutor'
     };
 
-    // Call service layer
     const result = await examServices.createExamInDB(examData);
 
     if (result.success) {
@@ -82,7 +79,7 @@ const getAllExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 3. Get Student Exams - Using Service Layer
+// 📊 3. Get Tutor Exams - Using Service Layer
 // =========================================================================
 const getTutorExams = async (req, res) => {
   try {
@@ -104,7 +101,29 @@ const getTutorExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 3. Get Exam by ID
+// 📊 4. Get Student Exams - Using Service Layer (ADDED THIS)
+// =========================================================================
+const getStudentExams = async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const examsList = await examServices.getStudentExamsFromDB(studentId);
+    
+    return res.status(200).json({
+      success: true,
+      data: examsList
+    });
+  } catch (error) {
+    console.error("Get Student Exams Error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Error fetching student exams', 
+      error: error.message 
+    });
+  }
+};
+
+// =========================================================================
+// 📊 5. Get Exam by ID
 // =========================================================================
 const getExamById = async (req, res) => {
   try {
@@ -126,7 +145,7 @@ const getExamById = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 4. Delete Exam
+// 🗑️ 6. Delete Exam
 // =========================================================================
 const deleteExam = async (req, res) => {
   try {
@@ -145,7 +164,7 @@ const deleteExam = async (req, res) => {
 };
 
 // =========================================================================
-// 📝 5. Update Exam Status
+// 📝 7. Update Exam Status
 // =========================================================================
 const updateExamStatus = async (req, res) => {
   try {
@@ -172,7 +191,7 @@ const updateExamStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 🚀 4. Upload Asset (Audios to Cloudinary | Images to Base64)
+// 🚀 8. Upload Asset (Audios to Cloudinary | Images to Base64)
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -285,7 +304,7 @@ const uploadAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 5. Delete Asset from Cloudinary
+// 🗑️ 9. Delete Asset from Cloudinary
 // =========================================================================
 const deleteAsset = async (req, res) => {
   try {
@@ -342,7 +361,7 @@ const deleteAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 6. Delete Student Exam - Using Service Layer
+// 🗑️ 10. Delete Student Exam - Using Service Layer
 // =========================================================================
 const deleteStudentExam = async (req, res) => {
   try {
@@ -364,11 +383,12 @@ const deleteStudentExam = async (req, res) => {
 module.exports = {
   createExam,
   getTutorExams,
+  getStudentExams,   
   getExamById,
   deleteExam,
   updateExamStatus,
   getAllExams,
-  getStudentExams,
   uploadAsset,
-  deleteAsset
+  deleteAsset,
+  deleteStudentExam
 };
