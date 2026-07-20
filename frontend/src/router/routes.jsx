@@ -132,7 +132,13 @@ export default function AppRoutes() {
           <Route path="/tutor" element={<ProtectedRoute allowedRoles={['tutor']}><TutorLayout /></ProtectedRoute>}>
             <Route index element={<TutorDashboard />} />
             <Route path="exams" element={<TutorExamsPage />} />
+            
+            {/* ✅ Create Exam Route - Supports both new and edit modes */}
             <Route path="create" element={<CreateExamPage />} />
+            
+            {/* ✅ Edit Exam Route - Pass examId as query parameter */}
+            <Route path="edit" element={<CreateExamPage />} />
+            
             <Route path="earnings" element={<TutorEarningsPage />} />
             <Route path="analytics" element={<TutorAnalyticsPage />} />
             <Route path="reviews" element={<TutorReviewsPage />} />
