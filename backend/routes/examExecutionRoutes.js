@@ -8,10 +8,9 @@ const {
   status,
   submit,
   results,
-} = require('../controllers/examExecutionController'); // 🎯 Updated module pointer mapping
-
-// (optional auth middleware logic plug-in context)
-// router.use(require('../middleware/auth'));
+  submitFeedback,
+  getSubmissions,
+} = require('../controllers/examExecutionController');
 
 router.post('/:examId/start', start);
 router.get('/:examId/metadata', metadata);
@@ -22,5 +21,11 @@ router.get('/:attemptId/status', status);
 
 router.post('/:attemptId/submit', submit);
 router.get('/:attemptId/results', results);
+
+// Feedback endpoint
+router.post('/:attemptId/feedback', submitFeedback);
+
+// Submissions history
+router.get('/submissions/student/:studentId', getSubmissions);
 
 module.exports = router;
