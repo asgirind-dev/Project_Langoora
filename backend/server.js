@@ -20,7 +20,7 @@ const tutorValidationRoutes = require("./routes/tutorValidationRoutes");
 const languageRoutes = require("./routes/languageRoutes");
 const systemSettingsRoutes = require("./routes/systemSettingsRoutes");
 const financeRoutes = require("./routes/financeRoutes");
-const validatorExamRoutes = require("./routes/validatorExamRoutes");
+const examExecutionRoutes = require("./routes/examExecutionRoutes");
 
 const app = express();
 
@@ -28,7 +28,6 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use("/api/validator-exams", validatorExamRoutes);
 
 // Routing Middleware
 app.use("/api/exams", examRoutes);
@@ -41,11 +40,13 @@ app.use("/api/planner", studyPlannerRoutes);
 app.use("/api/validator/tutors", tutorValidationRoutes);
 app.use("/api/languages", languageRoutes);
 app.use("/api/system-settings", systemSettingsRoutes);
-// 🚫 Commented out to prevent the server crash
-// app.use("/api/student-exams", studentExamRoutes);
 app.use("/api/finance", financeRoutes);
+app.use("/api/exam-execution", examExecutionRoutes);
+
+// Serve static uploads if applicable
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running cleanly on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });

@@ -4,7 +4,7 @@ const path = require("path");
 const examServices = require("../services/examServices");
 
 // =========================================================================
-// 🚀 1. Create Exam - Using Service Layer
+// 🚀 1. Create Exam
 // =========================================================================
 const createExam = async (req, res) => {
   try {
@@ -20,20 +20,18 @@ const createExam = async (req, res) => {
       thumbnail,
     } = req.body;
 
-    // Validation
-    if (!title || !category_id || !level_id || !duration_minutes) {
+    if (!title || !category_id || !duration_minutes) {
       return res.status(400).json({
         success: false,
         message: "Core metadata parameters are missing.",
       });
     }
 
-    // Prepare data for service
     const examData = {
       title,
       category_id,
-      level_id,
-      duration_minutes,
+      level_id: level_id || "",
+      duration_minutes: Number(duration_minutes),
       description: description || "",
       status: status || "draft",
       sections: sections || [],
@@ -43,7 +41,6 @@ const createExam = async (req, res) => {
       tutor_name: req.user?.name || "Expert Tutor",
     };
 
-    // Call service layer
     const result = await examServices.createExamInDB(examData);
 
     if (result.success) {
@@ -85,15 +82,21 @@ const getAllExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 3. Get Student Exams - Using Service Layer
+// 📊 3. Get Tutor Exams - Using Service Layer
 // =========================================================================
-const getStudentExams = async (req, res) => {
+const getTutorExams = async (req, res) => {
   try {
-    const examsList = await examServices.getStudentExamsFromDB();
-    return res.status(200).json(examsList);
+    const tutorId = req.user?.id;
+    const examsList = await examServices.getTutorExamsFromDB(tutorId);
+
+    return res.status(200).json({
+      success: true,
+      exams: examsList,
+    });
   } catch (error) {
-    console.error("Firebase Fetch Error:", error);
+    console.error("Get Tutor Exams Error:", error);
     return res.status(500).json({
+      success: false,
       message: "Error fetching exams",
       error: error.message,
     });
@@ -101,7 +104,96 @@ const getStudentExams = async (req, res) => {
 };
 
 // =========================================================================
-// 🚀 4. Upload Asset (Audios to Cloudinary | Images to Base64)
+// 📊 4. Get Student Exams - Using Service Layer (ADDED THIS)
+// =========================================================================
+const getStudentExams = async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const examsList = await examServices.getStudentExamsFromDB(studentId);
+
+    return res.status(200).json({
+      success: true,
+      data: examsList,
+    });
+  } catch (error) {
+    console.error("Get Student Exams Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching student exams",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// 📊 5. Get Exam by ID
+// =========================================================================
+const getExamById = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const result = await examServices.getExamByIdFromDB(examId);
+
+    return res.status(200).json({
+      success: true,
+      exam: result.exam,
+    });
+  } catch (error) {
+    console.error("Get Exam By ID Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching exam",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// 🗑️ 6. Delete Exam
+// =========================================================================
+const deleteExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const result = await examServices.deleteExamFromDB(examId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Delete Exam Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting exam",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// 📝 7. Update Exam Status
+// =========================================================================
+const updateExamStatus = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { status } = req.body;
+
+    if (!status || !["draft", "published", "archived"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Must be draft, published, or archived.",
+      });
+    }
+
+    const result = await examServices.updateExamStatusInDB(examId, status);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Update Exam Status Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error updating exam status",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// 🚀 8. Upload Asset (Audios to Cloudinary | Images to Base64)
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -127,7 +219,6 @@ const uploadAsset = async (req, res) => {
     const fileName = req.file.originalname;
     const ext = path.extname(fileName).toLowerCase();
 
-    // 🎵 Check if it's audio
     const audioExtensions = [
       ".mp3",
       ".wav",
@@ -156,7 +247,6 @@ const uploadAsset = async (req, res) => {
     const isAudio =
       audioExtensions.includes(ext) || audioMimeTypes.includes(mimeType);
 
-    // 📷 Check if it's image
     const imageExtensions = [
       ".jpg",
       ".jpeg",
@@ -190,7 +280,6 @@ const uploadAsset = async (req, res) => {
       isImage,
     });
 
-    // 🎵 AUDIO - Cloudinary Upload
     if (isAudio) {
       cloudinary.config({
         cloud_name: "akarwtly",
@@ -226,10 +315,7 @@ const uploadAsset = async (req, res) => {
       );
 
       return cloudinaryStream.end(req.file.buffer);
-    }
-
-    // 📷 IMAGE - Base64 Conversion
-    else if (isImage) {
+    } else if (isImage) {
       const base64Image = req.file.buffer.toString("base64");
       const dataUriString = `data:${mimeType};base64,${base64Image}`;
 
@@ -240,10 +326,7 @@ const uploadAsset = async (req, res) => {
         fileUrl: dataUriString,
         type: "image",
       });
-    }
-
-    // ❌ Unknown file type
-    else {
+    } else {
       console.log("❌ Unknown file type:", { mimeType, ext });
       return res.status(400).json({
         success: false,
@@ -261,7 +344,7 @@ const uploadAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 5. Delete Asset from Cloudinary
+// 🗑️ 9. Delete Asset from Cloudinary
 // =========================================================================
 const deleteAsset = async (req, res) => {
   try {
@@ -274,7 +357,6 @@ const deleteAsset = async (req, res) => {
       });
     }
 
-    // Base64 images can't be deleted from Cloudinary
     if (fileUrl.startsWith("data:image")) {
       return res.status(200).json({
         success: true,
@@ -282,7 +364,6 @@ const deleteAsset = async (req, res) => {
       });
     }
 
-    // Delete from Cloudinary
     cloudinary.config({
       cloud_name: "akarwtly",
       api_key: "533185996121573",
@@ -319,7 +400,7 @@ const deleteAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 6. Delete Student Exam - Using Service Layer
+// 🗑️ 10. Delete Student Exam - Using Service Layer
 // =========================================================================
 const deleteStudentExam = async (req, res) => {
   try {
@@ -340,8 +421,12 @@ const deleteStudentExam = async (req, res) => {
 // =========================================================================
 module.exports = {
   createExam,
-  getAllExams,
+  getTutorExams,
   getStudentExams,
+  getExamById,
+  deleteExam,
+  updateExamStatus,
+  getAllExams,
   uploadAsset,
   deleteAsset,
   deleteStudentExam,
