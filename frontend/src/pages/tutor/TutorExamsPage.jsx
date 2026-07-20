@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, Plus, Users, Star, Eye, Edit3, Trash2, BarChart2, Loader } from 'lucide-react';
+import { BookOpen, Plus, Users, Star, Edit3, Trash2, BarChart2, Loader } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -15,7 +15,6 @@ export default function TutorExamsPage() {
   const [error, setError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // 📡 Fetch exams from backend
   useEffect(() => {
     fetchExams();
   }, []);
@@ -43,7 +42,6 @@ export default function TutorExamsPage() {
     ? exams 
     : exams.filter(e => e.status === filter);
 
-  // 🗑️ Delete exam
   const handleDelete = async (examId) => {
     try {
       const response = await deleteExam(examId);
@@ -57,7 +55,6 @@ export default function TutorExamsPage() {
     }
   };
 
-  // 📝 Update status (draft -> published)
   const handlePublish = async (examId) => {
     try {
       const response = await updateExamStatus(examId, 'published');
@@ -72,12 +69,10 @@ export default function TutorExamsPage() {
     }
   };
 
-  // ✏️ Edit exam
   const handleEdit = (examId) => {
     navigate(`/tutor/edit?examId=${examId}`);
   };
 
-  // 📊 View analytics
   const handleAnalytics = (examId) => {
     navigate(`/tutor/analytics/${examId}`);
   };
@@ -123,7 +118,6 @@ export default function TutorExamsPage() {
         ))}
       </div>
 
-      {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-[#0a0f1e] border border-white/10 rounded-2xl p-6 max-w-md w-full">
@@ -245,7 +239,6 @@ export default function TutorExamsPage() {
           ))
         )}
 
-        {/* Create New Exam Card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <GlassCard 
             hover 

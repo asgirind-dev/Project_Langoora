@@ -7,6 +7,8 @@ const {
   getExamById,
   deleteExam,
   updateExamStatus,
+  updateExamDraft,
+  updateExam,
   getAllExams,
   getStudentExams, 
   deleteStudentExam,
@@ -33,17 +35,42 @@ router.post('/upload-asset', protect, authorizeRoles('tutor', 'admin'), upload.s
  */
 router.post('/delete-asset', protect, authorizeRoles('tutor', 'admin'), deleteAsset);
 
-// 📊 URL: GET /api/exams/tutor-exams
+/**
+ * 🔒 Get tutor exams
+ * GET /api/exams/tutor-exams
+ */
 router.get('/tutor-exams', protect, authorizeRoles('tutor', 'admin'), getTutorExams);
 
-// 📊 URL: GET /api/exams/:examId
+/**
+ * 🔒 Get exam by ID
+ * GET /api/exams/:examId
+ */
 router.get('/:examId', protect, authorizeRoles('tutor', 'admin'), getExamById);
 
-// 🗑️ URL: DELETE /api/exams/:examId
+/**
+ * 🔒 Delete exam
+ * DELETE /api/exams/:examId
+ */
 router.delete('/:examId', protect, authorizeRoles('tutor', 'admin'), deleteExam);
 
-// 📝 URL: PUT /api/exams/:examId/status
+/**
+ * 🔒 Update exam status
+ * PUT /api/exams/:examId/status
+ */
 router.put('/:examId/status', protect, authorizeRoles('tutor', 'admin'), updateExamStatus);
+
+/**
+ * 🔒 Update exam draft (auto-save)
+ * PUT /api/exams/:examId/draft
+ */
+router.put('/:examId/draft', protect, authorizeRoles('tutor', 'admin'), updateExamDraft);
+
+/**
+ * 🔒 Update exam (Full Update)
+ * PUT /api/exams/:examId
+ */
+router.put('/:examId', protect, authorizeRoles('tutor', 'admin'), updateExam);
+
 /**
  * 🔒 Create a new exam with questions
  * POST /api/exams/create
@@ -68,12 +95,12 @@ router.get('/available', getAllExams);
  * 📊 Get all student exam attempts
  * GET /api/exams/student-exams
  */
-router.get('/student-exams', getStudentExams);
+router.get('/student-exams', protect, getStudentExams);
 
 /**
  * 🗑️ Delete a student exam attempt
  * DELETE /api/exams/student-exams/:id
  */
-router.delete('/student-exams/:id', deleteStudentExam);
+router.delete('/student-exams/:id', protect, deleteStudentExam);
 
 module.exports = router;
