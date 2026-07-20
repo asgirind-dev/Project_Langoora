@@ -22,6 +22,7 @@ const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
 
+
 const app = express();
 
 // Middlewares
@@ -45,6 +46,7 @@ app.use('/api/exam-execution', examExecutionRoutes);
 
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

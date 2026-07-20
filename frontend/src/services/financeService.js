@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api/finance'; // Oyage backend route eka anuwa meka wenas karanna
+const API_URL = 'http://localhost:5000/api/finance';
 
 const getAuthConfig = () => ({
   headers: { 
@@ -10,6 +10,7 @@ const getAuthConfig = () => ({
 });
 
 class FinanceService {
+  
   async getDashboardStats() {
     const response = await axios.get(`${API_URL}/stats`, getAuthConfig());
     return response.data;
@@ -22,6 +23,11 @@ class FinanceService {
 
   async getRevenueChartData() {
     const response = await axios.get(`${API_URL}/revenue-chart`, getAuthConfig());
+    return response.data;
+  }
+
+  async getActiveUsers() {
+    const response = await axios.get(`${API_URL}/active-users`, getAuthConfig());
     return response.data;
   }
 }
