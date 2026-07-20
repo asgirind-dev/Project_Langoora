@@ -23,10 +23,7 @@ const upload = require('../middleware/uploadMiddleware');
 //  TUTOR / ADMIN ENDPOINTS (protected)
 // ============================================================
 
-/**
- * 🔒 Upload exam asset (image/audio)
- * POST /api/exams/upload-asset
- */
+
 router.post('/upload-asset', protect, authorizeRoles('tutor', 'admin'), upload.single('file'), uploadAsset);
 
 /**
