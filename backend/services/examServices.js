@@ -61,7 +61,7 @@ const createExamInDB = async (examData) => {
 
     await examRef.set(examMetadata);
 
-    // 🚀 Insert Problems with Sub-Questions and Example Question as SUB-COLLECTIONS
+    // 🚀 Insert Problems with Sub-Questions
     if (problems.length > 0) {
       const batch = db.batch();
       
@@ -69,39 +69,28 @@ const createExamInDB = async (examData) => {
         const problemId = `problem_${String(index + 1).padStart(2, '0')}`;
         const problemRef = examRef.collection('problems').doc(problemId);
         
-        // Get sub-questions for this problem
         const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
 
-        // PROBLEM = උපදෙස්/පැහැදිලි කිරීම
         const problemData = {
           problem_number: index + 1,
           section: problem.section,
           problem_title: problem.problem_title ? problem.problem_title.trim() : `Problem ${index + 1}`,
           explanation: problem.explanation || '',
           total_sub_questions: problemSubQuestions.length,
-          created_at: new Date().toISOString()
-        };
-
-        batch.set(problemRef, problemData);
-
-        // 🚀 Add EXAMPLE QUESTION as a SUB-COLLECTION (example_question)
-        if (problem.example_question && problem.example_question.trim()) {
-          const exampleRef = problemRef.collection('example_question').doc('example');
+          created_at: new Date().toISOString(),
           
-          const exampleData = {
+          example: problem.example_question ? {
             text: problem.example_question.trim(),
             options: problem.options || ['', '', '', ''],
             correct_answer_index: Number(problem.example_correct_option || 0),
             explanation: problem.example_explanation || '',
             image_url: problem.example_image_url || null,
-            audio_url: problem.example_audio_url || null,
-            created_at: new Date().toISOString()
-          };
+            audio_url: problem.example_audio_url || null
+          } : null
+        };
 
-          batch.set(exampleRef, exampleData);
-        }
+        batch.set(problemRef, problemData);
 
-        // 🚀 Add SUB-QUESTIONS as a SUB-COLLECTION
         if (problemSubQuestions.length > 0) {
           const subQuestionsCollectionRef = problemRef.collection('sub_questions');
           
@@ -129,7 +118,6 @@ const createExamInDB = async (examData) => {
     }
 
     console.log(`✅ Exam created: ${cleanExamId}`);
-    console.log(`📊 Problems: ${problems.length}, Questions: ${subQuestions.length}`);
     
     return { success: true, examId: cleanExamId };
 
@@ -164,7 +152,7 @@ const getTutorExamsFromDB = async (tutorId) => {
     return examsList;
   } catch (error) {
     console.error('Get Tutor Exams Service Error:', error);
-    throw new Error(error.message);
+    return [];
   }
 };
 
@@ -181,7 +169,6 @@ const getExamByIdFromDB = async (examId) => {
     
     const examData = examDoc.data();
     
-    // Get problems and sub-questions
     const problemsSnapshot = await db.collection('exams')
       .doc(examId)
       .collection('problems')
@@ -193,7 +180,6 @@ const getExamByIdFromDB = async (examId) => {
       const problemData = problemDoc.data();
       const problemId = problemDoc.id;
       
-      // Get example question
       let example = null;
       try {
         const exampleDoc = await db.collection('exams')
@@ -211,7 +197,6 @@ const getExamByIdFromDB = async (examId) => {
         example = null;
       }
       
-      // Get sub-questions
       const subQuestionsSnapshot = await db.collection('exams')
         .doc(examId)
         .collection('problems')
@@ -262,7 +247,6 @@ const deleteExamFromDB = async (examId) => {
     for (const problemDoc of problemsSnapshot.docs) {
       const problemId = problemDoc.id;
       
-      // Delete example_question
       try {
         const exampleDoc = await db.collection('exams')
           .doc(examId)
@@ -277,7 +261,6 @@ const deleteExamFromDB = async (examId) => {
         }
       } catch (e) {}
       
-      // Delete sub-questions
       const subQuestionsSnapshot = await db.collection('exams')
         .doc(examId)
         .collection('problems')
@@ -289,11 +272,9 @@ const deleteExamFromDB = async (examId) => {
         batch.delete(subDoc.ref);
       });
       
-      // Delete problem
       batch.delete(problemDoc.ref);
     }
     
-    // Delete exam document
     batch.delete(db.collection('exams').doc(examId));
     
     await batch.commit();
