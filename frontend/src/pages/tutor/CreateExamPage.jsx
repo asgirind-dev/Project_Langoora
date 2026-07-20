@@ -6,7 +6,7 @@ import {
   GripVertical, Upload, Save, Send, CheckCircle, 
   Mic, ShieldAlert, Loader, X, AlertCircle, Info, FileText, HelpCircle, Image, Clock
 } from 'lucide-react';
-import { createTutorExam, uploadExamAsset, getExamById, updateExamDraft } from '../../services/examService';
+import { createTutorExam, uploadExamAsset, getExamById, updateExamDraft, updateExam } from '../../services/examService';
 import { fetchActiveExamSchema } from '../../services/languageService';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -14,9 +14,7 @@ import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
 const STEPS = ['Exam Details', 'Sections', 'Questions', 'Preview & Publish'];
-
-// ⏱️ Auto-save interval (5 seconds)
-const AUTO_SAVE_INTERVAL = 5000;
+const AUTO_SAVE_INTERVAL = 10000; // 10 seconds
 
 export default function CreateExamPage() {
   const navigate = useNavigate();
@@ -29,11 +27,11 @@ export default function CreateExamPage() {
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [error, setError] = useState('');
 
-  // 🆕 Auto-save states
+  // Auto-save states
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
-  const [examId, setExamId] = useState(null); // For existing exam
+  const [examId, setExamId] = useState(null);
   const autoSaveTimerRef = useRef(null);
   const isSavingRef = useRef(false);
 
@@ -41,16 +39,13 @@ export default function CreateExamPage() {
     title: '', category_id: '', level_id: '', duration_minutes: 0, description: '', thumbnail: ''
   });
   
-  // 🧭 Default initial sections setup
   const [sections, setSections] = useState([
     { id: 1, name: 'Vocabulary', questions: 5, time: 25 },
     { id: 2, name: 'Grammar', questions: 5, time: 35 },
     { id: 3, name: 'Listening', questions: 5, time: 30 }
   ]);
   
-  // 📝 Questions - Start with empty array
   const [questions, setQuestions] = useState([]);
-  
   const [activeQuestionId, setActiveQuestionId] = useState(null);
 
   const showNotification = (message, type = 'success') => {
@@ -112,39 +107,33 @@ export default function CreateExamPage() {
 
   // 🆕 Auto-save effect
   useEffect(() => {
-    // Clear existing timer
     if (autoSaveTimerRef.current) {
       clearInterval(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
 
-    // Start auto-save only if we have changes and not global loading
-    if (hasChanges && !globalLoading && !isSavingRef.current) {
+    if (hasChanges && !globalLoading && !isSavingRef.current && examId) {
       autoSaveTimerRef.current = setInterval(() => {
         handleAutoSave();
       }, AUTO_SAVE_INTERVAL);
     }
 
-    // Cleanup on unmount
     return () => {
       if (autoSaveTimerRef.current) {
         clearInterval(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;
       }
-      // Save one last time on unmount
-      if (hasChanges && !isSavingRef.current) {
+      if (hasChanges && !isSavingRef.current && examId) {
         handleAutoSave(true);
       }
     };
-  }, [hasChanges, globalLoading, meta, sections, questions]);
+  }, [hasChanges, globalLoading, examId]);
 
   // 🆕 Handle beforeunload event (tab close, refresh, navigation)
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      if (hasChanges && !isSavingRef.current) {
-        // Save synchronously before page unload
+      if (hasChanges && !isSavingRef.current && examId) {
         handleAutoSave(true);
-        // Show confirmation dialog
         e.preventDefault();
         e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
         return e.returnValue;
@@ -156,14 +145,17 @@ export default function CreateExamPage() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [hasChanges]);
+  }, [hasChanges, examId]);
 
   // 🆕 Auto-save function
   const handleAutoSave = async (isFinal = false) => {
-    // Prevent multiple simultaneous saves
     if (isSavingRef.current) return;
     
-    // Check if we have minimal data to save
+    if (!examId) {
+      console.log('No examId yet, skipping auto-save');
+      return;
+    }
+    
     if (!meta.title && sections.every(s => !s.questions) && questions.length === 0) {
       return;
     }
@@ -172,7 +164,6 @@ export default function CreateExamPage() {
       isSavingRef.current = true;
       setIsAutoSaving(true);
 
-      // Prepare draft data
       const draftData = {
         title: meta.title.trim() || 'Untitled Draft',
         category_id: meta.category_id || '',
@@ -220,24 +211,16 @@ export default function CreateExamPage() {
         })
       };
 
-      // Call API to save draft
-      const response = await createTutorExam(draftData);
+      console.log('💾 Auto-saving draft for exam:', examId);
+      const response = await updateExamDraft(examId, draftData);
       
       if (response && response.success) {
         setHasChanges(false);
         setLastSavedAt(new Date());
-        if (response.examId && !examId) {
-          setExamId(response.examId);
-          // Update URL with examId for future auto-saves
-          const url = new URL(window.location);
-          url.searchParams.set('examId', response.examId);
-          window.history.replaceState({}, '', url);
-        }
-        
-        // Show notification only for final save or periodic
         if (isFinal) {
           showNotification('💾 Draft auto-saved successfully!', 'success');
         }
+        console.log('✅ Draft saved successfully');
       }
     } catch (err) {
       console.error('Auto-save error:', err);
@@ -258,8 +241,8 @@ export default function CreateExamPage() {
       
       if (response && response.success) {
         const exam = response.exam;
+        setExamId(examId);
         
-        // Set meta data
         setMeta({
           title: exam.title || '',
           category_id: exam.category_id || '',
@@ -269,7 +252,6 @@ export default function CreateExamPage() {
           thumbnail: exam.thumbnail || ''
         });
         
-        // Set sections
         if (exam.sections && exam.sections.length > 0) {
           setSections(exam.sections.map((s, idx) => ({
             id: idx + 1,
@@ -280,12 +262,10 @@ export default function CreateExamPage() {
           })));
         }
         
-        // Set questions (problems + sub-questions)
         if (exam.problems && exam.problems.length > 0) {
           const formattedQuestions = [];
           
           exam.problems.forEach((problem, pIdx) => {
-            // Add problem
             formattedQuestions.push({
               id: `problem_${pIdx + 1}`,
               is_problem: true,
@@ -300,7 +280,6 @@ export default function CreateExamPage() {
               example_audio_url: problem.example?.audio_url || null
             });
             
-            // Add sub-questions
             if (problem.sub_questions && problem.sub_questions.length > 0) {
               problem.sub_questions.forEach((sub) => {
                 formattedQuestions.push({
@@ -322,7 +301,6 @@ export default function CreateExamPage() {
           
           setQuestions(formattedQuestions);
           
-          // Set active question to first problem
           if (formattedQuestions.length > 0) {
             setActiveQuestionId(formattedQuestions[0].id);
           }
@@ -345,14 +323,9 @@ export default function CreateExamPage() {
     setMeta(p => ({ ...p, category_id: catId, level_id: '' }));
     setAvailableLevels([]);
     
-    if (!catId) {
-      return;
-    }
+    if (!catId) return;
     
     const targetCluster = activeSchema.find(c => c.id === catId || c.category_name === catId);
-    
-    console.log('🔍 Selected category:', catId);
-    console.log('📂 Target cluster:', targetCluster);
     
     if (targetCluster && targetCluster.levels && targetCluster.levels.length > 0) {
       const levels = targetCluster.levels.map(level => ({
@@ -363,10 +336,8 @@ export default function CreateExamPage() {
         ...level
       }));
       setAvailableLevels(levels);
-      console.log('✅ Levels loaded from database:', levels.length, levels);
     } else {
       setAvailableLevels([]);
-      console.log('ℹ️ No levels found for this category');
     }
 
     const isJlpt = catId.toUpperCase() === 'JLPT' || 
@@ -456,13 +427,9 @@ export default function CreateExamPage() {
   const addStandardQuestion = (sectionName) => {
     const newId = Date.now();
     
-    // Get the last problem in this section to auto-link
     const lastProblem = [...questions].reverse().find(q => q.section === sectionName && q.is_problem);
-    
-    // Check if it's Listening section
     const isListening = sectionName.toLowerCase().includes('listen');
 
-    // ✅ VALIDATION: Check if section has reached max questions
     const targetSection = sections.find(s => s.name === sectionName);
     const currentQuestionsInSection = questions.filter(q => q.section === sectionName && !q.is_problem).length;
     
@@ -494,7 +461,6 @@ export default function CreateExamPage() {
   const addListeningQuestion = (sectionName) => {
     const newId = Date.now();
     
-    // ✅ VALIDATION: Check if section has reached max questions
     const targetSection = sections.find(s => s.name === sectionName);
     const currentQuestionsInSection = questions.filter(q => q.section === sectionName && !q.is_problem).length;
     
@@ -527,7 +493,6 @@ export default function CreateExamPage() {
     const problem = questions.find(q => q.id === problemId);
     if (!problem) return;
     
-    // ✅ VALIDATION: Check if section has reached max questions
     const targetSection = sections.find(s => s.name === problem.section);
     const currentQuestionsInSection = questions.filter(q => q.section === problem.section && !q.is_problem).length;
     
@@ -680,7 +645,7 @@ export default function CreateExamPage() {
     await handleAutoSave(true);
   };
 
-  // 📡 Commit Payload Data (Publish)
+  // 📡 Commit Payload Data
   const handlePublishExam = async (statusType) => {
     try {
       setError('');
@@ -691,9 +656,6 @@ export default function CreateExamPage() {
       if (availableLevels.length > 0 && !meta.level_id) {
         throw new Error('Please select an exam level.');
       }
-
-      // First auto-save to ensure latest data
-      await handleAutoSave(true);
 
       const examPayload = {
         title: meta.title.trim(),
@@ -744,13 +706,33 @@ export default function CreateExamPage() {
 
       console.log('📤 Sending exam payload:', JSON.stringify(examPayload, null, 2));
 
-      const response = await createTutorExam(examPayload);
+      let response;
 
-      if (response && response.success) {
-        setHasChanges(false);
-        showNotification(statusType === 'active' ? '✅ Exam deployed successfully!' : '✅ Draft saved successfully!', 'success');
-        setTimeout(() => navigate('/tutor/dashboard'), 2500); 
+      // ✅ Check if we're editing an existing exam
+      if (examId) {
+        // ✅ UPDATE existing exam - call update API
+        response = await updateExam(examId, examPayload);
+        if (response && response.success) {
+          showNotification(statusType === 'published' ? '✅ Exam published successfully!' : '✅ Draft updated successfully!', 'success');
+          setHasChanges(false);
+          setLastSavedAt(new Date());
+          setTimeout(() => navigate('/tutor/dashboard'), 2500);
+        }
+      } else {
+        // ✅ CREATE new exam
+        response = await createTutorExam(examPayload);
+        if (response && response.success) {
+          setExamId(response.examId);
+          const url = new URL(window.location);
+          url.searchParams.set('examId', response.examId);
+          window.history.replaceState({}, '', url);
+          showNotification(statusType === 'published' ? '✅ Exam deployed successfully!' : '✅ Draft saved successfully!', 'success');
+          setHasChanges(false);
+          setLastSavedAt(new Date());
+          setTimeout(() => navigate('/tutor/dashboard'), 2500);
+        }
       }
+
     } catch (err) {
       console.error("Submission Error:", err);
       setError(err.message || 'Failed to create exam.');
@@ -810,7 +792,7 @@ export default function CreateExamPage() {
               {examId ? 'Edit Exam' : 'Create New Exam'}
             </h1>
             <p className="text-gray-400 text-xs mt-0.5">
-              {examId ? 'Modify your existing exam structure' : 'Build and deploy your custom exam structure'}
+              {examId ? 'Modify your existing exam structure' : 'Build and deploy your custom exam structures'}
             </p>
           </div>
           
@@ -836,7 +818,7 @@ export default function CreateExamPage() {
             )}
             <button
               onClick={handleManualSaveDraft}
-              disabled={isAutoSaving || !hasChanges}
+              disabled={isAutoSaving || !hasChanges || !examId}
               className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium text-gray-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
               <Save size={14} />
@@ -867,7 +849,9 @@ export default function CreateExamPage() {
         </div>
       </GlassCard>
 
-      {/* Rest of the UI (Exam Details, Sections, Questions, Preview) - Same as before */}
+      {/* Rest of the UI - Exam Details, Sections, Questions, Preview */}
+      {/* ... (same as before, keeping all the UI code) ... */}
+
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} transition={{ duration: 0.15 }}>
           
@@ -1048,7 +1032,8 @@ export default function CreateExamPage() {
           {/* PHASE 03: QUESTIONS */}
           {step === 2 && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-              {/* Sidebar content - Same as before */}
+              
+              {/* 📂 SIDEBAR: Problems + Questions Grouped by Section */}
               <div className="lg:col-span-1 space-y-4 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
                 {sections.map(sec => {
                   const secProblems = questions.filter(q => q.section === sec.name && q.is_problem);
@@ -1231,7 +1216,7 @@ export default function CreateExamPage() {
                 })}
               </div>
 
-              {/* MAIN ACTIVE EDITING BOARD */}
+              {/* 🎯 MAIN ACTIVE EDITING BOARD */}
               <div className="lg:col-span-3">
                 {activeItem ? (
                   <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl relative">
@@ -1259,7 +1244,7 @@ export default function CreateExamPage() {
                       </button>
                     </div>
 
-                    {/* PROBLEM BLOCK EDITOR */}
+                    {/* 🔷 CONDITION A: PROBLEM BLOCK EDITOR */}
                     {activeItem.is_problem ? (
                       <div className="space-y-4">
                         <div className="grid grid-cols-3 gap-3">
@@ -1377,8 +1362,10 @@ export default function CreateExamPage() {
                         )}
                       </div>
                     ) : (
-                      // STANDARD / LISTENING QUESTION EDITOR
+                      
+                      // 🔹 CONDITION B: STANDARD / LISTENING QUESTION EDITOR
                       <div className="space-y-4">
+                        
                         <div className="bg-slate-950/30 p-2 rounded-xl border border-white/5 flex items-center justify-between">
                           <p className="text-[10px] font-mono text-slate-400">
                             Question Number: <span className="text-emerald-400 font-bold">{getQuestionLabel(activeItem)}</span>

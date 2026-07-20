@@ -135,7 +135,47 @@ export const updateExamStatus = async (examId, status) => {
 };
 
 /**
- * 🎵 📷 6. Upload Asset
+ * 📝 6. Update Exam Draft (Auto-save)
+ */
+export const updateExamDraft = async (examId, draftData) => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.put(
+      `${API_URL}/${examId}/draft`,
+      draftData,
+      config
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Update Exam Draft Error:', error.response?.data || error.message);
+    throw error.response?.data || { 
+      message: 'Failed to update exam draft.' 
+    };
+  }
+};
+
+/**
+ * 📝 7. Update Existing Exam (Full Update)
+ */
+export const updateExam = async (examId, examPayload) => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.put(
+      `${API_URL}/${examId}`,
+      examPayload,
+      config
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Update Exam Error:', error.response?.data || error.message);
+    throw error.response?.data || { 
+      message: 'Failed to update exam.' 
+    };
+  }
+};
+
+/**
+ * 🎵 📷 8. Upload Asset
  */
 export const uploadExamAsset = async (fileBlob) => {
   try {
@@ -198,7 +238,7 @@ export const uploadExamAsset = async (fileBlob) => {
 };
 
 /**
- * 🗑️ 7. Delete Asset from Cloudinary
+ * 🗑️ 9. Delete Asset from Cloudinary
  */
 export const deleteExamAsset = async (fileUrl) => {
   try {

@@ -66,7 +66,7 @@ const createExam = async (req, res) => {
 // =========================================================================
 const getAllExams = async (req, res) => {
   try {
-    const snapshot = await db.collection('exams').get();
+    const snapshot = await db.collection('exams').where('status', '==', 'published').get();
     const examsList = [];
     snapshot.forEach(doc => {
       examsList.push({ id: doc.id, ...doc.data() });
@@ -75,6 +75,35 @@ const getAllExams = async (req, res) => {
   } catch (error) {
     console.error('Get all exams error:', error.message);
     return res.status(500).json({ success: false, message: 'Error fetching exams', error: error.message });
+  }
+};
+
+// =========================================================================
+// 📊 3. Get Student Exams
+// =========================================================================
+const getStudentExams = async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+    
+    const snapshot = await db.collection('student_exams')
+      .where('student_id', '==', studentId)
+      .get();
+    
+    const examsList = [];
+    snapshot.forEach(doc => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    
+    return res.status(200).json(examsList);
+  } catch (error) {
+    console.error("Get Student Exams Error:", error);
+    return res.status(500).json({ 
+      message: 'Error fetching student exams', 
+      error: error.message 
+    });
   }
 };
 
@@ -184,6 +213,76 @@ const updateExamStatus = async (req, res) => {
     return res.status(500).json({ 
       success: false,
       message: 'Error updating exam status', 
+      error: error.message 
+    });
+  }
+};
+
+// =========================================================================
+// 📝 8. Update Exam Draft (Auto-save)
+// =========================================================================
+const updateExamDraft = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const draftData = req.body;
+    
+    console.log('📝 Updating draft for exam:', examId);
+    
+    const result = await examServices.updateExamDraftInDB(examId, draftData);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Update Exam Draft Error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Error updating exam draft', 
+      error: error.message 
+    });
+  }
+};
+
+// =========================================================================
+// 📝 9. Update Existing Exam (Full Update)
+// =========================================================================
+const updateExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const examData = req.body;
+    
+    console.log('📝 Updating full exam:', examId);
+    
+    const result = await examServices.updateExamInDB(examId, examData);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Update Exam Error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Error updating exam', 
+      error: error.message 
+    });
+  }
+};
+
+// =========================================================================
+// 🗑️ 10. Delete Student Exam
+// =========================================================================
+const deleteStudentExam = async (req, res) => {
+  try {
+    const examDocId = req.params.id;
+    
+    const examRef = db.collection('student_exams').doc(examDocId);
+    const doc = await examRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ success: false, message: 'Exam not found' });
+    }
+    
+    await examRef.delete();
+    return res.status(200).json({ success: true, message: 'Exam deleted successfully!' });
+  } catch (error) {
+    console.error("Delete Student Exam Error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Error deleting student exam', 
       error: error.message 
     });
   }
@@ -384,7 +483,11 @@ module.exports = {
   getExamById,
   deleteExam,
   updateExamStatus,
+  updateExamDraft,
+  updateExam,
   getAllExams,
+  getStudentExams,
+  deleteStudentExam,
   uploadAsset,
   deleteAsset,
   deleteStudentExam

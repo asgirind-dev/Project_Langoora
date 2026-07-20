@@ -22,11 +22,9 @@ const createExamInDB = async (examData) => {
     const cleanExamId = `exam_${category_id}_${level_id}_${Date.now()}`;
     const examRef = db.collection('exams').doc(cleanExamId);
 
-    // Separate problems and sub-questions
     const problems = questions.filter(q => q.is_problem === true);
     const subQuestions = questions.filter(q => q.is_problem === false);
 
-    // Group sub-questions by parent problem id
     const subQuestionsByProblem = {};
     subQuestions.forEach(q => {
       const parentId = q.parent_problem_id;
@@ -36,7 +34,6 @@ const createExamInDB = async (examData) => {
       subQuestionsByProblem[parentId].push(q);
     });
 
-    // Build exam metadata
     const examMetadata = {
       title: title.trim(),
       category_id,
@@ -61,7 +58,6 @@ const createExamInDB = async (examData) => {
 
     await examRef.set(examMetadata);
 
-    // 🚀 Insert Problems with Sub-Questions
     if (problems.length > 0) {
       const batch = db.batch();
       
@@ -333,6 +329,196 @@ const updateExamStatusInDB = async (examId, status) => {
 };
 
 /**
+ * 📝 Update exam draft (auto-save)
+ */
+const updateExamDraftInDB = async (examId, draftData) => {
+  try {
+    console.log('📝 Updating draft in DB for exam:', examId);
+    
+    const { 
+      title, 
+      category_id, 
+      level_id, 
+      duration_minutes, 
+      description, 
+      sections, 
+      questions,
+      thumbnail,
+      status 
+    } = draftData;
+
+    const result = await db.collection('exams').doc(examId).update({
+      title: title.trim(),
+      category_id: category_id || '',
+      level_id: level_id || '',
+      duration_minutes: Number(duration_minutes),
+      description: description || '',
+      sections: sections || [],
+      thumbnail: thumbnail || null,
+      status: status || 'draft',
+      total_problems: questions.filter(q => q.is_problem === true).length,
+      total_questions: questions.filter(q => q.is_problem === false).length,
+      updated_at: new Date().toISOString()
+    });
+
+    console.log('✅ Draft updated successfully for exam:', examId);
+    return { success: true, message: 'Draft updated successfully.' };
+  } catch (error) {
+    console.error('Update Exam Draft Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * 📝 Update Existing Exam (Full Update)
+ */
+const updateExamInDB = async (examId, examData) => {
+  try {
+    console.log('📝 Updating full exam in DB:', examId);
+    
+    const { 
+      title, 
+      category_id, 
+      level_id, 
+      duration_minutes, 
+      description, 
+      status, 
+      sections, 
+      questions,
+      thumbnail 
+    } = examData;
+
+    // First, delete all existing problems and sub-questions
+    const problemsSnapshot = await db.collection('exams')
+      .doc(examId)
+      .collection('problems')
+      .get();
+    
+    const batch = db.batch();
+    
+    for (const problemDoc of problemsSnapshot.docs) {
+      const problemId = problemDoc.id;
+      
+      try {
+        const exampleDoc = await db.collection('exams')
+          .doc(examId)
+          .collection('problems')
+          .doc(problemId)
+          .collection('example_question')
+          .doc('example')
+          .get();
+        
+        if (exampleDoc.exists) {
+          batch.delete(exampleDoc.ref);
+        }
+      } catch (e) {}
+      
+      const subQuestionsSnapshot = await db.collection('exams')
+        .doc(examId)
+        .collection('problems')
+        .doc(problemId)
+        .collection('sub_questions')
+        .get();
+      
+      subQuestionsSnapshot.forEach(subDoc => {
+        batch.delete(subDoc.ref);
+      });
+      
+      batch.delete(problemDoc.ref);
+    }
+    
+    await batch.commit();
+
+    const problems = questions.filter(q => q.is_problem === true);
+    const subQuestions = questions.filter(q => q.is_problem === false);
+
+    const subQuestionsByProblem = {};
+    subQuestions.forEach(q => {
+      const parentId = q.parent_problem_id;
+      if (!subQuestionsByProblem[parentId]) {
+        subQuestionsByProblem[parentId] = [];
+      }
+      subQuestionsByProblem[parentId].push(q);
+    });
+
+    // Update exam metadata
+    await db.collection('exams').doc(examId).update({
+      title: title.trim(),
+      category_id,
+      level_id: level_id || '',
+      duration_minutes: Number(duration_minutes),
+      description: description || '',
+      status: status || 'draft',
+      sections: sections || [],
+      thumbnail: thumbnail || null,
+      total_problems: problems.length,
+      total_questions: subQuestions.length,
+      updated_at: new Date().toISOString()
+    });
+
+    // Re-insert problems with sub-questions
+    if (problems.length > 0) {
+      const newBatch = db.batch();
+      
+      problems.forEach((problem, index) => {
+        const problemId = `problem_${String(index + 1).padStart(2, '0')}`;
+        const problemRef = db.collection('exams')
+          .doc(examId)
+          .collection('problems')
+          .doc(problemId);
+        
+        const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
+
+        const problemData = {
+          problem_number: index + 1,
+          section: problem.section,
+          problem_title: problem.problem_title ? problem.problem_title.trim() : `Problem ${index + 1}`,
+          explanation: problem.explanation || '',
+          total_sub_questions: problemSubQuestions.length,
+          created_at: new Date().toISOString(),
+          
+          example: problem.example_question ? {
+            text: problem.example_question.trim(),
+            options: problem.options || ['', '', '', ''],
+            correct_answer_index: Number(problem.example_correct_option || 0),
+            explanation: problem.example_explanation || '',
+            image_url: problem.example_image_url || null,
+            audio_url: problem.example_audio_url || null
+          } : null
+        };
+
+        newBatch.set(problemRef, problemData);
+
+        if (problemSubQuestions.length > 0) {
+          const subQuestionsCollectionRef = problemRef.collection('sub_questions');
+          
+          problemSubQuestions.forEach((sub, subIndex) => {
+            const subId = `sub_${String(subIndex + 1).padStart(2, '0')}`;
+            const subRef = subQuestionsCollectionRef.doc(subId);
+            
+            const subData = {
+              sub_number: subIndex + 1,
+              text: sub.text ? sub.text.trim() : '',
+              options: sub.options || ['', '', '', ''],
+              correct_answer_index: Number(sub.correct || 0),
+              explanation: sub.explanation || '',
+              image_url: sub.image_url || null,
+              audio_url: sub.audio_url || null,
+              created_at: new Date().toISOString()
+            };
+
+            newBatch.set(subRef, subData);
+          });
+        }
+      });
+
+      await newBatch.commit();
+    }
+
+    console.log('✅ Full exam updated successfully:', examId);
+    return { success: true, message: 'Exam updated successfully.' };
+  } catch (error) {
+    console.error('Update Exam Service Error:', error);
  * 🗑️ Delete Student Exam
  */
 const deleteStudentExamFromDB = async (examDocId) => {
@@ -359,5 +545,7 @@ module.exports = {
   getExamByIdFromDB,
   deleteExamFromDB,
   updateExamStatusInDB,
+  updateExamDraftInDB,
+  updateExamInDB
   deleteStudentExamFromDB
 };
