@@ -21,6 +21,34 @@ const iconMap = { Zap, Rocket, Crown, Infinity: InfinityIcon, Star, Award, Layer
 const fadeUp = { initial: { opacity: 0, y: 30 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.5 } };
 const stagger = { initial: { opacity: 0, y: 20 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true } };
 
+// ─── Brand tokens (Langoora) ─────────────────────────────────────────────
+const BRAND = {
+  primary: '#6366F1',
+  secondary: '#8B5CF6',
+  accent: '#06B6D4',
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+};
+
+// ─── Loading Spinner Component (Same as ExamTakePage) ───────────────────
+function LoadingSpinner({ message = "Loading..." }) {
+  return (
+    <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-4 text-white">
+      <div className="relative w-14 h-14">
+        <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+        <motion.div
+          className="absolute inset-0 rounded-full border-2 border-t-transparent"
+          style={{ borderColor: `${BRAND.primary} transparent transparent transparent` }}
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+        />
+      </div>
+      <p className="text-gray-400 text-sm tracking-wide">{message}</p>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useReactNavigate();
   const { user } = useAuth();
@@ -227,6 +255,11 @@ export default function LandingPage() {
                            globalConfig.announcementText && 
                            !isBannerDismissed;
 
+  // ─── If still loading initial data, show the loading spinner ──────────
+  if (bannersLoading || isGlobalLoading) {
+    return <LoadingSpinner message="Loading Langoora..." />;
+  }
+
   return (
     <div className="text-white overflow-x-hidden bg-[#040814]">
       
@@ -331,12 +364,11 @@ export default function LandingPage() {
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
-        {bannersLoading ? (
-          <div className="flex flex-col items-center justify-center gap-2 z-20">
-            <RefreshCw className="animate-spin text-blue-500" size={32} />
-            <p className="text-xs text-gray-500 font-medium tracking-wide">Connecting Live Repositories...</p>
+        {bannerImages.length === 0 ? (
+          <div className="text-center py-20 text-gray-500 text-sm font-light">
+            No active promotional templates configured in CMS.
           </div>
-        ) : activeBanner ? (
+        ) : (
           <>
             {/* Background Image Layer Container */}
             <div className="absolute inset-0 z-0">
@@ -452,10 +484,6 @@ export default function LandingPage() {
 
             </div>
           </>
-        ) : (
-          <div className="text-center py-20 text-gray-500 text-sm font-light">
-            No active promotional templates configured in CMS.
-          </div>
         )}
       </section>
 
@@ -663,9 +691,17 @@ export default function LandingPage() {
             <p className="text-gray-400 text-lg max-w-2xl mx-auto">Start free, upgrade when ready to accelerate your studies</p>
           </motion.div>
           {plansLoading ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-3">
-              <RefreshCw className="animate-spin text-blue-500" size={36} />
-              <p className="text-gray-400 text-sm font-medium">Synchronizing live credit packages...</p>
+            <div className="flex flex-col items-center justify-center py-24 gap-4">
+              <div className="relative w-14 h-14">
+                <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+                <motion.div
+                  className="absolute inset-0 rounded-full border-2 border-t-transparent"
+                  style={{ borderColor: `${BRAND.primary} transparent transparent transparent` }}
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                />
+              </div>
+              <p className="text-gray-400 text-sm tracking-wide">Loading plans...</p>
             </div>
           ) : plans.length === 0 ? (
             <div className="text-center py-16 text-gray-400 bg-white/[0.01] border border-white/5 rounded-2xl">

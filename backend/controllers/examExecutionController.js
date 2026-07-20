@@ -110,6 +110,55 @@ const results = async (req, res) => {
   }
 };
 
+/**
+ * 💬 Submit student feedback
+ * POST /api/exam-execution/:attemptId/feedback
+ */
+const submitFeedback = async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { rating, difficulty, nps, challenging, topicsToReview, comments, wantsFollowUp } = req.body;
+    
+    const feedbackData = {
+      attemptId,
+      rating,
+      difficulty,
+      nps,
+      challenging,
+      topicsToReview,
+      comments,
+      wantsFollowUp,
+      submittedAt: new Date().toISOString(),
+    };
+
+    // Save to feedback collection
+    const db = require('../config/firebase').db;
+    const feedbackRef = db.collection('exam_feedback').doc();
+    await feedbackRef.set(feedbackData);
+
+    return res.status(201).json({ success: true, data: { id: feedbackRef.id, ...feedbackData } });
+  } catch (error) {
+    console.error('Submit feedback error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * 📜 Get student submission history
+ * GET /api/exam-execution/submissions/student/:studentId
+ */
+const getSubmissions = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { examId } = req.query;
+    const data = await examExecutionService.getStudentSubmissions(studentId, examId);
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Get submissions error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   start,
   metadata,
@@ -118,4 +167,6 @@ module.exports = {
   status,
   submit,
   results,
+  submitFeedback,
+  getSubmissions,
 };
