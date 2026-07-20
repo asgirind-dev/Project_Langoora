@@ -152,6 +152,35 @@ const getTutorExamsFromDB = async (tutorId) => {
   }
 };
 
+// ✅ ADD THIS FUNCTION - Get Student Exams
+const getStudentExamsFromDB = async (studentId = null) => {
+  try {
+    let query = db.collection('student_exams');
+    
+    // If studentId is provided, filter by student
+    if (studentId) {
+      query = query.where('studentId', '==', studentId);
+    }
+    
+    const snapshot = await query.get();
+    const examsList = [];
+    
+    snapshot.forEach(doc => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    
+    // Sort by newest first
+    examsList.sort((a, b) => {
+      return new Date(b.startTime || b.created_at) - new Date(a.startTime || a.created_at);
+    });
+    
+    return examsList;
+  } catch (error) {
+    console.error('Get Student Exams Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
 /**
  * 📊 Get a single exam by ID
  */
@@ -490,6 +519,21 @@ const updateExamInDB = async (examId, examData) => {
     return { success: true, message: 'Exam updated successfully.' };
   } catch (error) {
     console.error('Update Exam Service Error:', error);
+ * 🗑️ Delete Student Exam
+ */
+const deleteStudentExamFromDB = async (examDocId) => {
+  try {
+    const examRef = db.collection('student_exams').doc(examDocId);
+    const doc = await examRef.get();
+
+    if (!doc.exists) {
+      throw new Error('Exam not found in database');
+    }
+   
+    await examRef.delete();
+    return { success: true, message: 'Exam successfully deleted!' };
+  } catch (error) {
+    console.error('Delete Student Exam Service Error:', error);
     throw new Error(error.message);
   }
 };
@@ -497,9 +541,11 @@ const updateExamInDB = async (examId, examData) => {
 module.exports = {
   createExamInDB,
   getTutorExamsFromDB,
+  getStudentExamsFromDB,  // ✅ Added this
   getExamByIdFromDB,
   deleteExamFromDB,
   updateExamStatusInDB,
   updateExamDraftInDB,
   updateExamInDB
+  deleteStudentExamFromDB
 };
