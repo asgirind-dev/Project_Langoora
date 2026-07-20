@@ -6,7 +6,7 @@ import {
   GripVertical, Upload, Save, Send, CheckCircle, 
   Mic, ShieldAlert, Loader, X, AlertCircle, Info, FileText, HelpCircle, Image, Clock
 } from 'lucide-react';
-import { createTutorExam, uploadExamAsset, getExamById, updateExamDraft } from '../../services/examService';
+import { createTutorExam, uploadExamAsset, getExamById } from '../../services/examService';
 import { fetchActiveExamSchema } from '../../services/languageService';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
