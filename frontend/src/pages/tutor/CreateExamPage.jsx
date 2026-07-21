@@ -14,7 +14,7 @@ import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
 const STEPS = ['Exam Details', 'Sections', 'Questions', 'Preview & Publish'];
-const AUTO_SAVE_INTERVAL = 10000; // 10 seconds
+const AUTO_SAVE_INTERVAL = 120000; // 2 minutes
 
 export default function CreateExamPage() {
   const navigate = useNavigate();
@@ -34,6 +34,9 @@ export default function CreateExamPage() {
   const [examId, setExamId] = useState(null);
   const autoSaveTimerRef = useRef(null);
   const isSavingRef = useRef(false);
+  
+  // ✅ Track if this is a new exam (no examId yet)
+  const [isNewExam, setIsNewExam] = useState(true);
 
   const [meta, setMeta] = useState({
     title: '', category_id: '', level_id: '', duration_minutes: 0, description: '', thumbnail: ''
@@ -101,18 +104,27 @@ export default function CreateExamPage() {
     
     if (editExamId) {
       setExamId(editExamId);
+      setIsNewExam(false);
       loadExamForEdit(editExamId);
+    } else {
+      // ✅ New exam - set isNewExam true
+      setIsNewExam(true);
     }
   }, []);
 
-  // 🆕 Auto-save effect
+  // 🆕 Auto-save effect - FIXED for new exams
   useEffect(() => {
     if (autoSaveTimerRef.current) {
       clearInterval(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
 
-    if (hasChanges && !globalLoading && !isSavingRef.current && examId) {
+    // ✅ Start auto-save when:
+    // 1. We have changes
+    // 2. Not global loading
+    // 3. Not currently saving
+    // 4. We have a title (so we can create the exam)
+    if (hasChanges && !globalLoading && !isSavingRef.current && meta.title.trim()) {
       autoSaveTimerRef.current = setInterval(() => {
         handleAutoSave();
       }, AUTO_SAVE_INTERVAL);
@@ -123,16 +135,17 @@ export default function CreateExamPage() {
         clearInterval(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;
       }
-      if (hasChanges && !isSavingRef.current && examId) {
+      // ✅ Save one last time on unmount for both new and existing exams
+      if (hasChanges && !isSavingRef.current && meta.title.trim()) {
         handleAutoSave(true);
       }
     };
-  }, [hasChanges, globalLoading, examId]);
+  }, [hasChanges, globalLoading, meta.title]);
 
   // 🆕 Handle beforeunload event (tab close, refresh, navigation)
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      if (hasChanges && !isSavingRef.current && examId) {
+      if (hasChanges && !isSavingRef.current && meta.title.trim()) {
         handleAutoSave(true);
         e.preventDefault();
         e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
@@ -145,18 +158,13 @@ export default function CreateExamPage() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [hasChanges, examId]);
+  }, [hasChanges]);
 
-  // 🆕 Auto-save function
+  // 🆕 Auto-save function - FIXED for new exams
   const handleAutoSave = async (isFinal = false) => {
     if (isSavingRef.current) return;
     
-    if (!examId) {
-      console.log('No examId yet, skipping auto-save');
-      return;
-    }
-    
-    if (!meta.title && sections.every(s => !s.questions) && questions.length === 0) {
+    if (!meta.title.trim() && sections.every(s => !s.questions) && questions.length === 0) {
       return;
     }
 
@@ -211,17 +219,42 @@ export default function CreateExamPage() {
         })
       };
 
-      console.log('💾 Auto-saving draft for exam:', examId);
-      const response = await updateExamDraft(examId, draftData);
-      
-      if (response && response.success) {
-        setHasChanges(false);
-        setLastSavedAt(new Date());
-        if (isFinal) {
-          showNotification('💾 Draft auto-saved successfully!', 'success');
+      let response;
+
+      // ✅ If we have an examId, update existing draft
+      if (examId) {
+        console.log('💾 Auto-saving existing exam:', examId);
+        response = await updateExamDraft(examId, draftData);
+        if (response && response.success) {
+          setHasChanges(false);
+          setLastSavedAt(new Date());
+          if (isFinal) {
+            showNotification('💾 Draft auto-saved successfully!', 'success');
+          }
+          console.log('✅ Draft updated successfully');
         }
-        console.log('✅ Draft saved successfully');
+      } else {
+        // ✅ NEW EXAM: Create the exam first
+        console.log('💾 Creating new exam via auto-save');
+        response = await createTutorExam(draftData);
+        if (response && response.success) {
+          const newExamId = response.examId;
+          setExamId(newExamId);
+          setIsNewExam(false);
+          // Update URL with examId
+          const url = new URL(window.location);
+          url.searchParams.set('examId', newExamId);
+          window.history.replaceState({}, '', url);
+          
+          setHasChanges(false);
+          setLastSavedAt(new Date());
+          if (isFinal) {
+            showNotification('💾 New exam created and draft saved!', 'success');
+          }
+          console.log('✅ New exam created with ID:', newExamId);
+        }
       }
+
     } catch (err) {
       console.error('Auto-save error:', err);
       if (isFinal) {
@@ -242,6 +275,7 @@ export default function CreateExamPage() {
       if (response && response.success) {
         const exam = response.exam;
         setExamId(examId);
+        setIsNewExam(false);
         
         setMeta({
           title: exam.title || '',
@@ -657,80 +691,128 @@ export default function CreateExamPage() {
         throw new Error('Please select an exam level.');
       }
 
+      // ✅ If this is a new exam, create it first
+      let currentExamId = examId;
+      
+      if (!currentExamId) {
+        // Create the exam first
+        const draftData = {
+          title: meta.title.trim() || 'Untitled Draft',
+          category_id: meta.category_id || '',
+          level_id: meta.level_id || '',
+          duration_minutes: Number(meta.duration_minutes),
+          description: meta.description || '',
+          thumbnail: meta.thumbnail || '',
+          status: 'draft',
+          sections: sections.map(s => ({
+            name: s.name,
+            questions: Number(s.questions || 0),
+            time: Number(s.time || 0),
+            audio_url: s.audio_url || null
+          })),
+          questions: questions.map(q => {
+            if (q.is_problem) {
+              return {
+                id: q.id,
+                is_problem: true,
+                section: q.section,
+                problem_title: q.problem_title || `Problem`,
+                explanation: q.explanation || '',
+                example_question: q.example_question || '',
+                example_correct_option: Number(q.example_correct_option || 0),
+                example_explanation: q.example_explanation || '',
+                options: q.options || ['', '', '', ''],
+                example_image_url: q.example_image_url || null,
+                example_audio_url: q.example_audio_url || null
+              };
+            } else {
+              return {
+                id: q.id,
+                is_problem: false,
+                section: q.section,
+                parent_problem_id: q.parent_problem_id || null,
+                type: q.type || 'mcq',
+                text: q.text || '',
+                options: q.options || ['', '', '', ''],
+                correct: Number(q.correct || 0),
+                explanation: q.explanation || '',
+                image_url: q.image_url || null,
+                audio_url: q.audio_url || null
+              };
+            }
+          })
+        };
+        
+        const createResponse = await createTutorExam(draftData);
+        if (createResponse && createResponse.success) {
+          currentExamId = createResponse.examId;
+          setExamId(currentExamId);
+          setIsNewExam(false);
+          const url = new URL(window.location);
+          url.searchParams.set('examId', currentExamId);
+          window.history.replaceState({}, '', url);
+        } else {
+          throw new Error('Failed to create exam');
+        }
+      }
+
+      // Now update with final status
       const examPayload = {
-        title: meta.title.trim(),
-        category_id: meta.category_id,
-        level_id: meta.level_id || '',
-        duration_minutes: Number(meta.duration_minutes),
-        description: meta.description || '',
-        thumbnail: meta.thumbnail || '',
-        status: statusType,
-        sections: sections.map(s => ({
-          name: s.name,
-          questions: Number(s.questions || 0),
-          time: Number(s.time || 0),
-          audio_url: s.audio_url || null
-        })),
-        questions: questions.map(q => {
-          if (q.is_problem) {
-            return {
-              id: q.id,
-              is_problem: true,
-              section: q.section,
-              problem_title: q.problem_title || `Problem`,
-              explanation: q.explanation || '',
-              example_question: q.example_question || '',
-              example_correct_option: Number(q.example_correct_option || 0),
-              example_explanation: q.example_explanation || '',
-              options: q.options || ['', '', '', ''],
-              example_image_url: q.example_image_url || null,
-              example_audio_url: q.example_audio_url || null
-            };
-          } else {
-            return {
-              id: q.id,
-              is_problem: false,
-              section: q.section,
-              parent_problem_id: q.parent_problem_id || null,
-              type: q.type || 'mcq',
-              text: q.text || '',
-              options: q.options || ['', '', '', ''],
-              correct: Number(q.correct || 0),
-              explanation: q.explanation || '',
-              image_url: q.image_url || null,
-              audio_url: q.audio_url || null
-            };
-          }
-        })
+  title: meta.title.trim(),
+  category_id: meta.category_id,
+  level_id: meta.level_id || '',
+  duration_minutes: Number(meta.duration_minutes),
+  description: meta.description || '',
+  thumbnail: meta.thumbnail || '',
+  status: statusType,
+  sections: sections.map(s => ({
+    name: s.name,
+    questions: Number(s.questions || 0),
+    time: Number(s.time || 0),
+    audio_url: s.audio_url || null
+  })),
+  questions: questions.map(q => {
+    if (q.is_problem) {
+      return {
+        id: q.id,
+        is_problem: true,
+        section: q.section,
+        problem_title: q.problem_title || `Problem`,
+        explanation: q.explanation || '',
+        example_question: q.example_question || '',
+        example_correct_option: Number(q.example_correct_option || 0),
+        example_explanation: q.example_explanation || '',
+        options: q.options || ['', '', '', ''],
+        example_image_url: q.example_image_url || null,
+        example_audio_url: q.example_audio_url || null
       };
+    } else {
+      return {
+        id: q.id,
+        is_problem: false,
+        section: q.section,
+        parent_problem_id: q.parent_problem_id || null,
+        type: q.type || 'mcq',
+        text: q.text || '',
+        options: q.options || ['', '', '', ''],
+        correct: Number(q.correct || 0),
+        explanation: q.explanation || '',
+        image_url: q.image_url || null,
+        audio_url: q.audio_url || null
+      };
+    }
+  })
+};
 
       console.log('📤 Sending exam payload:', JSON.stringify(examPayload, null, 2));
 
-      let response;
-
-      // ✅ Check if we're editing an existing exam
-      if (examId) {
-        // ✅ UPDATE existing exam - call update API
-        response = await updateExam(examId, examPayload);
-        if (response && response.success) {
-          showNotification(statusType === 'published' ? '✅ Exam published successfully!' : '✅ Draft updated successfully!', 'success');
-          setHasChanges(false);
-          setLastSavedAt(new Date());
-          setTimeout(() => navigate('/tutor/dashboard'), 2500);
-        }
-      } else {
-        // ✅ CREATE new exam
-        response = await createTutorExam(examPayload);
-        if (response && response.success) {
-          setExamId(response.examId);
-          const url = new URL(window.location);
-          url.searchParams.set('examId', response.examId);
-          window.history.replaceState({}, '', url);
-          showNotification(statusType === 'published' ? '✅ Exam deployed successfully!' : '✅ Draft saved successfully!', 'success');
-          setHasChanges(false);
-          setLastSavedAt(new Date());
-          setTimeout(() => navigate('/tutor/dashboard'), 2500);
-        }
+      const response = await updateExam(currentExamId, examPayload);
+      
+      if (response && response.success) {
+        showNotification(statusType === 'published' ? '✅ Exam published successfully!' : '✅ Draft updated successfully!', 'success');
+        setHasChanges(false);
+        setLastSavedAt(new Date());
+        setTimeout(() => navigate('/tutor/dashboard'), 2500);
       }
 
     } catch (err) {
@@ -792,7 +874,7 @@ export default function CreateExamPage() {
               {examId ? 'Edit Exam' : 'Create New Exam'}
             </h1>
             <p className="text-gray-400 text-xs mt-0.5">
-              {examId ? 'Modify your existing exam structure' : 'Build and deploy your custom exam structures'}
+              {examId ? 'Modify your existing exam structure' : 'Build and deploy your custom exam structure'}
             </p>
           </div>
           
@@ -818,7 +900,7 @@ export default function CreateExamPage() {
             )}
             <button
               onClick={handleManualSaveDraft}
-              disabled={isAutoSaving || !hasChanges || !examId}
+              disabled={isAutoSaving || !hasChanges}
               className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium text-gray-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
               <Save size={14} />
@@ -849,13 +931,12 @@ export default function CreateExamPage() {
         </div>
       </GlassCard>
 
-      {/* Rest of the UI - Exam Details, Sections, Questions, Preview */}
-      {/* ... (same as before, keeping all the UI code) ... */}
-
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} transition={{ duration: 0.15 }}>
           
-          {/* PHASE 01: EXAM DETAILS */}
+          {/* ============================================================
+              PHASE 01: EXAM DETAILS
+          ============================================================ */}
           {step === 0 && (
             <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl">
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
@@ -980,7 +1061,9 @@ export default function CreateExamPage() {
             </GlassCard>
           )}
 
-          {/* PHASE 02: SECTIONS */}
+          {/* ============================================================
+              PHASE 02: SECTIONS
+          ============================================================ */}
           {step === 1 && (
             <GlassCard className="p-6 space-y-5 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl">
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
@@ -1029,7 +1112,9 @@ export default function CreateExamPage() {
             </GlassCard>
           )}
 
-          {/* PHASE 03: QUESTIONS */}
+          {/* ============================================================
+              PHASE 03: QUESTIONS
+          ============================================================ */}
           {step === 2 && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
               
@@ -1469,7 +1554,9 @@ export default function CreateExamPage() {
             </div>
           )}
 
-          {/* PHASE 04: PREVIEW & FINAL DEPLOYMENT */}
+          {/* ============================================================
+              PHASE 04: PREVIEW & FINAL DEPLOYMENT
+          ============================================================ */}
           {step === 3 && (
             <div className="space-y-6">
               <GlassCard className="p-6 bg-white/[0.01] border-white/5 shadow-2xl rounded-3xl space-y-6">

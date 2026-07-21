@@ -19,6 +19,11 @@ const createExamInDB = async (examData) => {
       tutor_name
     } = examData;
 
+    const validTutorId = tutor_id || 'mock_tutor_id';
+    const validTutorName = tutor_name || 'Expert Tutor';
+
+    console.log('📝 Creating exam for tutor:', { validTutorId, validTutorName });
+
     const cleanExamId = `exam_${category_id}_${level_id}_${Date.now()}`;
     const examRef = db.collection('exams').doc(cleanExamId);
 
@@ -43,8 +48,8 @@ const createExamInDB = async (examData) => {
       status: status || 'draft',
       sections: sections || [],
       thumbnail: thumbnail || null,
-      tutor_id: tutor_id || 'mock_tutor_id',
-      tutor_name: tutor_name || 'Expert Tutor',
+      tutor_id: validTutorId,
+      tutor_name: validTutorName,
       isModernExam: true,
       total_problems: problems.length,
       total_questions: subQuestions.length,
@@ -67,26 +72,35 @@ const createExamInDB = async (examData) => {
         
         const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
 
+        // ✅ Problem data - Example එක මෙතනින් අයින් කරන්න
         const problemData = {
           problem_number: index + 1,
           section: problem.section,
           problem_title: problem.problem_title ? problem.problem_title.trim() : `Problem ${index + 1}`,
           explanation: problem.explanation || '',
           total_sub_questions: problemSubQuestions.length,
-          created_at: new Date().toISOString(),
-          
-          example: problem.example_question ? {
+          created_at: new Date().toISOString()
+          // ⚠️ example එක මෙතනින් ඉවත් කරන්න
+        };
+
+        batch.set(problemRef, problemData);
+
+        // ✅ NEW: Example Question as Sub-collection
+        if (problem.example_question) {
+          const exampleRef = problemRef.collection('example_question').doc('example');
+          const exampleData = {
             text: problem.example_question.trim(),
             options: problem.options || ['', '', '', ''],
             correct_answer_index: Number(problem.example_correct_option || 0),
             explanation: problem.example_explanation || '',
             image_url: problem.example_image_url || null,
-            audio_url: problem.example_audio_url || null
-          } : null
-        };
+            audio_url: problem.example_audio_url || null,
+            created_at: new Date().toISOString()
+          };
+          batch.set(exampleRef, exampleData);
+        }
 
-        batch.set(problemRef, problemData);
-
+        // Save sub-questions for this problem
         if (problemSubQuestions.length > 0) {
           const subQuestionsCollectionRef = problemRef.collection('sub_questions');
           
@@ -113,7 +127,7 @@ const createExamInDB = async (examData) => {
       await batch.commit();
     }
 
-    console.log(`✅ Exam created: ${cleanExamId}`);
+    console.log(`✅ Exam created: ${cleanExamId} for tutor: ${validTutorId}`);
     
     return { success: true, examId: cleanExamId };
 
@@ -124,38 +138,9 @@ const createExamInDB = async (examData) => {
 };
 
 /**
- * 📊 Get all exams for a tutor
+ * 📊 Get a single exam by ID (with access control)
  */
-const getTutorExamsFromDB = async (tutorId) => {
-  try {
-    let query = db.collection('exams');
-    
-    if (tutorId) {
-      query = query.where('tutor_id', '==', tutorId);
-    }
-    
-    const snapshot = await query.get();
-    const examsList = [];
-    
-    snapshot.forEach(doc => {
-      examsList.push({ id: doc.id, ...doc.data() });
-    });
-    
-    examsList.sort((a, b) => {
-      return new Date(b.created_at) - new Date(a.created_at);
-    });
-    
-    return examsList;
-  } catch (error) {
-    console.error('Get Tutor Exams Service Error:', error);
-    return [];
-  }
-};
-
-/**
- * 📊 Get a single exam by ID
- */
-const getExamByIdFromDB = async (examId) => {
+const getExamByIdFromDB = async (examId, tutorId) => {
   try {
     const examDoc = await db.collection('exams').doc(examId).get();
     
@@ -164,6 +149,10 @@ const getExamByIdFromDB = async (examId) => {
     }
     
     const examData = examDoc.data();
+    
+    if (tutorId && examData.tutor_id !== tutorId) {
+      throw new Error('You do not have permission to access this exam');
+    }
     
     const problemsSnapshot = await db.collection('exams')
       .doc(examId)
@@ -176,6 +165,7 @@ const getExamByIdFromDB = async (examId) => {
       const problemData = problemDoc.data();
       const problemId = problemDoc.id;
       
+      // ✅ NEW: Get example from sub-collection
       let example = null;
       try {
         const exampleDoc = await db.collection('exams')
@@ -229,10 +219,22 @@ const getExamByIdFromDB = async (examId) => {
 };
 
 /**
- * 🗑️ Delete an exam
+ * 🗑️ Delete an exam (with access control)
  */
-const deleteExamFromDB = async (examId) => {
+const deleteExamFromDB = async (examId, tutorId) => {
   try {
+    const examDoc = await db.collection('exams').doc(examId).get();
+    
+    if (!examDoc.exists) {
+      throw new Error('Exam not found');
+    }
+    
+    const examData = examDoc.data();
+    
+    if (tutorId && examData.tutor_id !== tutorId) {
+      throw new Error('You do not have permission to delete this exam');
+    }
+    
     const problemsSnapshot = await db.collection('exams')
       .doc(examId)
       .collection('problems')
@@ -243,6 +245,7 @@ const deleteExamFromDB = async (examId) => {
     for (const problemDoc of problemsSnapshot.docs) {
       const problemId = problemDoc.id;
       
+      // ✅ NEW: Delete example_question sub-collection
       try {
         const exampleDoc = await db.collection('exams')
           .doc(examId)
@@ -283,69 +286,21 @@ const deleteExamFromDB = async (examId) => {
 };
 
 /**
- * 📝 Update exam status
+ * 📝 Update Existing Exam (Full Update - with access control)
  */
-const updateExamStatusInDB = async (examId, status) => {
+const updateExamInDB = async (examId, examData, tutorId) => {
   try {
-    await db.collection('exams').doc(examId).update({
-      status: status,
-      updated_at: new Date().toISOString()
-    });
+    const examDoc = await db.collection('exams').doc(examId).get();
     
-    return { success: true, message: `Exam status updated to ${status}` };
-  } catch (error) {
-    console.error('Update Exam Status Error:', error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * 📝 Update exam draft (auto-save)
- */
-const updateExamDraftInDB = async (examId, draftData) => {
-  try {
-    console.log('📝 Updating draft in DB for exam:', examId);
+    if (!examDoc.exists) {
+      throw new Error('Exam not found');
+    }
     
-    const { 
-      title, 
-      category_id, 
-      level_id, 
-      duration_minutes, 
-      description, 
-      sections, 
-      questions,
-      thumbnail,
-      status 
-    } = draftData;
-
-    const result = await db.collection('exams').doc(examId).update({
-      title: title.trim(),
-      category_id: category_id || '',
-      level_id: level_id || '',
-      duration_minutes: Number(duration_minutes),
-      description: description || '',
-      sections: sections || [],
-      thumbnail: thumbnail || null,
-      status: status || 'draft',
-      total_problems: questions.filter(q => q.is_problem === true).length,
-      total_questions: questions.filter(q => q.is_problem === false).length,
-      updated_at: new Date().toISOString()
-    });
-
-    console.log('✅ Draft updated successfully for exam:', examId);
-    return { success: true, message: 'Draft updated successfully.' };
-  } catch (error) {
-    console.error('Update Exam Draft Service Error:', error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * 📝 Update Existing Exam (Full Update)
- */
-const updateExamInDB = async (examId, examData) => {
-  try {
-    console.log('📝 Updating full exam in DB:', examId);
+    const existingExam = examDoc.data();
+    
+    if (tutorId && existingExam.tutor_id !== tutorId) {
+      throw new Error('You do not have permission to update this exam');
+    }
     
     const { 
       title, 
@@ -359,7 +314,7 @@ const updateExamInDB = async (examId, examData) => {
       thumbnail 
     } = examData;
 
-    // First, delete all existing problems and sub-questions
+    // Delete all existing problems and sub-questions
     const problemsSnapshot = await db.collection('exams')
       .doc(examId)
       .collection('problems')
@@ -370,6 +325,7 @@ const updateExamInDB = async (examId, examData) => {
     for (const problemDoc of problemsSnapshot.docs) {
       const problemId = problemDoc.id;
       
+      // ✅ NEW: Delete example_question sub-collection
       try {
         const exampleDoc = await db.collection('exams')
           .doc(examId)
@@ -440,25 +396,33 @@ const updateExamInDB = async (examId, examData) => {
         
         const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
 
+        // ✅ Problem data - Example එක මෙතනින් අයින් කරන්න
         const problemData = {
           problem_number: index + 1,
           section: problem.section,
           problem_title: problem.problem_title ? problem.problem_title.trim() : `Problem ${index + 1}`,
           explanation: problem.explanation || '',
           total_sub_questions: problemSubQuestions.length,
-          created_at: new Date().toISOString(),
-          
-          example: problem.example_question ? {
+          created_at: new Date().toISOString()
+          // ⚠️ example එක මෙතනින් ඉවත් කරන්න
+        };
+
+        newBatch.set(problemRef, problemData);
+
+        // ✅ NEW: Example Question as Sub-collection
+        if (problem.example_question) {
+          const exampleRef = problemRef.collection('example_question').doc('example');
+          const exampleData = {
             text: problem.example_question.trim(),
             options: problem.options || ['', '', '', ''],
             correct_answer_index: Number(problem.example_correct_option || 0),
             explanation: problem.example_explanation || '',
             image_url: problem.example_image_url || null,
-            audio_url: problem.example_audio_url || null
-          } : null
-        };
-
-        newBatch.set(problemRef, problemData);
+            audio_url: problem.example_audio_url || null,
+            created_at: new Date().toISOString()
+          };
+          newBatch.set(exampleRef, exampleData);
+        }
 
         if (problemSubQuestions.length > 0) {
           const subQuestionsCollectionRef = problemRef.collection('sub_questions');
@@ -486,10 +450,122 @@ const updateExamInDB = async (examId, examData) => {
       await newBatch.commit();
     }
 
-    console.log('✅ Full exam updated successfully:', examId);
     return { success: true, message: 'Exam updated successfully.' };
   } catch (error) {
     console.error('Update Exam Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * 📝 Update exam draft (with access control)
+ */
+const updateExamDraftInDB = async (examId, draftData, tutorId) => {
+  try {
+    const examDoc = await db.collection('exams').doc(examId).get();
+    
+    if (!examDoc.exists) {
+      throw new Error('Exam not found');
+    }
+    
+    const examData = examDoc.data();
+    
+    if (tutorId && examData.tutor_id !== tutorId) {
+      throw new Error('You do not have permission to update this exam');
+    }
+    
+    const { 
+      title, 
+      category_id, 
+      level_id, 
+      duration_minutes, 
+      description, 
+      sections, 
+      questions,
+      thumbnail,
+      status 
+    } = draftData;
+
+    await db.collection('exams').doc(examId).update({
+      title: title.trim(),
+      category_id: category_id || '',
+      level_id: level_id || '',
+      duration_minutes: Number(duration_minutes),
+      description: description || '',
+      sections: sections || [],
+      thumbnail: thumbnail || null,
+      status: status || 'draft',
+      total_problems: questions.filter(q => q.is_problem === true).length,
+      total_questions: questions.filter(q => q.is_problem === false).length,
+      updated_at: new Date().toISOString()
+    });
+
+    return { success: true, message: 'Draft updated successfully.' };
+  } catch (error) {
+    console.error('Update Exam Draft Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * 📊 Get all exams for a specific tutor
+ */
+const getTutorExamsFromDB = async (tutorId) => {
+  try {
+    if (!tutorId) {
+      console.warn('⚠️ No tutor ID provided, returning empty array');
+      return [];
+    }
+
+    console.log('📊 Fetching exams for tutor:', tutorId);
+
+    const query = db.collection('exams')
+      .where('tutor_id', '==', tutorId);
+
+    const snapshot = await query.get();
+    const examsList = [];
+    
+    snapshot.forEach(doc => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    
+    examsList.sort((a, b) => {
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    
+    console.log(`✅ Found ${examsList.length} exams for tutor: ${tutorId}`);
+    return examsList;
+  } catch (error) {
+    console.error('Get Tutor Exams Service Error:', error);
+    return [];
+  }
+};
+
+/**
+ * 📝 Update exam status (with access control)
+ */
+const updateExamStatusInDB = async (examId, status, tutorId) => {
+  try {
+    const examDoc = await db.collection('exams').doc(examId).get();
+    
+    if (!examDoc.exists) {
+      throw new Error('Exam not found');
+    }
+    
+    const examData = examDoc.data();
+    
+    if (tutorId && examData.tutor_id !== tutorId) {
+      throw new Error('You do not have permission to update this exam');
+    }
+    
+    await db.collection('exams').doc(examId).update({
+      status: status,
+      updated_at: new Date().toISOString()
+    });
+    
+    return { success: true, message: `Exam status updated to ${status}` };
+  } catch (error) {
+    console.error('Update Exam Status Error:', error);
     throw new Error(error.message);
   }
 };
