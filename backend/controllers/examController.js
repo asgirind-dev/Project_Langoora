@@ -113,7 +113,11 @@ const getStudentExams = async (req, res) => {
 };
 
 // =========================================================================
+<<<<<<< HEAD
 // 📊 4. Get Tutor Exams (Only logged-in tutor's exams)
+=======
+// 📊 3. Get Tutor Exams - Using Service Layer
+>>>>>>> fad7915c4946d8ca8e12ce47da1bfa1db964d376
 // =========================================================================
 const getTutorExams = async (req, res) => {
   try {
@@ -148,7 +152,33 @@ const getTutorExams = async (req, res) => {
 };
 
 // =========================================================================
+<<<<<<< HEAD
 // 📊 5. Get Exam by ID (with access control)
+=======
+// 📊 4. Get Student Exams - Using Service Layer (ADDED THIS)
+// =========================================================================
+const getStudentExams = async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const examsList = await examServices.getStudentExamsFromDB(studentId);
+    
+    return res.status(200).json({
+      success: true,
+      data: examsList
+    });
+  } catch (error) {
+    console.error("Get Student Exams Error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Error fetching student exams', 
+      error: error.message 
+    });
+  }
+};
+
+// =========================================================================
+// 📊 5. Get Exam by ID
+>>>>>>> fad7915c4946d8ca8e12ce47da1bfa1db964d376
 // =========================================================================
 const getExamById = async (req, res) => {
   try {
@@ -292,7 +322,7 @@ const deleteStudentExam = async (req, res) => {
 };
 
 // =========================================================================
-// 🚀 11. Upload Asset
+// 🚀 8. Upload Asset (Audios to Cloudinary | Images to Base64)
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -403,7 +433,7 @@ const uploadAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 12. Delete Asset from Cloudinary
+// 🗑️ 9. Delete Asset from Cloudinary
 // =========================================================================
 const deleteAsset = async (req, res) => {
   try {
@@ -460,11 +490,29 @@ const deleteAsset = async (req, res) => {
 };
 
 // =========================================================================
+// 🗑️ 10. Delete Student Exam - Using Service Layer
+// =========================================================================
+const deleteStudentExam = async (req, res) => {
+  try {
+    const examDocId = req.params.id;
+    const result = await examServices.deleteStudentExamFromDB(examDocId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Firebase Delete Error:", error);
+    return res.status(500).json({ 
+      message: 'Server Error', 
+      error: error.message 
+    });
+  }
+};
+
+// =========================================================================
 // 🌟 Export All Functions
 // =========================================================================
 module.exports = {
   createExam,
   getTutorExams,
+  getStudentExams,   
   getExamById,
   deleteExam,
   updateExamStatus,
@@ -474,5 +522,6 @@ module.exports = {
   getStudentExams,
   deleteStudentExam,
   uploadAsset,
-  deleteAsset
+  deleteAsset,
+  deleteStudentExam
 };

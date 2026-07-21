@@ -1,9 +1,8 @@
 const { db } = require('../config/firebase');
 
 // ── CBT System Configurations ───────────────────────────────────────────
-// ❌ REMOVED HARDCODED VALUES
-// const MAX_TAB_VIOLATIONS = 3;
-// const VIOLATION_LOCK_MINUTES = 30;
+const MAX_TAB_VIOLATIONS = 3;
+const VIOLATION_LOCK_MINUTES = 30;
 
 /**
  * 🧩 Get all sub-questions from a problem's sub_questions sub-collection
@@ -93,37 +92,12 @@ function itemKey(item) {
   return `${item.questionDocId}::${item.id}`;
 }
 
+
 const getExamMetadata = async (examId) => {
   const doc = await db.collection('exams').doc(examId).get();
   if (!doc.exists) throw new Error('Exam not found');
   return { id: doc.id, ...doc.data() };
 };
-
-// ─── GET SECURITY POLICIES ──────────────────────────────────────────────
-async function getSecurityPolicies() {
-  try {
-    const doc = await db.collection('system_settings').doc('security_governance').get();
-    if (!doc.exists) {
-      // Return defaults if document doesn't exist
-      return { 
-        enableAntiCheat: true, 
-        maxViolationWarnings: 3, 
-        lockMinutes: 30,
-        maintenanceMode: false,
-        sessionTimeouts: { admin: 15, tutor: 20, student: 45, finance: 10, validator: 15 }
-      };
-    }
-    return doc.data();
-  } catch (error) {
-    console.error('Error fetching security policies:', error);
-    // Return defaults on error
-    return { 
-      enableAntiCheat: true, 
-      maxViolationWarnings: 3, 
-      lockMinutes: 30 
-    };
-  }
-}
 
 // ─── GET GRADABLE ITEMS (WITH ANSWER KEYS) ─────────────────────────────
 const getGradableItems = async (examId) => {
@@ -221,27 +195,6 @@ const logViolation = async (attemptId) => {
   const data = attemptDoc.data();
   if (data.status === 'completed') return { currentViolations: data.violations, isLocked: false };
 
-  // ✅ Get dynamic policies from database
-  const policies = await getSecurityPolicies();
-  
-  // ✅ CHECK: Is anti-cheat enabled? - THIS IS THE KEY FIX
-  if (!policies.enableAntiCheat) {
-    // Anti-cheat is disabled - return without logging violation
-    console.log(`🔓 Anti-cheat is DISABLED. Tab switch ignored for attempt: ${attemptId}`);
-    return { 
-      attemptId, 
-      currentViolations: data.violations || 0, 
-      isLocked: false, 
-      lockUntil: null,
-      maxViolations: policies.maxViolationWarnings || 3,
-      remaining: policies.maxViolationWarnings || 3,
-      antiCheatDisabled: true  // ← Let frontend know anti-cheat is off
-    };
-  }
-
-  const MAX_TAB_VIOLATIONS = policies.maxViolationWarnings || 3;
-  const VIOLATION_LOCK_MINUTES = policies.lockMinutes || 30;
-
   const currentViolations = (data.violations || 0) + 1;
   const now = new Date();
   const timestamps = data.violationTimestamps || [];
@@ -268,17 +221,7 @@ const logViolation = async (attemptId) => {
   }
 
   await attemptRef.update(updateFields);
-  
-  // ✅ Return all data including max violations and remaining
-  return { 
-    attemptId, 
-    currentViolations, 
-    isLocked, 
-    lockUntil,
-    maxViolations: MAX_TAB_VIOLATIONS,
-    remaining: Math.max(0, MAX_TAB_VIOLATIONS - currentViolations),
-    antiCheatDisabled: false
-  };
+  return { attemptId, currentViolations, isLocked, lockUntil };
 };
 
 // ─── GET ATTEMPT STATUS ─────────────────────────────────────────────────
