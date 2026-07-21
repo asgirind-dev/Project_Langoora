@@ -4,12 +4,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { 
   Mail, Lock, Eye, EyeOff, User, Phone, Calendar, GraduationCap, 
   Upload, MapPin, ArrowRight, Chrome, BookOpen, CheckCircle, 
-  AlertCircle, Check, X, Globe, User as UserIcon, FileText 
+  AlertCircle, Check, X, Globe, User as UserIcon, FileText, Shield
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { fetchActiveLanguages } from '../../services/languageService'; // ✅ Updated import
+import { fetchActiveLanguages } from '../../services/languageService';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -23,6 +23,9 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false); 
   const [errors, setErrors] = useState({});
+  const [isPreAuthorized, setIsPreAuthorized] = useState(false);
+  const [preAuthorizedRole, setPreAuthorizedRole] = useState(null);
+  const [preAuthorizedInstitution, setPreAuthorizedInstitution] = useState(null);
   const [form, setForm] = useState({
     firstName: '', 
     lastName: '',
@@ -34,38 +37,95 @@ export default function RegisterPage() {
     university: '', 
     address: '', 
     certificate: null,
-    language: '', // new field for tutor language selection
+    language: '',
   });
 
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '' });
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   
-  // State for available languages from LanguageConfigPage
+  // State for available languages
   const [availableLanguages, setAvailableLanguages] = useState([]);
   const [languagesLoading, setLanguagesLoading] = useState(false);
 
-  // Fetch active languages when component mounts (public endpoint - no auth required)
+  // ✅ Check if email is pre-authorized
+  const checkPreAuthorization = async (email) => {
+    if (!email || email.length < 5) return;
+    
+    try {
+      const response = await fetch(`http://localhost:5000/api/users/preauth-check?email=${encodeURIComponent(email)}`);
+      const data = await response.json();
+      
+      if (data.success && data.isPreAuthorized) {
+        setIsPreAuthorized(true);
+        setPreAuthorizedRole(data.role);
+        setPreAuthorizedInstitution(data.institution || 'Langoora');
+        setRole(data.role);
+        setForm(prev => ({
+          ...prev,
+          language: data.languageScope || prev.language
+        }));
+      } else {
+        setIsPreAuthorized(false);
+        setPreAuthorizedRole(null);
+        setPreAuthorizedInstitution(null);
+      }
+    } catch (error) {
+      console.error('Error checking pre-authorization:', error);
+    }
+  };
+
+  // Fetch active languages when component mounts
   useEffect(() => {
     const fetchLanguages = async () => {
       setLanguagesLoading(true);
       try {
         const data = await fetchActiveLanguages();
-        if (data.success) {
-          // data.languages is already an array of unique language names
-          setAvailableLanguages(data.languages);
-          // Set default language if available
-          if (data.languages.length > 0 && !form.language) {
-            setForm(prev => ({ ...prev, language: data.languages[0] }));
+        console.log('🔍 Languages API response:', data);
+        
+        let languages = [];
+        
+        if (data && data.success) {
+          if (Array.isArray(data.languages)) {
+            languages = data.languages;
+          } else if (Array.isArray(data.data)) {
+            languages = data.data;
           }
+        } else if (Array.isArray(data)) {
+          languages = data;
+        }
+        
+        languages = languages
+          .map(lang => typeof lang === 'string' ? lang : String(lang))
+          .filter(lang => lang && lang.trim() !== '');
+        
+        languages = [...new Set(languages)];
+        
+        console.log('✅ Processed languages:', languages);
+        setAvailableLanguages(languages);
+        
+        if (languages.length > 0 && !form.language) {
+          setForm(prev => ({ ...prev, language: languages[0] }));
         }
       } catch (error) {
         console.error('Failed to fetch languages:', error);
+        setAvailableLanguages([]);
       } finally {
         setLanguagesLoading(false);
       }
     };
     fetchLanguages();
   }, []);
+
+  // ✅ Check pre-authorization when email changes
+  useEffect(() => {
+    const delayDebounce = setTimeout(() => {
+      if (form.email) {
+        checkPreAuthorization(form.email);
+      }
+    }, 500);
+    
+    return () => clearTimeout(delayDebounce);
+  }, [form.email]);
 
   useEffect(() => {
     return () => {
@@ -149,7 +209,6 @@ export default function RegisterPage() {
       e.email = 'Invalid email structure format';
     }
 
-    // Server-grade validation criteria block enforcement
     const criteria = getPasswordCriteria(form.password);
     let criteriaMet = 0;
     if (criteria.hasNumeric) criteriaMet++;
@@ -185,12 +244,14 @@ export default function RegisterPage() {
       }
     }
     
-    if (role === 'tutor') {
+    // ✅ For pre-authorized staff, skip tutor-specific validations
+    if (!isPreAuthorized && role === 'tutor') {
       if (!form.qualifications.trim()) e.qualifications = 'Qualifications required';
       if (!form.university.trim()) e.university = 'University required';
       if (!form.certificate) e.certificate = 'Certificate file is required';
       if (!form.language) e.language = 'Please select your language expertise';
     }
+    
     return e;
   };
 
@@ -207,31 +268,42 @@ export default function RegisterPage() {
 
     try {
       let certificateBase64 = '';
-      if (role === 'tutor' && form.certificate) {
+      if (!isPreAuthorized && role === 'tutor' && form.certificate) {
         certificateBase64 = await convertToBase64(form.certificate);
       }
 
-      // Combine first and last name
       const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`;
 
       const userData = {
         name: fullName,
         phone: form.phone.trim(),
         dob: form.dob,
-        ...(role === 'tutor' && {
+        ...(!isPreAuthorized && role === 'tutor' && {
           university: form.university.trim(),
           qualifications: form.qualifications.trim(),
           address: form.address?.trim() || '',
           certificateData: certificateBase64,
-          language: form.language, // new field
+          language: form.language,
         })
       };
 
-      await register(form.email, form.password, userData, role);
+      // ✅ Use pre-authorized role if available, otherwise use selected role
+      const finalRole = isPreAuthorized ? preAuthorizedRole : role;
+      
+      await register(form.email, form.password, userData, finalRole || 'student');
       
       setSuccess(true);
       timeoutRef.current = setTimeout(() => {
-        navigate('/auth/login');
+        // ✅ Redirect to appropriate dashboard based on role
+        if (isPreAuthorized && preAuthorizedRole === 'validator') {
+          navigate('/validator');
+        } else if (isPreAuthorized && preAuthorizedRole === 'finance') {
+          navigate('/finance-admin');
+        } else if (isPreAuthorized && preAuthorizedRole === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/auth/login');
+        }
       }, 3000);
 
     } catch (err) {
@@ -275,10 +347,12 @@ export default function RegisterPage() {
         </div>
         <h2 className="text-2xl font-bold text-white mb-2">Registration Successful!</h2>
         <p className="text-gray-400 text-sm max-w-sm mx-auto">
-          Your account has been created cleanly. Redirecting you to the login gateway to authenticate...
+          {isPreAuthorized 
+            ? `Your ${preAuthorizedRole} account has been activated! Redirecting to your dashboard...`
+            : 'Your account has been created cleanly. Redirecting you to the login gateway to authenticate...'}
         </p>
         <div className="mt-6 text-xs text-blue-400 font-mono animate-pulse">
-          Redirecting in 3 seconds...
+          Redirecting...
         </div>
       </div>
     );
@@ -288,6 +362,24 @@ export default function RegisterPage() {
     <div className="max-w-md mx-auto">
       <h2 className="text-3xl font-bold text-white mb-2">Create your account</h2>
       <p className="text-gray-400 mb-8">Join 24,000+ learners on Langoora</p>
+
+      {/* ✅ Show pre-authorization banner with institution */}
+      {isPreAuthorized && (
+        <div className="bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 p-3.5 rounded-xl text-xs mb-5 flex items-center gap-3">
+          <Shield size={18} className="shrink-0 text-indigo-400" />
+          <div>
+            <span className="font-bold">Pre-Authorized Staff</span>
+            <span className="text-indigo-400/70 ml-2">
+              Role: {preAuthorizedRole} • Language: {form.language || 'Japanese'}
+            </span>
+            {preAuthorizedInstitution && (
+              <span className="text-indigo-400/50 ml-2">
+                • Institution: {preAuthorizedInstitution}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {errors.globalAlert && (
         <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 p-3.5 rounded-xl text-xs mb-5 flex items-start gap-2">
@@ -303,27 +395,29 @@ export default function RegisterPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 mb-8">
-        {roles.map(r => (
-          <button
-            key={r.id}
-            type="button"
-            onClick={() => { setRole(r.id); setErrors({}); }}
-            className={`p-4 rounded-xl border text-left transition-all ${
-              role === r.id
-                ? 'border-blue-500/60 bg-blue-500/10 text-white'
-                : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20'
-            }`}
-          >
-            <r.icon size={20} className={`mb-2 ${role === r.id ? 'text-blue-400' : 'text-gray-500'}`} />
-            <p className="font-semibold text-sm">{r.label}</p>
-            <p className="text-xs mt-0.5 opacity-70">{r.desc}</p>
-          </button>
-        ))}
-      </div>
+      {/* ✅ Only show role selection for non-pre-authorized users */}
+      {!isPreAuthorized && (
+        <div className="grid grid-cols-2 gap-3 mb-8">
+          {roles.map(r => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => { setRole(r.id); setErrors({}); }}
+              className={`p-4 rounded-xl border text-left transition-all ${
+                role === r.id
+                  ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                  : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20'
+              }`}
+            >
+              <r.icon size={20} className={`mb-2 ${role === r.id ? 'text-blue-400' : 'text-gray-500'}`} />
+              <p className="font-semibold text-sm">{r.label}</p>
+              <p className="text-xs mt-0.5 opacity-70">{r.desc}</p>
+            </button>
+          ))}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* First Name & Last Name in a grid */}
         <div className="grid grid-cols-2 gap-4">
           <Input 
             label="First Name" 
@@ -343,9 +437,17 @@ export default function RegisterPage() {
           />
         </div>
 
-        <Input label="Email Address" type="email" placeholder="you@example.com" icon={Mail} value={form.email} onChange={setField('email')} error={errors.email} />
+        <Input 
+          label="Email Address" 
+          type="email" 
+          placeholder="you@example.com" 
+          icon={Mail} 
+          value={form.email} 
+          onChange={setField('email')} 
+          error={errors.email}
+          className={isPreAuthorized ? "border-indigo-500/50" : ""}
+        />
 
-        {/* Password Matrix Field with Real-time Tooltip Rules Modal Box */}
         <div className="flex flex-col gap-1.5 relative">
           <label className="text-sm font-medium text-gray-300">Password</label>
           <div className="relative">
@@ -364,7 +466,6 @@ export default function RegisterPage() {
             </button>
           </div>
 
-          {/* Contextual Password Requirements Floating Tooltip Box */}
           <AnimatePresence>
             {isPasswordFocused && (
               <motion.div
@@ -405,7 +506,6 @@ export default function RegisterPage() {
             )}
           </AnimatePresence>
           
-          {/* Real-time Color Bar Tracker */}
           {form.password && (
             <div className="mt-1">
               <div className="flex gap-1.5 h-1">
@@ -439,7 +539,7 @@ export default function RegisterPage() {
         </div>
 
         <AnimatePresence>
-          {role === 'tutor' && (
+          {!isPreAuthorized && role === 'tutor' && (
             <motion.div
               initial={{ opacity: 0, height: 0 }} 
               animate={{ opacity: 1, height: 'auto' }} 
@@ -447,7 +547,6 @@ export default function RegisterPage() {
               transition={{ duration: 0.25 }}
               className="space-y-4 overflow-hidden"
             >
-              {/* Language Selection Dropdown */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-gray-300">Language Expertise</label>
                 <div className="relative">
@@ -457,14 +556,17 @@ export default function RegisterPage() {
                     onChange={setField('language')}
                     className={`w-full bg-white/5 border ${errors.language ? 'border-red-500/60' : 'border-white/10'} rounded-xl px-4 py-3 pl-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/60 text-sm transition-colors appearance-none`}
                   >
-                    <option value="">Select your language expertise</option>
-                    {availableLanguages.length === 0 && languagesLoading ? (
+                    {!form.language && (
+                      <option value="">Select your language expertise</option>
+                    )}
+                    
+                    {languagesLoading ? (
                       <option value="" disabled>Loading languages...</option>
                     ) : availableLanguages.length === 0 ? (
                       <option value="" disabled>No languages available</option>
                     ) : (
-                      availableLanguages.map(lang => (
-                        <option key={lang} value={lang} className="bg-[#0d1527]">
+                      availableLanguages.map((lang, index) => (
+                        <option key={`${lang}-${index}`} value={lang} className="bg-[#0d1527]">
                           {lang}
                         </option>
                       ))
@@ -475,7 +577,6 @@ export default function RegisterPage() {
                 {languagesLoading && <p className="text-xs text-gray-400">Loading languages...</p>}
               </div>
 
-              {/* Qualifications as textarea */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-gray-300">Qualifications</label>
                 <textarea
@@ -510,7 +611,7 @@ export default function RegisterPage() {
           {loading ? 'Creating account...' : <span className="flex items-center justify-center gap-2">Create Account <ArrowRight size={18} /></span>}
         </Button>
 
-        {role === 'student' && (
+        {!isPreAuthorized && role === 'student' && (
           <>
             <div className="relative my-2">
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10" /></div>

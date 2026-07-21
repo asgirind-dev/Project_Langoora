@@ -9,6 +9,90 @@ const {
 } = require('../middleware/authMiddleware');
 const { db, admin } = require('../config/firebase');
 
+// ======================================================================
+// 🔓 PUBLIC ROUTE - Pre-authorization check (NO authentication required)
+// ======================================================================
+
+/**
+ * ✅ Check if an email is pre-authorized for staff registration
+ * This route is PUBLIC so users can check before registering
+ * GET /api/users/preauth-check?email=user@example.com
+ */
+router.get('/preauth-check', async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required for pre-authorization check.' 
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid email format.' 
+      });
+    }
+
+    const formattedEmail = email.toLowerCase().trim();
+    
+    // Check if email exists in pre_authorized_staff collection
+    const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+
+    if (preAuthDoc.exists) {
+      const data = preAuthDoc.data();
+      
+      // Check if this pre-auth record is still valid (not expired)
+      const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+      const now = new Date();
+      
+      if (expiresAt && expiresAt < now) {
+        // Pre-authorization has expired
+        return res.status(200).json({
+          success: true,
+          isPreAuthorized: false,
+          expired: true,
+          message: 'This invitation has expired. Please contact your administrator.'
+        });
+      }
+
+      // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
+      return res.status(200).json({
+        success: true,
+        isPreAuthorized: true,
+        role: data.role || 'validator',
+        languageScope: data.languageScope || 'All',
+        institution: data.institution || 'Langoora',
+        privileges: data.privileges || [],
+        name: data.name || '',
+        expiresAt: data.expiresAt || null
+      });
+    }
+
+    // Not pre-authorized
+    return res.status(200).json({
+      success: true,
+      isPreAuthorized: false
+    });
+
+  } catch (error) {
+    console.error('Pre-authorization check error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to check pre-authorization status.',
+      error: error.message 
+    });
+  }
+});
+
+// ======================================================================
+// 🔒 ALL ROUTES BELOW ARE PROTECTED (require authentication)
+// ======================================================================
+
 // All routes are protected by authentication
 router.use(protect);
 
@@ -128,7 +212,7 @@ router.get(
 router.post(
   '/roles',
   requirePermission('manage_roles'),
-  requireLevel(2), // only users with level < 2 (Super Admin)
+  requireLevel(2),
   userController.createRole
 );
 
@@ -146,6 +230,65 @@ router.delete(
   requirePermission('manage_roles'),
   requireLevel(2),
   userController.deleteRole
+);
+
+// ======================================================================
+// BULK PRE-AUTHORIZATION CHECK (Admin only)
+// ======================================================================
+
+// ✅ Check multiple emails for pre-authorization (admin only)
+router.post(
+  '/preauth-bulk-check',
+  requirePermission('manage_users'),
+  async (req, res) => {
+    try {
+      const { emails } = req.body;
+      
+      if (!emails || !Array.isArray(emails) || emails.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Emails array is required.' 
+        });
+      }
+
+      const results = [];
+      
+      for (const email of emails) {
+        const formattedEmail = email.toLowerCase().trim();
+        const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+        
+        if (preAuthDoc.exists) {
+          const data = preAuthDoc.data();
+          // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
+          results.push({
+            email: formattedEmail,
+            isPreAuthorized: true,
+            role: data.role || 'validator',
+            languageScope: data.languageScope || 'All',
+            institution: data.institution || 'Langoora'
+          });
+        } else {
+          results.push({
+            email: formattedEmail,
+            isPreAuthorized: false
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        results
+      });
+
+    } catch (error) {
+      console.error('Bulk pre-authorization check error:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to check pre-authorization statuses.',
+        error: error.message 
+      });
+    }
+  }
 );
 
 module.exports = router;

@@ -152,12 +152,13 @@ const getTutorExamsFromDB = async (tutorId) => {
   }
 };
 
-// ✅ ADD THIS FUNCTION - Get Student Exams
+/**
+ * 📊 Get Student Exams
+ */
 const getStudentExamsFromDB = async (studentId = null) => {
   try {
     let query = db.collection('student_exams');
     
-    // If studentId is provided, filter by student
     if (studentId) {
       query = query.where('studentId', '==', studentId);
     }
@@ -169,7 +170,6 @@ const getStudentExamsFromDB = async (studentId = null) => {
       examsList.push({ id: doc.id, ...doc.data() });
     });
     
-    // Sort by newest first
     examsList.sort((a, b) => {
       return new Date(b.startTime || b.created_at) - new Date(a.startTime || a.created_at);
     });
@@ -347,7 +347,7 @@ const updateExamDraftInDB = async (examId, draftData) => {
       status 
     } = draftData;
 
-    const result = await db.collection('exams').doc(examId).update({
+    await db.collection('exams').doc(examId).update({
       title: title.trim(),
       category_id: category_id || '',
       level_id: level_id || '',
@@ -519,6 +519,11 @@ const updateExamInDB = async (examId, examData) => {
     return { success: true, message: 'Exam updated successfully.' };
   } catch (error) {
     console.error('Update Exam Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
  * 🗑️ Delete Student Exam
  */
 const deleteStudentExamFromDB = async (examDocId) => {
@@ -541,11 +546,11 @@ const deleteStudentExamFromDB = async (examDocId) => {
 module.exports = {
   createExamInDB,
   getTutorExamsFromDB,
-  getStudentExamsFromDB,  // ✅ Added this
+  getStudentExamsFromDB,
   getExamByIdFromDB,
   deleteExamFromDB,
   updateExamStatusInDB,
   updateExamDraftInDB,
-  updateExamInDB
+  updateExamInDB,
   deleteStudentExamFromDB
 };

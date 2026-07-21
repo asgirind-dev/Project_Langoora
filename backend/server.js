@@ -21,6 +21,7 @@ const languageRoutes = require('./routes/languageRoutes');
 const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
+const emailLogRoutes = require('./routes/emailLogRoutes');
 
 
 const app = express();
@@ -43,7 +44,7 @@ app.use('/api/languages', languageRoutes);
 app.use('/api/system-settings', systemSettingsRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/exam-execution', examExecutionRoutes);
-
+app.use('/api/email-logs', emailLogRoutes);
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
