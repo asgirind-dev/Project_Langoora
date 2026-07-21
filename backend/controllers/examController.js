@@ -79,35 +79,6 @@ const getAllExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 3. Get Student Exams
-// =========================================================================
-const getStudentExams = async (req, res) => {
-  try {
-    const studentId = req.user?.id;
-    if (!studentId) {
-      return res.status(401).json({ success: false, message: 'User not authenticated' });
-    }
-    
-    const snapshot = await db.collection('student_exams')
-      .where('student_id', '==', studentId)
-      .get();
-    
-    const examsList = [];
-    snapshot.forEach(doc => {
-      examsList.push({ id: doc.id, ...doc.data() });
-    });
-    
-    return res.status(200).json(examsList);
-  } catch (error) {
-    console.error("Get Student Exams Error:", error);
-    return res.status(500).json({ 
-      message: 'Error fetching student exams', 
-      error: error.message 
-    });
-  }
-};
-
-// =========================================================================
 // 📊 3. Get Tutor Exams - Using Service Layer
 // =========================================================================
 const getTutorExams = async (req, res) => {
@@ -130,7 +101,7 @@ const getTutorExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 4. Get Student Exams - Using Service Layer (ADDED THIS)
+// 📊 4. Get Student Exams - Using Service Layer (KEEP ONLY THIS ONE)
 // =========================================================================
 const getStudentExams = async (req, res) => {
   try {
@@ -268,16 +239,8 @@ const updateExam = async (req, res) => {
 const deleteStudentExam = async (req, res) => {
   try {
     const examDocId = req.params.id;
-    
-    const examRef = db.collection('student_exams').doc(examDocId);
-    const doc = await examRef.get();
-    
-    if (!doc.exists) {
-      return res.status(404).json({ success: false, message: 'Exam not found' });
-    }
-    
-    await examRef.delete();
-    return res.status(200).json({ success: true, message: 'Exam deleted successfully!' });
+    const result = await examServices.deleteStudentExamFromDB(examDocId);
+    return res.status(200).json(result);
   } catch (error) {
     console.error("Delete Student Exam Error:", error);
     return res.status(500).json({ 
@@ -289,7 +252,7 @@ const deleteStudentExam = async (req, res) => {
 };
 
 // =========================================================================
-// 🚀 8. Upload Asset (Audios to Cloudinary | Images to Base64)
+// 🚀 11. Upload Asset (Audios to Cloudinary | Images to Base64)
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -400,7 +363,7 @@ const uploadAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 9. Delete Asset from Cloudinary
+// 🗑️ 12. Delete Asset from Cloudinary
 // =========================================================================
 const deleteAsset = async (req, res) => {
   try {
@@ -457,23 +420,6 @@ const deleteAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 10. Delete Student Exam - Using Service Layer
-// =========================================================================
-const deleteStudentExam = async (req, res) => {
-  try {
-    const examDocId = req.params.id;
-    const result = await examServices.deleteStudentExamFromDB(examDocId);
-    return res.status(200).json(result);
-  } catch (error) {
-    console.error("Firebase Delete Error:", error);
-    return res.status(500).json({ 
-      message: 'Server Error', 
-      error: error.message 
-    });
-  }
-};
-
-// =========================================================================
 // 🌟 Export All Functions
 // =========================================================================
 module.exports = {
@@ -486,9 +432,7 @@ module.exports = {
   updateExamDraft,
   updateExam,
   getAllExams,
-  getStudentExams,
   deleteStudentExam,
   uploadAsset,
-  deleteAsset,
-  deleteStudentExam
+  deleteAsset
 };

@@ -37,23 +37,31 @@ export const AuthProvider = ({ children }) => {
       role: rawUser.role || 'student',
       status: rawUser.status || 'active',
       privileges: rawUser.privileges || [],
-      name: rawUser.name || 'User'
+      name: rawUser.name || 'User',
+      languageScope: rawUser.languageScope || 'All',
+      isPreAuthorized: rawUser.isPreAuthorized || false
     };
   };
 
   // ==========================================
-  // 1. REGISTER WORKFLOW
+  // 1. REGISTER WORKFLOW - FIXED
   // ==========================================
   const register = async (email, password, userData, userRole) => {
     try {
+      // ✅ Ensure role is never undefined
+      const role = userRole || 'student';
+      
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email,
           password,
-          role: userRole,
-          userData
+          role: role,
+          userData: {
+            ...userData,
+            role: role
+          }
         })
       });
 
@@ -63,10 +71,13 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Registration processing failed on the backend.');
       }
 
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-      } catch (firebaseErr) {
-        console.warn('Firebase client session sync deferred:', firebaseErr.message);
+      // ✅ If user is pre-authorized staff, log them in automatically
+      if (data.user?.isPreAuthorized) {
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+        } catch (firebaseErr) {
+          console.warn('Firebase client session sync deferred:', firebaseErr.message);
+        }
       }
 
       return data;
@@ -242,7 +253,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ==========================================
-  // 6. REAL-TIME SESSION RECOVERY HOOK (FIXED)
+  // 6. REAL-TIME SESSION RECOVERY HOOK
   // ==========================================
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -264,7 +275,7 @@ export const AuthProvider = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       const storedRole = localStorage.getItem('userRole');
 
-      // 🔥 FIX: Stop background sync for ALL staff/admin roles
+      // Stop background sync for ALL staff/admin roles
       if (STAFF_ROLES.includes(storedRole)) {
         setLoading(false);
         return;

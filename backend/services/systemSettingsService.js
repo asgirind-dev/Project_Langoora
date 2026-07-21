@@ -1,12 +1,13 @@
+// backend/services/systemSettingsService.js
 const { db } = require('../config/firebase');
 const nodemailer = require('nodemailer');
+const emailService = require('./emailService');
 
 class SystemSettingsService {
   // =============================================
   // 1. HOMEPAGE CMS - HERO BANNERS
   // =============================================
 
-  // 1.1 Fetch all banners from sub-collection
   async getHeroBanners() {
     try {
       const bannersSnapshot = await db.collection('system_settings')
@@ -18,12 +19,11 @@ class SystemSettingsService {
       bannersSnapshot.forEach(doc => banners.push(doc.data()));
       return banners;
     } catch (error) {
-      console.error("Error in getHeroBanners Sub-service:", error);
+      console.error("Error in getHeroBanners:", error);
       throw error;
     }
   }
 
-  // 1.2 Save banners safely
   async updateHeroBanners(bannersArray) {
     try {
       const bannersRef = db.collection('system_settings')
@@ -44,7 +44,7 @@ class SystemSettingsService {
 
       return this.getHeroBanners();
     } catch (error) {
-      console.error("Error in updateHeroBanners Sub-service:", error);
+      console.error("Error in updateHeroBanners:", error);
       throw error;
     }
   }
@@ -53,7 +53,6 @@ class SystemSettingsService {
   // 2. GOVERNANCE & SECURITY
   // =============================================
 
-  // 2.1 Fetch Complete Governance Settings Node Matrix
   async getSecurityPolicies() {
     try {
       const doc = await db.collection('system_settings').doc('security_governance').get();
@@ -67,12 +66,11 @@ class SystemSettingsService {
       }
       return doc.data();
     } catch (error) {
-      console.error("Error in getSecurityPolicies service:", error);
+      console.error("Error in getSecurityPolicies:", error);
       throw error;
     }
   }
 
-  // 2.2 Commit Complete Governance, Timeouts & Maintenance Mode Structure
   async updateSecurityPolicies(policyData) {
     try {
       const docRef = db.collection('system_settings').doc('security_governance');
@@ -86,7 +84,7 @@ class SystemSettingsService {
       await docRef.set(payload, { merge: true });
       return payload;
     } catch (error) {
-      console.error("Error in updateSecurityPolicies service:", error);
+      console.error("Error in updateSecurityPolicies:", error);
       throw error;
     }
   }
@@ -95,7 +93,6 @@ class SystemSettingsService {
   // 3. GLOBAL CONFIGURATIONS
   // =============================================
 
-  // 3.1 Get Global Configurations
   async getGlobalConfig() {
     try {
       const doc = await db.collection('system_settings').doc('global_config').get();
@@ -107,7 +104,7 @@ class SystemSettingsService {
           platformCommission: 20,
           minPayoutThreshold: 5000,
           senderEmail: 'noreply@langoora.com',
-          senderName: 'Langoora',              // ← "Langoora" විතරයි!
+          senderName: 'Langoora',
           showAnnouncement: false,
           announcementText: '',
           announcementColor: 'amber',
@@ -117,23 +114,47 @@ class SystemSettingsService {
       
       return doc.data();
     } catch (error) {
-      console.error("Error in getGlobalConfig service:", error);
+      console.error("Error in getGlobalConfig:", error);
       throw error;
     }
   }
 
-  // 3.2 Update Global Configurations
   async updateGlobalConfig(configData) {
     try {
       const docRef = db.collection('system_settings').doc('global_config');
       
+      // ✅ Validate and sanitize senderName
+      let senderName = configData.senderName || 'Langoora';
+      
+      // Validate senderName - enforce limits and clean
+      if (senderName.length < 2) senderName = 'Langoora';
+      if (senderName.length > 50) senderName = senderName.substring(0, 50);
+      
+      // Allow only letters, numbers, spaces, dots, and hyphens
+      // Remove any special characters that could break email headers
+      senderName = senderName.replace(/[^a-zA-Z0-9\s\.\-]/g, '');
+      
+      // If empty after cleaning, use default
+      if (!senderName.trim()) senderName = 'Langoora';
+      
+      // Capitalize each word properly (optional)
+      senderName = senderName.split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+
+      // ✅ Validate senderEmail
+      let senderEmail = configData.senderEmail || 'noreply@langoora.com';
+      if (!this.isValidEmail(senderEmail)) {
+        senderEmail = 'noreply@langoora.com';
+      }
+
       const payload = {
         creditPrice: Number(configData.creditPrice || 50),
         signupBonus: Number(configData.signupBonus || 10),
         platformCommission: Number(configData.platformCommission || 20),
         minPayoutThreshold: Number(configData.minPayoutThreshold || 5000),
-        senderEmail: configData.senderEmail || 'noreply@langoora.com',
-        senderName: 'Langoora',              // ← "Langoora" විතරයි! (User input ignore)
+        senderEmail: senderEmail,
+        senderName: senderName,  // ✅ Now fully configurable with validation
         showAnnouncement: Boolean(configData.showAnnouncement),
         announcementText: configData.announcementText || '',
         announcementColor: configData.announcementColor || 'amber',
@@ -142,56 +163,86 @@ class SystemSettingsService {
 
       await docRef.set(payload, { merge: true });
       
+      console.log('✅ Global config updated successfully!');
+      console.log(`   Sender: ${senderName} <${senderEmail}>`);
+      
       return payload;
     } catch (error) {
-      console.error("Error in updateGlobalConfig service:", error);
+      console.error("Error in updateGlobalConfig:", error);
       throw error;
     }
   }
 
-  // 3.3 Send Test Email
   async sendTestEmail(senderEmail, senderName) {
     try {
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: process.env.SMTP_PORT || 587,
-        secure: process.env.SMTP_SECURE === 'true' || false,
-        auth: {
-          user: process.env.SMTP_USER || process.env.EMAIL_USER,
-          pass: process.env.SMTP_PASS || process.env.EMAIL_PASSWORD
-        }
-      });
-
-      // ⚠️ Important: From name එක "Langoora" විතරයි! (Quotes නැහැ!)
-      const mailOptions = {
-        from: `Langoora <${senderEmail}>`,    // ← "Langoora" විතරයි!
-        to: process.env.ADMIN_EMAIL || 'admin@langoora.com',
-        subject: '✅ Langoora - Email Configuration Test',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #0a0e1a; color: #e0e0e0; border-radius: 12px;">
-            <h2 style="color: #60a5fa; border-bottom: 1px solid #1e293b; padding-bottom: 10px;">✅ Email Configuration Test</h2>
-            <p style="color: #94a3b8;">If you're seeing this email, your email settings are working correctly!</p>
-            <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin: 15px 0;">
-              <p><strong style="color: #60a5fa;">Sender:</strong> Langoora</p>
-              <p><strong style="color: #60a5fa;">Email:</strong> ${senderEmail}</p>
-              <p><strong style="color: #60a5fa;">Time:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' })}</p>
-            </div>
-            <p style="color: #94a3b8; font-size: 12px; border-top: 1px solid #1e293b; padding-top: 10px;">This is an automated test email from Langoora CBT Platform.</p>
-          </div>
-        `
-      };
-
-      await transporter.sendMail(mailOptions);
-      
-      return { 
-        success: true, 
-        message: 'Test email sent successfully!',
-        timestamp: new Date().toISOString()
-      };
+      // Use emailService to send test email
+      const result = await emailService.sendTestEmail(
+        process.env.ADMIN_EMAIL || 'admin@langoora.com',
+        senderEmail,
+        senderName
+      );
+      return result;
     } catch (error) {
       console.error("Error sending test email:", error);
       throw new Error('Failed to send test email: ' + error.message);
     }
+  }
+
+  // =============================================
+  // 4. HELPER METHODS
+  // =============================================
+
+  /**
+   * Validate email address format
+   */
+  isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
+  /**
+   * Validate sender name format
+   */
+  isValidSenderName(name) {
+    if (!name || name.length < 2 || name.length > 50) return false;
+    // Allow letters, numbers, spaces, dots, hyphens
+    const nameRegex = /^[a-zA-Z0-9\s\.\-]+$/;
+    return nameRegex.test(name);
+  }
+
+  /**
+   * Sanitize sender name for safe email headers
+   */
+  sanitizeSenderName(name) {
+    if (!name) return 'Langoora';
+    
+    // Remove any special characters that could break email headers
+    let clean = name.replace(/[^a-zA-Z0-9\s\.\-]/g, '');
+    
+    // Trim extra spaces
+    clean = clean.replace(/\s+/g, ' ').trim();
+    
+    // Capitalize each word
+    clean = clean.split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+    
+    // Ensure minimum length
+    if (clean.length < 2) clean = 'Langoora';
+    
+    // Truncate if too long
+    if (clean.length > 50) clean = clean.substring(0, 50);
+    
+    return clean;
+  }
+
+  /**
+   * Get email sender info with validation
+   */
+  getSenderInfo() {
+    const senderName = this.sanitizeSenderName(this.config?.senderName || 'Langoora');
+    const senderEmail = this.config?.senderEmail || 'noreply@langoora.com';
+    return `${senderName} <${senderEmail}>`;
   }
 }
 

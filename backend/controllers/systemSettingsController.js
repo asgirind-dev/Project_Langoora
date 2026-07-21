@@ -1,3 +1,4 @@
+// backend/controllers/systemSettingsController.js
 const systemSettingsService = require('../services/systemSettingsService');
 
 class SystemSettingsController {
@@ -60,13 +61,9 @@ class SystemSettingsController {
   }
 
   // =============================================
-  // 3. GLOBAL CONFIGURATIONS (NEW)
+  // 3. GLOBAL CONFIGURATIONS
   // =============================================
 
-  /**
-   * 🌐 Get Global Configurations
-   * Frontend එකට Global Config එක යවනවා
-   */
   async getGlobalSettings(req, res) {
     try {
       const config = await systemSettingsService.getGlobalConfig();
@@ -83,10 +80,6 @@ class SystemSettingsController {
     }
   }
 
-  /**
-   * 💾 Save Global Configurations
-   * Frontend එකෙන් එන Data එක Validate කරලා Save කරනවා
-   */
   async saveGlobalSettings(req, res) {
     try {
       const {
@@ -95,13 +88,13 @@ class SystemSettingsController {
         platformCommission,
         minPayoutThreshold,
         senderEmail,
-        senderName,
+        senderName,  // ✅ Include senderName
         showAnnouncement,
         announcementText,
         announcementColor
       } = req.body;
 
-      // ✅ Validate කරනවා
+      // Validate credit price
       if (creditPrice && (creditPrice < 10 || creditPrice > 1000)) {
         return res.status(400).json({
           success: false,
@@ -109,6 +102,7 @@ class SystemSettingsController {
         });
       }
 
+      // Validate signup bonus
       if (signupBonus && (signupBonus < 0 || signupBonus > 100)) {
         return res.status(400).json({
           success: false,
@@ -116,6 +110,7 @@ class SystemSettingsController {
         });
       }
 
+      // Validate platform commission
       if (platformCommission && (platformCommission < 0 || platformCommission > 100)) {
         return res.status(400).json({
           success: false,
@@ -123,6 +118,7 @@ class SystemSettingsController {
         });
       }
 
+      // Validate min payout threshold
       if (minPayoutThreshold && (minPayoutThreshold < 100 || minPayoutThreshold > 100000)) {
         return res.status(400).json({
           success: false,
@@ -130,21 +126,30 @@ class SystemSettingsController {
         });
       }
 
-      if (senderEmail && !isValidEmail(senderEmail)) {
+      // Validate sender email
+      if (senderEmail && !this.isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid email address format'
         });
       }
 
-      // 💾 Save කරනවා
+      // ✅ Validate sender name
+      if (senderName && senderName.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'Sender name must be 50 characters or less'
+        });
+      }
+
+      // Save configurations
       const updatedConfig = await systemSettingsService.updateGlobalConfig({
         creditPrice,
         signupBonus,
         platformCommission,
         minPayoutThreshold,
         senderEmail,
-        senderName,
+        senderName,  // ✅ Pass senderName
         showAnnouncement,
         announcementText,
         announcementColor
@@ -164,15 +169,11 @@ class SystemSettingsController {
     }
   }
 
-  /**
-   * 📧 Send Test Email
-   * Email settings හරිද කියලා Test කරනවා
-   */
   async sendTestEmail(req, res) {
     try {
       const { senderEmail, senderName } = req.body;
       
-      // ✅ Validate කරනවා
+      // ✅ Validate sender email
       if (!senderEmail) {
         return res.status(400).json({
           success: false,
@@ -180,14 +181,14 @@ class SystemSettingsController {
         });
       }
 
-      if (!isValidEmail(senderEmail)) {
+      if (!this.isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid sender email format'
         });
       }
 
-      // 📧 Email එක Send කරනවා
+      // Send test email
       const result = await systemSettingsService.sendTestEmail(senderEmail, senderName);
       
       return res.status(200).json({
@@ -203,12 +204,12 @@ class SystemSettingsController {
       });
     }
   }
-}
 
-// Helper function to validate email
-function isValidEmail(email) {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  // Helper function to validate email
+  isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
 }
 
 module.exports = new SystemSettingsController();

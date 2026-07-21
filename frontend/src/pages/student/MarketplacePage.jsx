@@ -45,6 +45,12 @@ export default function MarketplacePage() {
 
   const hasActiveFilters = search || activeCategory !== 'All' || creditRange[1] < 100 || minRating > 0 || difficulty !== 'All' || dateFrom || dateTo;
 
+  // Handle Unlock button click
+  const handleUnlockClick = (examId, e) => {
+    e.stopPropagation(); // Prevent triggering parent card click
+    navigate(`/exam/${examId}/preview`);
+  };
+
   return (
     <div className="space-y-6 pt-24 px-4 max-w-7xl mx-auto min-h-screen text-white"> 
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
@@ -99,7 +105,6 @@ export default function MarketplacePage() {
                 className="w-full accent-blue-500" />
             </div>
             <div>
-              {/* 🟢 LKR වෙනුවට Max Credits range slider එක */}
               <label className="text-sm font-medium text-gray-300 mb-2 block">Max Credits: {creditRange[1]} Credits</label>
               <input type="range" min={0} max={100} step={5} value={creditRange[1]} onChange={e => setCreditRange([0, Number(e.target.value)])}
                 className="w-full accent-blue-500" />
@@ -189,7 +194,13 @@ export default function MarketplacePage() {
                     <span className="text-lg sm:text-xl font-bold text-amber-400">{exam.credits}</span>
                     <span className="text-xs text-gray-400">Credits</span>
                   </div>
-                  <Button variant="primary" size="sm">Unlock</Button>
+                  <Button 
+                    variant="primary" 
+                    size="sm"
+                    onClick={(e) => handleUnlockClick(exam.id, e)}
+                  >
+                    Unlock
+                  </Button>
                 </div>
               </div>
             </GlassCard>
