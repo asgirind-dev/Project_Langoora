@@ -1,24 +1,43 @@
 const { db } = require('../config/firebase');
-const admin = require('firebase-admin'); // arrayUnion පාවිච්චි කිරීමට admin import කරගන්න
+const admin = require('firebase-admin');
 const subscriptionService = require('../services/SubscriptionService');
 
-// Helper function එකක් - Activity එකක් category document එක ඇතුළේ ලොග් කිරීමට
+// ===== Helper: Activity log (FIXED FIELDVALUE ISSUE) =====
 const logCategoryActivity = async (id, actionType, logDetails) => {
-  const newHistoryLog = {
-    logId: db.collection('exam_categories').doc().id, // unique ID එකක්
-    action: actionType, // "CREDIT_UPDATE" | "STATUS_CHANGE" | "DELETED"
-    ...logDetails,
-    updatedAt: new Date().toISOString()
-  };
+  try {
+    const newHistoryLog = {
+      logId: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      action: actionType,
+      ...logDetails,
+      updatedAt: new Date().toISOString()
+    };
 
-  await db.collection('exam_categories').doc(id).update({
-    creditHistory: admin.firestore.FieldValue.arrayUnion(newHistoryLog) // පැරණි array නමම පාවිච්චි කළා frontend එක බිඳෙන්නේ නැති වෙන්න
-  });
+    console.log(`📝 Logging activity for ${id}:`, actionType, newHistoryLog.logId);
+
+    const docRef = db.collection('exam_categories').doc(id);
+    const doc = await docRef.get();
+    
+    if (!doc.exists) {
+      console.error(`❌ Document ${id} not found in Firestore!`);
+      return;
+    }
+
+    const data = doc.data() || {};
+    // පරණ history array එක අරගෙන ඒකට අලුත් log එක එකතු කරනවා
+    const existingHistory = Array.isArray(data.creditHistory) ? data.creditHistory : [];
+    const updatedHistory = [newHistoryLog, ...existingHistory];
+
+    // Array එක direct update කරනවා (FieldValue.arrayUnion Crash වීම් නැත)
+    await docRef.update({
+      creditHistory: updatedHistory
+    });
+
+    console.log(`✅ History successfully logged for ${id} - ${newHistoryLog.logId}`);
+  } catch (error) {
+    console.error(`❌ Error logging activity:`, error);
+  }
 };
-
-// ==========================================
-// 1. SUBSCRIPTION PLANS CONTROLLER
-// ==========================================
+// 1. SUBSCRIPTION PLANS
 exports.getPlans = async (req, res) => {
   try {
     const plans = await subscriptionService.getAllPlans(); 
@@ -61,14 +80,49 @@ exports.deletePlan = async (req, res) => {
   }
 };
 
-// ==========================================
-// 2. EXAM CATEGORY CONTROLLER
-// ==========================================
+// 2. GET CATEGORIES
 exports.getCategories = async (req, res) => {
   try {
-    const snapshot = await db.collection('exam_categories').get();
-    const categories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.status(200).json(categories);
+    const catsSnapshot = await db.collection('exam_categories').get();
+    const flattenedList = [];
+
+    for (const catDoc of catsSnapshot.docs) {
+      const catId = catDoc.id;
+      const catData = catDoc.data();
+
+      const levelsSnapshot = await db.collection(`exam_categories/${catId}/levels`).get();
+      
+      if (!levelsSnapshot.empty) {
+        levelsSnapshot.forEach(levelDoc => {
+          const levelData = levelDoc.data();
+          flattenedList.push({
+            id: levelDoc.id,
+            categoryId: catId,
+            categoryName: catData.category_name || catData.name || catId,
+            name: levelData.level_name || levelData.name || levelDoc.id,
+            credits: levelData.credits || 0,
+            language: levelData.language || catData.language || '',
+            active: levelData.is_active !== 0,
+            status: levelData.status || 'active',
+            hasSubLevels: true
+          });
+        });
+      } else {
+        flattenedList.push({
+          id: catId,
+          categoryId: catId,
+          categoryName: catData.category_name || catData.name || catId,
+          name: catData.category_name || catData.name || catId,
+          credits: catData.credits || 0,
+          language: catData.language || '',
+          active: catData.is_active !== 0,
+          status: catData.status || 'active',
+          hasSubLevels: false
+        });
+      }
+    }
+
+    res.status(200).json(flattenedList);
   } catch (error) {
     res.status(500).json({ message: "Categories fetch error", error: error.message });
   }
@@ -86,28 +140,21 @@ exports.createCategory = async (req, res) => {
   }
 };
 
-// Category එක Update කරද්දී (උදා: Active/Inactive status එක වෙනස් කරද්දී)
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // කලින් තිබූ තොරතුරු ගන්නවා
     const catDoc = await db.collection('exam_categories').doc(id).get();
-    if (!catDoc.exists) {
-      return res.status(404).json({ message: "Category not found" });
-    }
+    if (!catDoc.exists) return res.status(404).json({ message: "Category not found" });
     const oldData = catDoc.data();
 
-    // Update එක සිදු කරනවා
     await subscriptionService.updateExistingCategory(id, req.body);
 
-    // Status එක වෙනස් වෙලා නම් ඒක log එකක් විදිහට සේව් කරනවා
-    if (req.body.active !== undefined && oldData.active !== req.body.active) {
-      await logCategoryActivity(id, "STATUS_CHANGE", {
-        previousState: oldData.active ? "Active" : "Inactive",
-        newState: req.body.active ? "Active" : "Inactive",
+    if (req.body.credits !== undefined && oldData.credits !== req.body.credits) {
+      await logCategoryActivity(id, "CREDIT_UPDATE", {
         previousCredits: oldData.credits || 0,
-        newCredits: oldData.credits || 0
+        newCredits: req.body.credits,
+        levelId: null,
+        levelName: oldData.category_name || oldData.name || id
       });
     }
 
@@ -117,27 +164,20 @@ exports.updateCategory = async (req, res) => {
   }
 };
 
-// Category එක Soft-Delete කරද්දී
 exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
-
     const catDoc = await db.collection('exam_categories').doc(id).get();
-    if (!catDoc.exists) {
-      return res.status(404).json({ message: "Category not found" });
-    }
+    if (!catDoc.exists) return res.status(404).json({ message: "Category not found" });
     const oldData = catDoc.data();
 
-    // 1. Database එකෙන් මකන්නේ නැතුව Soft-Delete (status: 'deleted' / active: false) කරනවා
     await db.collection('exam_categories').doc(id).update({
       status: 'deleted',
+      is_active: 0,
       active: false
     });
 
-    // 2. Delete කළ බවට history එකට එකතු කරනවා
     await logCategoryActivity(id, "DELETED", {
-      previousState: oldData.active ? "Active" : "Inactive",
-      newState: "Deleted",
       previousCredits: oldData.credits || 0,
       newCredits: 0
     });
@@ -148,78 +188,164 @@ exports.deleteCategory = async (req, res) => {
   }
 };
 
+// 3. UPDATE LEVEL CREDITS
+exports.updateLevelCredits = async (req, res) => {
+  try {
+    const { categoryId, levelId } = req.params;
+    const { credits } = req.body;
+    const creditsInt = parseInt(credits);
+
+    if (creditsInt < 0) {
+      return res.status(400).json({ success: false, message: "Credits cannot be negative." });
+    }
+
+    const levelRef = db.collection(`exam_categories/${categoryId}/levels`).doc(levelId);
+    const levelDoc = await levelRef.get();
+
+    if (!levelDoc.exists) {
+      return res.status(404).json({ message: "Level not found" });
+    }
+
+    const levelData = levelDoc.data();
+    const previousCredits = levelData.credits || 0;
+    const levelName = levelData.level_name || levelData.name || levelId;
+
+    await levelRef.update({
+      credits: creditsInt,
+      updated_at: new Date().toISOString(),
+      isCreditSet: true
+    });
+
+    await logCategoryActivity(categoryId, "CREDIT_UPDATE", {
+      previousCredits: parseInt(previousCredits),
+      newCredits: creditsInt,
+      levelId: levelId,
+      levelName: levelName
+    });
+
+    res.status(200).json({ 
+      success: true,
+      message: `Level credits updated successfully`, 
+      categoryId, 
+      levelId,
+      previousCredits,
+      newCredits: creditsInt
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 4. UPDATE CATEGORY CREDITS
+exports.updateCategoryCredits = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { credits } = req.body;
+    const creditsInt = parseInt(credits);
+
+    if (creditsInt < 0) {
+      return res.status(400).json({ success: false, message: "Credits cannot be negative." });
+    }
+
+    const catDoc = await db.collection('exam_categories').doc(id).get();
+    if (!catDoc.exists) return res.status(404).json({ success: false, message: "Category not found" });
+
+    const oldData = catDoc.data();
+    const previousCredits = oldData.credits || 0;
+    const categoryName = oldData.category_name || oldData.name || id;
+
+    await db.collection('exam_categories').doc(id).update({
+      credits: creditsInt,
+      updated_at: new Date().toISOString()
+    });
+
+    await logCategoryActivity(id, "CREDIT_UPDATE", {
+      previousCredits: parseInt(previousCredits),
+      newCredits: creditsInt,
+      levelId: null,
+      levelName: categoryName
+    });
+
+    res.status(200).json({ 
+      success: true,
+      message: "Category credits updated successfully",
+      id,
+      previousCredits,
+      newCredits: creditsInt
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 5. EXAMS
 exports.getExams = async (req, res) => {
   try {
     const snapshot = await db.collection('exams').get(); 
     const exams = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.status(200).json(exams);
   } catch (error) {
-    console.error("Error fetching exams:", error);
     res.status(500).json({ error: error.message });
   }
 };
 
-// Credits කෙලින්ම වෙනස් කළ විට
-exports.updateCategoryCredits = async (req, res) => {
-  try {
-    const { id } = req.params; 
-    const { credits } = req.body; 
-
-    const catDoc = await db.collection('exam_categories').doc(id).get();
-    if (!catDoc.exists) {
-      return res.status(404).json({ message: "Category not found" });
-    }
-    const previousCredits = catDoc.data().credits || 0;
-
-    // 1. Credits update කිරීම
-    await db.collection('exam_categories').doc(id).update({
-      credits: parseInt(credits) 
-    });
-
-    // 2. History ලොග් කිරීම
-    await logCategoryActivity(id, "CREDIT_UPDATE", {
-      previousCredits: parseInt(previousCredits),
-      newCredits: parseInt(credits),
-      previousState: catDoc.data().active ? "Active" : "Inactive",
-      newState: catDoc.data().active ? "Active" : "Inactive"
-    });
-
-    res.status(200).json({ message: "Credits updated successfully" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// සියලුම ඉතිහාස දත්ත (Credit updates, Status changes, Deletions) එකට එකතු කර ලබාදීම
+// ===== 6. FIXED: GET CREDIT HISTORY WITH PREVIOUS & NEW CREDITS =====
 exports.getCreditHistory = async (req, res) => {
   try {
-    const snapshot = await db.collection('exam_categories').get();
+    const categoriesSnapshot = await db.collection('exam_categories').get();
     let allHistory = [];
-    
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      if (data.creditHistory && Array.isArray(data.creditHistory)) {
-        data.creditHistory.forEach(log => {
+
+    for (const catDoc of categoriesSnapshot.docs) {
+      const categoryData = catDoc.data();
+      const categoryName = categoryData.category_name || categoryData.name || catDoc.id;
+
+      if (categoryData.creditHistory && Array.isArray(categoryData.creditHistory)) {
+        categoryData.creditHistory.forEach(log => {
+          let examName = categoryName;
+          if (log.levelName && log.levelName !== categoryName) {
+            examName = `${categoryName} - ${log.levelName}`;
+          }
+          
           allHistory.push({
-            id: log.logId,
-            categoryId: doc.id,
-            categoryName: data.name || "Unknown Exam",
-            action: log.action || "CREDIT_UPDATE", // Default type
-            previousCredits: log.previousCredits,
-            newCredits: log.newCredits,
-            previousState: log.previousState || "N/A",
-            newState: log.newState || "N/A",
-            updatedAt: log.updatedAt
+            id: log.logId || `history_${Date.now()}_${Math.random()}`,
+            examName: examName,
+            previousCredits: log.previousCredits ?? 0,
+            newCredits: log.newCredits ?? 0,
+            updatedAt: log.updatedAt || new Date().toISOString()
           });
         });
       }
-    });
+    }
 
-    // අලුත්ම දත්ත උඩට එන ලෙස sort කිරීම
     allHistory.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-
     res.status(200).json(allHistory);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 7. CLEAR CREDIT HISTORY
+exports.clearCreditHistory = async (req, res) => {
+  try {
+    const categoriesSnapshot = await db.collection('exam_categories').get();
+    let clearedCount = 0;
+
+    for (const catDoc of categoriesSnapshot.docs) {
+      const categoryData = catDoc.data();
+      if (categoryData.creditHistory && Array.isArray(categoryData.creditHistory) && categoryData.creditHistory.length > 0) {
+        await db.collection('exam_categories').doc(catDoc.id).update({
+          creditHistory: []
+        });
+        clearedCount++;
+      }
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: `Cleared credit history from ${clearedCount} categories`,
+      clearedCount 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };

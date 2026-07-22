@@ -21,6 +21,8 @@ const languageRoutes = require('./routes/languageRoutes');
 const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
+const emailLogRoutes = require('./routes/emailLogRoutes');
+
 
 const app = express();
 
