@@ -27,6 +27,11 @@ const createExam = async (req, res) => {
       });
     }
 
+    const tutorId = req.user?.id || req.user?.uid || 'mock_tutor_id';
+    const tutorName = req.user?.name || req.user?.displayName || 'Expert Tutor';
+
+    console.log('📝 Creating exam for tutor:', { tutorId, tutorName });
+
     const examData = {
       title,
       category_id,
@@ -37,8 +42,8 @@ const createExam = async (req, res) => {
       sections: sections || [],
       questions: questions || [],
       thumbnail: thumbnail || null,
-      tutor_id: req.user?.id || 'mock_tutor_id',
-      tutor_name: req.user?.name || 'Expert Tutor'
+      tutor_id: tutorId,
+      tutor_name: tutorName
     };
 
     const result = await examServices.createExamInDB(examData);
@@ -62,7 +67,7 @@ const createExam = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 2. Get all exams available for students
+// 📚 2. Get all exams available for students (public)
 // =========================================================================
 const getAllExams = async (req, res) => {
   try {
@@ -79,12 +84,25 @@ const getAllExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 3. Get Tutor Exams - Using Service Layer
+// 📊 3. Get Tutor Exams (Only logged-in tutor's exams)
 // =========================================================================
 const getTutorExams = async (req, res) => {
   try {
-    const tutorId = req.user?.id;
+    const tutorId = req.user?.id || req.user?.uid;
+    
+    if (!tutorId) {
+      console.error('❌ No tutor ID found in request');
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    console.log('📊 Fetching exams for tutor:', tutorId);
+    
     const examsList = await examServices.getTutorExamsFromDB(tutorId);
+    
+    console.log(`✅ Found ${examsList.length} exams for tutor: ${tutorId}`);
     
     return res.status(200).json({
       success: true,
@@ -101,11 +119,15 @@ const getTutorExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 4. Get Student Exams - Using Service Layer (KEEP ONLY THIS ONE)
+// 📊 4. Get Student Exams
 // =========================================================================
 const getStudentExams = async (req, res) => {
   try {
     const studentId = req.user?.id;
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+    
     const examsList = await examServices.getStudentExamsFromDB(studentId);
     
     return res.status(200).json({
@@ -123,12 +145,14 @@ const getStudentExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 5. Get Exam by ID
+// 📊 5. Get Exam by ID (with access control)
 // =========================================================================
 const getExamById = async (req, res) => {
   try {
     const { examId } = req.params;
-    const result = await examServices.getExamByIdFromDB(examId);
+    const tutorId = req.user?.id || req.user?.uid;
+    
+    const result = await examServices.getExamByIdFromDB(examId, tutorId);
     
     return res.status(200).json({
       success: true,
@@ -145,12 +169,14 @@ const getExamById = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ 6. Delete Exam
+// 🗑️ 6. Delete Exam (with access control)
 // =========================================================================
 const deleteExam = async (req, res) => {
   try {
     const { examId } = req.params;
-    const result = await examServices.deleteExamFromDB(examId);
+    const tutorId = req.user?.id || req.user?.uid;
+    
+    const result = await examServices.deleteExamFromDB(examId, tutorId);
     return res.status(200).json(result);
   } catch (error) {
     console.error("Delete Exam Error:", error);
@@ -163,12 +189,13 @@ const deleteExam = async (req, res) => {
 };
 
 // =========================================================================
-// 📝 7. Update Exam Status
+// 📝 7. Update Exam Status (with access control)
 // =========================================================================
 const updateExamStatus = async (req, res) => {
   try {
     const { examId } = req.params;
     const { status } = req.body;
+    const tutorId = req.user?.id || req.user?.uid;
     
     if (!status || !['draft', 'published', 'archived'].includes(status)) {
       return res.status(400).json({
@@ -177,7 +204,7 @@ const updateExamStatus = async (req, res) => {
       });
     }
     
-    const result = await examServices.updateExamStatusInDB(examId, status);
+    const result = await examServices.updateExamStatusInDB(examId, status, tutorId);
     return res.status(200).json(result);
   } catch (error) {
     console.error("Update Exam Status Error:", error);
@@ -190,16 +217,17 @@ const updateExamStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 📝 8. Update Exam Draft (Auto-save)
+// 📝 8. Update Exam Draft (Auto-save) - with access control
 // =========================================================================
 const updateExamDraft = async (req, res) => {
   try {
     const { examId } = req.params;
     const draftData = req.body;
+    const tutorId = req.user?.id || req.user?.uid;
     
-    console.log('📝 Updating draft for exam:', examId);
+    console.log('📝 Updating draft for exam:', examId, 'by tutor:', tutorId);
     
-    const result = await examServices.updateExamDraftInDB(examId, draftData);
+    const result = await examServices.updateExamDraftInDB(examId, draftData, tutorId);
     return res.status(200).json(result);
   } catch (error) {
     console.error("Update Exam Draft Error:", error);
@@ -212,16 +240,17 @@ const updateExamDraft = async (req, res) => {
 };
 
 // =========================================================================
-// 📝 9. Update Existing Exam (Full Update)
+// 📝 9. Update Existing Exam (Full Update) - with access control
 // =========================================================================
 const updateExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const examData = req.body;
+    const tutorId = req.user?.id || req.user?.uid;
     
-    console.log('📝 Updating full exam:', examId);
+    console.log('📝 Updating full exam:', examId, 'by tutor:', tutorId);
     
-    const result = await examServices.updateExamInDB(examId, examData);
+    const result = await examServices.updateExamInDB(examId, examData, tutorId);
     return res.status(200).json(result);
   } catch (error) {
     console.error("Update Exam Error:", error);
@@ -425,7 +454,7 @@ const deleteAsset = async (req, res) => {
 module.exports = {
   createExam,
   getTutorExams,
-  getStudentExams,   
+  getStudentExams,
   getExamById,
   deleteExam,
   updateExamStatus,
