@@ -5,8 +5,7 @@ import axios from 'axios'; // Added Axios for live subscription stream sync
 import {
   Search, ArrowRight, Play, Star, Users, BookOpen, Award, Mic,
   BarChart2, Coins, KeyRound, Zap, TrendingUp, ChevronRight, Languages, Clock, CheckCircle,
-  RefreshCw, Rocket, Crown, Infinity as InfinityIcon, Layers
-} from 'lucide-react';
+  RefreshCw, Rocket, Crown, Infinity as InfinityIcon, Layers} from 'lucide-react';
 import { examCategories, topTutors, featuredExams, testimonials, adminStats } from '../../data/mockData';
 import Button from '../../components/ui/Button';
 import GlassCard from '../../components/ui/GlassCard';
@@ -69,7 +68,7 @@ export default function LandingPage() {
     const fetchPlans = async () => {
       try {
         setPlansLoading(true);
-        const response = await axios.get('http://localhost:5000/api/subscription-management/plans');
+        const response = await axios.get('http://localhost:5000/api/subscription-plans');
         setPlans(response.data || []);
       } catch (error) {
         console.error("Error loading plans on Landing View:", error);

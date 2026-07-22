@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api/subscription-management'; 
+// Backend URL එක
+const BASE_URL = 'http://localhost:5000/api';
 
 const getAuthConfig = () => ({
   headers: { 
@@ -10,70 +11,50 @@ const getAuthConfig = () => ({
 });
 
 class SubscriptionService {
-  
+  // ===== 1. SUBSCRIPTION PLANS =====
   async getAllPlans() {
-    const response = await axios.get(`${API_URL}/plans`, getAuthConfig());
+    const response = await axios.get(`${BASE_URL}/subscription-plans`, getAuthConfig());
     return response.data;
   }
 
   async createNewPlan(planData) {
-    const response = await axios.post(`${API_URL}/plans`, planData, getAuthConfig());
+    const response = await axios.post(`${BASE_URL}/subscription-plans`, planData, getAuthConfig());
     return response.data;
   }
 
   async updateExistingPlan(id, planData) {
-    const response = await axios.put(`${API_URL}/plans/${id}`, planData, getAuthConfig());
+    const response = await axios.put(`${BASE_URL}/subscription-plans/${id}`, planData, getAuthConfig());
     return response.data;
   }
 
   async deleteExistingPlan(id) {
-    const response = await axios.delete(`${API_URL}/plans/${id}`, getAuthConfig());
+    const response = await axios.delete(`${BASE_URL}/subscription-plans/${id}`, getAuthConfig());
     return response.data;
   }
 
+  // ===== 2. EXAM CREDIT RATES =====
   async getAllCategories() {
-    const response = await axios.get(`${API_URL}/categories`, getAuthConfig());
-    return response.data;
-  }
-
-  async createNewCategory(catData) {
-    const response = await axios.post(`${API_URL}/categories`, catData, getAuthConfig());
-    return response.data;
-  }
-
-  async updateExistingCategory(id, catData) {
-    const response = await axios.put(`${API_URL}/categories/${id}`, catData, getAuthConfig());
-    return response.data;
-  }
-
-  async deleteExistingCategory(id) {
-    const response = await axios.delete(`${API_URL}/categories/${id}`, getAuthConfig());
+    const response = await axios.get(`${BASE_URL}/exam-credits/categories`, getAuthConfig());
     return response.data;
   }
 
   async updateCategoryCredits(categoryId, levelId, data) {
-    const url = `${API_URL}/categories/${categoryId}/levels/${levelId}/credits`;
-    const response = await axios.put(url, data, getAuthConfig());
+    const response = await axios.put(`${BASE_URL}/exam-credits/categories/${categoryId}/levels/${levelId}/credits`, data, getAuthConfig());
     return response.data;
   }
 
   async updateCategoryCreditsDirect(id, data) {
-    const response = await axios.put(`${API_URL}/categories/${id}/credits`, data, getAuthConfig());
-    return response.data;
-  }
-
-  async getAllExams() {
-    const response = await axios.get(`${API_URL}/exams`, getAuthConfig());
+    const response = await axios.put(`${BASE_URL}/exam-credits/categories/${id}/credits`, data, getAuthConfig());
     return response.data;
   }
 
   async getCreditHistory() {
-    const response = await axios.get(`${API_URL}/credit-history`, getAuthConfig());
+    const response = await axios.get(`${BASE_URL}/exam-credits/history`, getAuthConfig());
     return response.data;
   }
 
   async clearCreditHistory() {
-    const response = await axios.delete(`${API_URL}/credit-history`, getAuthConfig());
+    const response = await axios.delete(`${BASE_URL}/exam-credits/history`, getAuthConfig());
     return response.data;
   }
 }

@@ -63,9 +63,10 @@ import StudentProfilePage from '../pages/student/StudentProfilePage';
 import SettingsPage from '../pages/student/SettingsPage';
 import StudyPlannerPage from '../pages/student/StudyPlannerPage';
 
-// Finance Admin Pages
+// Finance Admin Pages (🎯 Updated Imports)
 import FinanceDashboard from "../pages/finance_admin/FinanceDashboard";
-import SubscriptionManager from "../pages/finance_admin/SubscriptionManager";
+import SubscriptionPlans from "../pages/finance_admin/SubscriptionPlans";
+import ExamCreditValuation from "../pages/finance_admin/ExamCreditValuation";
 import TutorPayoutsPage from "../pages/finance_admin/TutorPayoutsPage";
 import TransactionLedger from "../pages/finance_admin/TransactionLedger";
 
@@ -182,9 +183,17 @@ export default function AppRoutes() {
           <Route path="/finance-admin" element={<ProtectedRoute allowedRoles={['finance_admin', 'finance']}><FinanceAdminLayout /></ProtectedRoute>}>
             <Route index element={<FinanceDashboard />} />
             
+            {/* 🎯 Updated Subscription Plans Route */}
             <Route path="subscriptions" element={
               <ProtectedRoute requiredPrivilege="manage_subscriptions">
-                <SubscriptionManager />
+                <SubscriptionPlans />
+              </ProtectedRoute>
+            } />
+
+            {/* 🎯 Added New Exam Credit Rates Route */}
+            <Route path="exam-credits" element={
+              <ProtectedRoute requiredPrivilege="manage_subscriptions">
+                <ExamCreditValuation />
               </ProtectedRoute>
             } />
             
