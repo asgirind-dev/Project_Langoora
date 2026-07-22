@@ -3,7 +3,6 @@ const { db } = require('../config/firebase');
 
 // =========================================================================
 // 📚 1. Get Active Languages (Public - No Auth)
-// Returns simple array of language strings for registration dropdown
 // =========================================================================
 const getActiveLanguages = async (req, res) => {
   try {
@@ -27,7 +26,6 @@ const getActiveLanguages = async (req, res) => {
       const data = doc.data();
       const docId = doc.id;
       
-      // Try to extract language name from various possible fields
       const languageName = data.language || 
                           data.name || 
                           data.category_name || 
@@ -48,7 +46,7 @@ const getActiveLanguages = async (req, res) => {
     
     return res.status(200).json({
       success: true,
-      languages: languages  // ✅ Array of strings
+      languages: languages
     });
     
   } catch (error) {
@@ -82,7 +80,8 @@ const getActiveSchemaForSystem = async (req, res) => {
       
       console.log(`📂 Processing category: ${categoryId}`);
       
-      // Get levels sub-collection for this category
+      const categoryPassingScore = categoryData.passing_score || 65;
+      
       let levels = [];
       try {
         const levelsSnapshot = await db.collection('exam_categories')
@@ -100,11 +99,13 @@ const getActiveSchemaForSystem = async (req, res) => {
             status: levelData.status || levelData.is_active === 1 ? 'active' : 'inactive',
             credit_cost: levelData.credit_cost || 0,
             isCreditSet: levelData.isCreditSet || false,
+            passing_score: levelData.passing_score || categoryPassingScore,
+            passing_type: levelData.passing_type || categoryData.passing_type || null,
+            passing_config: levelData.passing_config || categoryData.passing_config || null,
             ...levelData
           };
         });
         
-        // Sort levels by credit_cost or name
         levels.sort((a, b) => {
           if (a.credit_cost !== b.credit_cost) {
             return (a.credit_cost || 0) - (b.credit_cost || 0);
@@ -122,6 +123,10 @@ const getActiveSchemaForSystem = async (req, res) => {
         category_name: categoryData.category_name || categoryData.name || categoryId,
         language: categoryData.language || '',
         status: categoryData.status || 'active',
+        passing_score: categoryPassingScore,
+        passing_type: categoryData.passing_type || null,
+        passing_config: categoryData.passing_config || null,
+        hasLevels: levels.length > 0,
         levels: levels,
         created_at: categoryData.created_at || null,
         created_by: categoryData.created_by || null,
@@ -148,81 +153,7 @@ const getActiveSchemaForSystem = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 3. Get Specific Category with Levels
-// =========================================================================
-const getCategoryWithLevels = async (req, res) => {
-  try {
-    const { categoryId } = req.params;
-    
-    console.log(`🔍 Fetching category: ${categoryId}`);
-    
-    const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
-    
-    if (!categoryDoc.exists) {
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found.'
-      });
-    }
-    
-    const categoryData = categoryDoc.data();
-    
-    // Get levels
-    let levels = [];
-    try {
-      const levelsSnapshot = await db.collection('exam_categories')
-        .doc(categoryId)
-        .collection('levels')
-        .get();
-      
-      console.log(`📂 Found ${levelsSnapshot.size} levels for ${categoryId}`);
-      
-      levels = levelsSnapshot.docs.map(levelDoc => {
-        const levelData = levelDoc.data();
-        return {
-          id: levelDoc.id,
-          level_name: levelData.level_name || levelData.name || levelDoc.id,
-          status: levelData.status || levelData.is_active === 1 ? 'active' : 'inactive',
-          credit_cost: levelData.credit_cost || 0,
-          isCreditSet: levelData.isCreditSet || false,
-          ...levelData
-        };
-      });
-      
-      // Sort levels
-      levels.sort((a, b) => {
-        if (a.credit_cost !== b.credit_cost) {
-          return (a.credit_cost || 0) - (b.credit_cost || 0);
-        }
-        return (a.level_name || '').localeCompare(b.level_name || '');
-      });
-      
-    } catch (levelError) {
-      console.log(`⚠️ No levels found for category: ${categoryId}`);
-      levels = [];
-    }
-    
-    return res.status(200).json({
-      success: true,
-      category: {
-        id: categoryId,
-        ...categoryData,
-        levels: levels
-      }
-    });
-    
-  } catch (error) {
-    console.error('❌ Get Category Error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch category.',
-      error: error.message
-    });
-  }
-};
-
-// =========================================================================
-// 📚 4. Get Full Language Cluster Schema (Admin Only)
+// 📚 3. Get Full Language Cluster Schema (Admin Only)
 // =========================================================================
 const getLanguageClusterSchema = async (req, res) => {
   try {
@@ -276,11 +207,19 @@ const getLanguageClusterSchema = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 5. Add New Category (Admin Only)
+// 📚 4. Add New Category (Admin Only)
 // =========================================================================
 const addCategory = async (req, res) => {
   try {
-    const { category_name, language, description, status } = req.body;
+    const { 
+      category_name, 
+      language, 
+      description, 
+      status,
+      passing_score,
+      passing_type,
+      passing_config
+    } = req.body;
     
     if (!category_name || !language) {
       return res.status(400).json({
@@ -291,7 +230,6 @@ const addCategory = async (req, res) => {
     
     const categoryId = category_name.toLowerCase().replace(/\s+/g, '-');
     
-    // Check if category already exists
     const existingDoc = await db.collection('exam_categories').doc(categoryId).get();
     if (existingDoc.exists) {
       return res.status(400).json({
@@ -305,6 +243,9 @@ const addCategory = async (req, res) => {
       language,
       description: description || '',
       status: status || 'active',
+      passing_score: passing_score || 65,
+      passing_type: passing_type || null,
+      passing_config: passing_config || null,
       created_at: new Date().toISOString(),
       created_by: req.user?.email || req.user?.uid || 'admin',
       updated_at: new Date().toISOString(),
@@ -336,12 +277,95 @@ const addCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 6. Add Level to Category (Admin Only)
+// 📚 5. Update Category - ✅ FIXED: Handles passing_type and passing_config
+// =========================================================================
+const updateCategory = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    const { 
+      category_name, 
+      language, 
+      description, 
+      status,
+      passing_score,
+      passing_type,
+      passing_config
+    } = req.body;
+    
+    console.log('📝 Updating category:', categoryId);
+    console.log('📝 Received data:', { passing_type, passing_config, passing_score });
+    
+    const categoryRef = db.collection('exam_categories').doc(categoryId);
+    const categoryDoc = await categoryRef.get();
+    
+    if (!categoryDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found.'
+      });
+    }
+    
+    const updateData = {
+      updated_at: new Date().toISOString()
+    };
+    
+    if (category_name !== undefined) updateData.category_name = category_name;
+    if (language !== undefined) updateData.language = language;
+    if (description !== undefined) updateData.description = description;
+    if (status !== undefined) updateData.status = status;
+    if (passing_score !== undefined) updateData.passing_score = passing_score;
+    
+    // ✅ CRITICAL: Handle passing_type and passing_config
+    if (passing_type !== undefined) {
+      updateData.passing_type = passing_type;
+      console.log('✅ Adding passing_type:', passing_type);
+    }
+    if (passing_config !== undefined) {
+      updateData.passing_config = passing_config;
+      console.log('✅ Adding passing_config:', passing_config);
+    }
+    
+    console.log('📝 Final update data:', JSON.stringify(updateData, null, 2));
+    
+    await categoryRef.update(updateData);
+    
+    const updatedDoc = await categoryRef.get();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Category updated successfully.',
+      category: {
+        id: categoryId,
+        ...updatedDoc.data()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Update Category Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update category.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 📚 6. Add Level to Category
 // =========================================================================
 const addLevelToCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
-    const { level_name, description, status, credit_cost, isCreditSet } = req.body;
+    const { 
+      level_name, 
+      description, 
+      status, 
+      credit_cost, 
+      isCreditSet,
+      passing_score,
+      passing_type,
+      passing_config
+    } = req.body;
     
     if (!level_name) {
       return res.status(400).json({
@@ -350,7 +374,6 @@ const addLevelToCategory = async (req, res) => {
       });
     }
     
-    // Check if category exists
     const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
     if (!categoryDoc.exists) {
       return res.status(404).json({
@@ -358,6 +381,9 @@ const addLevelToCategory = async (req, res) => {
         message: 'Category not found.'
       });
     }
+    
+    const categoryData = categoryDoc.data();
+    const categoryPassingScore = categoryData.passing_score || 65;
     
     const levelId = level_name.toLowerCase().replace(/\s+/g, '-');
     
@@ -368,6 +394,9 @@ const addLevelToCategory = async (req, res) => {
       is_active: status === 'active' ? 1 : 0,
       credit_cost: credit_cost || 0,
       isCreditSet: isCreditSet || false,
+      passing_score: passing_score || categoryPassingScore,
+      passing_type: passing_type || null,
+      passing_config: passing_config || null,
       created_at: new Date().toISOString(),
       created_by: req.user?.email || req.user?.uid || 'admin',
       updated_at: new Date().toISOString()
@@ -402,7 +431,92 @@ const addLevelToCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 7. Update Category Status (Admin Only)
+// 📚 7. Update Level - ✅ FIXED: Handles passing_type and passing_config
+// =========================================================================
+const updateLevel = async (req, res) => {
+  try {
+    const { categoryId, levelId } = req.params;
+    const { 
+      level_name, 
+      description, 
+      status, 
+      credit_cost, 
+      isCreditSet,
+      passing_score,
+      passing_type,
+      passing_config
+    } = req.body;
+    
+    console.log('📝 Updating level:', levelId, 'in category:', categoryId);
+    console.log('📝 Received data:', { passing_type, passing_config, passing_score });
+    
+    const levelRef = db.collection('exam_categories')
+      .doc(categoryId)
+      .collection('levels')
+      .doc(levelId);
+    
+    const levelDoc = await levelRef.get();
+    if (!levelDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Level not found.'
+      });
+    }
+    
+    const updateData = {
+      updated_at: new Date().toISOString()
+    };
+    
+    if (level_name !== undefined) updateData.level_name = level_name;
+    if (description !== undefined) updateData.description = description;
+    if (status !== undefined) {
+      updateData.status = status;
+      updateData.is_active = status === 'active' ? 1 : 0;
+    }
+    if (credit_cost !== undefined) updateData.credit_cost = credit_cost;
+    if (isCreditSet !== undefined) updateData.isCreditSet = isCreditSet;
+    if (passing_score !== undefined) updateData.passing_score = passing_score;
+    
+    // ✅ CRITICAL: Handle passing_type and passing_config
+    if (passing_type !== undefined) {
+      updateData.passing_type = passing_type;
+      console.log('✅ Adding passing_type:', passing_type);
+    }
+    if (passing_config !== undefined) {
+      updateData.passing_config = passing_config;
+      console.log('✅ Adding passing_config:', JSON.stringify(passing_config, null, 2));
+    }
+    
+    console.log('📝 Final update data:', JSON.stringify(updateData, null, 2));
+    
+    await levelRef.update(updateData);
+    
+    const updatedDoc = await levelRef.get();
+    const updatedData = updatedDoc.data();
+    
+    console.log('📝 Updated level data from Firestore:', JSON.stringify(updatedData, null, 2));
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Level updated successfully.',
+      level: {
+        id: levelId,
+        ...updatedData
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Update Level Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update level.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 📚 8. Update Category Status
 // =========================================================================
 const updateCategoryStatus = async (req, res) => {
   try {
@@ -416,7 +530,6 @@ const updateCategoryStatus = async (req, res) => {
       });
     }
     
-    // Check if category exists
     const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
     if (!categoryDoc.exists) {
       return res.status(404).json({
@@ -451,13 +564,12 @@ const updateCategoryStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 8. Delete Category (Archive - Admin Only)
+// 📚 9. Delete Category (Archive)
 // =========================================================================
 const deleteCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
     
-    // Check if category exists
     const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
     if (!categoryDoc.exists) {
       return res.status(404).json({
@@ -466,7 +578,6 @@ const deleteCategory = async (req, res) => {
       });
     }
     
-    // Archive instead of hard delete
     await db.collection('exam_categories')
       .doc(categoryId)
       .update({
@@ -492,13 +603,12 @@ const deleteCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 9. Hard Delete Category and All Levels (Admin Only - Use with Caution)
+// 📚 10. Hard Delete Category
 // =========================================================================
 const hardDeleteCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
     
-    // Check if category exists
     const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
     if (!categoryDoc.exists) {
       return res.status(404).json({
@@ -507,7 +617,6 @@ const hardDeleteCategory = async (req, res) => {
       });
     }
     
-    // Delete all levels first
     const levelsSnapshot = await db.collection('exam_categories')
       .doc(categoryId)
       .collection('levels')
@@ -518,7 +627,6 @@ const hardDeleteCategory = async (req, res) => {
       batch.delete(doc.ref);
     });
     
-    // Delete the category
     batch.delete(db.collection('exam_categories').doc(categoryId));
     
     await batch.commit();
@@ -541,7 +649,7 @@ const hardDeleteCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 10. Update Level Status (Admin Only)
+// 📚 11. Update Level Status
 // =========================================================================
 const updateLevelStatus = async (req, res) => {
   try {
@@ -593,7 +701,7 @@ const updateLevelStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 11. Get All Categories (Admin Only)
+// 📚 12. Get All Categories
 // =========================================================================
 const getAllCategories = async (req, res) => {
   try {
@@ -623,18 +731,110 @@ const getAllCategories = async (req, res) => {
 };
 
 // =========================================================================
+// 📚 13. Get Category by ID
+// =========================================================================
+const getCategoryById = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    
+    const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
+    if (!categoryDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found.'
+      });
+    }
+    
+    const categoryData = categoryDoc.data();
+    
+    let levels = [];
+    try {
+      const levelsSnapshot = await db.collection('exam_categories')
+        .doc(categoryId)
+        .collection('levels')
+        .get();
+      
+      levels = levelsSnapshot.docs.map(levelDoc => ({
+        id: levelDoc.id,
+        ...levelDoc.data()
+      }));
+    } catch (levelError) {
+      levels = [];
+    }
+    
+    return res.status(200).json({
+      success: true,
+      category: {
+        id: categoryId,
+        ...categoryData,
+        levels: levels
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Get Category Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch category.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 📚 14. Get Level by ID
+// =========================================================================
+const getLevelById = async (req, res) => {
+  try {
+    const { categoryId, levelId } = req.params;
+    
+    const levelRef = db.collection('exam_categories')
+      .doc(categoryId)
+      .collection('levels')
+      .doc(levelId);
+    
+    const levelDoc = await levelRef.get();
+    if (!levelDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Level not found.'
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      level: {
+        id: levelDoc.id,
+        ...levelDoc.data()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Get Level Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch level.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
 // 📚 EXPORTS
 // =========================================================================
 module.exports = {
   getActiveLanguages,
   getActiveSchemaForSystem,
-  getCategoryWithLevels,
   getLanguageClusterSchema,
   getAllCategories,
+  getCategoryById,
   addCategory,
+  updateCategory,
   addLevelToCategory,
   updateCategoryStatus,
   deleteCategory,
   hardDeleteCategory,
-  updateLevelStatus
+  updateLevelStatus,
+  updateLevel,
+  getLevelById
 };

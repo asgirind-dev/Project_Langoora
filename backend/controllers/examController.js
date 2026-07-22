@@ -62,7 +62,7 @@ const createExam = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 2. Get all exams available for students
+// 📚 2. Get all exams available for students (PUBLIC - published only)
 // =========================================================================
 const getAllExams = async (req, res) => {
   try {
@@ -74,6 +74,23 @@ const getAllExams = async (req, res) => {
     return res.status(200).json({ success: true, data: examsList });
   } catch (error) {
     console.error('Get all exams error:', error.message);
+    return res.status(500).json({ success: false, message: 'Error fetching exams', error: error.message });
+  }
+};
+
+// =========================================================================
+// 📚 2.5 DEV: Get ALL exams from Firestore (NO AUTH - for development)
+// =========================================================================
+const getAllExamsDev = async (req, res) => {
+  try {
+    const snapshot = await db.collection('exams').get();
+    const examsList = [];
+    snapshot.forEach(doc => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    return res.status(200).json({ success: true, data: examsList });
+  } catch (error) {
+    console.error('Get all exams dev error:', error.message);
     return res.status(500).json({ success: false, message: 'Error fetching exams', error: error.message });
   }
 };
@@ -101,7 +118,7 @@ const getTutorExams = async (req, res) => {
 };
 
 // =========================================================================
-// 📊 4. Get Student Exams - Using Service Layer (KEEP ONLY THIS ONE)
+// 📊 4. Get Student Exams - Using Service Layer
 // =========================================================================
 const getStudentExams = async (req, res) => {
   try {
@@ -432,6 +449,7 @@ module.exports = {
   updateExamDraft,
   updateExam,
   getAllExams,
+  getAllExamsDev, // NEW: Development endpoint
   deleteStudentExam,
   uploadAsset,
   deleteAsset

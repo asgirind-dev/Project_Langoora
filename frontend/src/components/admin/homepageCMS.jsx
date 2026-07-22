@@ -1,5 +1,5 @@
 // frontend/src/components/admin/homepageCMS.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { 
   RefreshCw, Plus, Trash2, Image, Upload, Type, Eye, 
   Languages, Edit3 
@@ -11,7 +11,7 @@ import imageCompression from 'browser-image-compression';
 
 const badgeOptions = ['', '🔥 New', '🚀 Target', '💎 Premium', '⚡ Hot', '📢 Notice'];
 
-export default function HomepageCMS() {
+const HomepageCMS = forwardRef((props, ref) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isReplacing, setIsReplacing] = useState(false);
@@ -21,6 +21,21 @@ export default function HomepageCMS() {
   const [fileName, setFileName] = useState('');
   const [replaceFileName, setReplaceFileName] = useState('');
   const [selectedBannerId, setSelectedBannerId] = useState(null);
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    getBanners: () => heroBanners,
+    setBanners: (banners) => setHeroBanners(banners),
+    getSelectedBannerId: () => selectedBannerId,
+    saveBanners: async () => {
+      try {
+        await saveHeroBanners(heroBanners);
+        return { success: true, message: 'Banners saved successfully' };
+      } catch (error) {
+        return { success: false, message: error.message };
+      }
+    }
+  }));
 
   useEffect(() => {
     loadConfiguredBanners();
@@ -273,4 +288,8 @@ export default function HomepageCMS() {
       </div>
     </div>
   );
-}
+});
+
+HomepageCMS.displayName = 'HomepageCMS';
+
+export default HomepageCMS;

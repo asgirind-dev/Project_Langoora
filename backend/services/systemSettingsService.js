@@ -3,6 +3,13 @@ const { db } = require('../config/firebase');
 const nodemailer = require('nodemailer');
 const emailService = require('./emailService');
 
+// ✅ Helper function for email validation
+function isValidEmail(email) {
+  if (!email) return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
 class SystemSettingsService {
   // =============================================
   // 1. HOMEPAGE CMS - HERO BANNERS
@@ -121,30 +128,24 @@ class SystemSettingsService {
 
   async updateGlobalConfig(configData) {
     try {
+      console.log('📝 updateGlobalConfig called with:', configData);
+      
       const docRef = db.collection('system_settings').doc('global_config');
       
-      // ✅ Validate and sanitize senderName
+      // Validate and sanitize senderName
       let senderName = configData.senderName || 'Langoora';
       
-      // Validate senderName - enforce limits and clean
       if (senderName.length < 2) senderName = 'Langoora';
       if (senderName.length > 50) senderName = senderName.substring(0, 50);
-      
-      // Allow only letters, numbers, spaces, dots, and hyphens
-      // Remove any special characters that could break email headers
       senderName = senderName.replace(/[^a-zA-Z0-9\s\.\-]/g, '');
-      
-      // If empty after cleaning, use default
       if (!senderName.trim()) senderName = 'Langoora';
-      
-      // Capitalize each word properly (optional)
       senderName = senderName.split(' ')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join(' ');
 
-      // ✅ Validate senderEmail
+      // ✅ Validate senderEmail using helper function
       let senderEmail = configData.senderEmail || 'noreply@langoora.com';
-      if (!this.isValidEmail(senderEmail)) {
+      if (!isValidEmail(senderEmail)) {
         senderEmail = 'noreply@langoora.com';
       }
 
@@ -154,7 +155,7 @@ class SystemSettingsService {
         platformCommission: Number(configData.platformCommission || 20),
         minPayoutThreshold: Number(configData.minPayoutThreshold || 5000),
         senderEmail: senderEmail,
-        senderName: senderName,  // ✅ Now fully configurable with validation
+        senderName: senderName,
         showAnnouncement: Boolean(configData.showAnnouncement),
         announcementText: configData.announcementText || '',
         announcementColor: configData.announcementColor || 'amber',
@@ -169,80 +170,29 @@ class SystemSettingsService {
       return payload;
     } catch (error) {
       console.error("Error in updateGlobalConfig:", error);
+      console.error("Stack:", error.stack);
       throw error;
     }
   }
 
   async sendTestEmail(senderEmail, senderName) {
     try {
+      console.log('📧 sendTestEmail called with:', { senderEmail, senderName });
+      
       // Use emailService to send test email
       const result = await emailService.sendTestEmail(
         process.env.ADMIN_EMAIL || 'admin@langoora.com',
         senderEmail,
         senderName
       );
+      
+      console.log('✅ Test email result:', result);
       return result;
     } catch (error) {
       console.error("Error sending test email:", error);
+      console.error("Stack:", error.stack);
       throw new Error('Failed to send test email: ' + error.message);
     }
-  }
-
-  // =============================================
-  // 4. HELPER METHODS
-  // =============================================
-
-  /**
-   * Validate email address format
-   */
-  isValidEmail(email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  }
-
-  /**
-   * Validate sender name format
-   */
-  isValidSenderName(name) {
-    if (!name || name.length < 2 || name.length > 50) return false;
-    // Allow letters, numbers, spaces, dots, hyphens
-    const nameRegex = /^[a-zA-Z0-9\s\.\-]+$/;
-    return nameRegex.test(name);
-  }
-
-  /**
-   * Sanitize sender name for safe email headers
-   */
-  sanitizeSenderName(name) {
-    if (!name) return 'Langoora';
-    
-    // Remove any special characters that could break email headers
-    let clean = name.replace(/[^a-zA-Z0-9\s\.\-]/g, '');
-    
-    // Trim extra spaces
-    clean = clean.replace(/\s+/g, ' ').trim();
-    
-    // Capitalize each word
-    clean = clean.split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-    
-    // Ensure minimum length
-    if (clean.length < 2) clean = 'Langoora';
-    
-    // Truncate if too long
-    if (clean.length > 50) clean = clean.substring(0, 50);
-    
-    return clean;
-  }
-
-  /**
-   * Get email sender info with validation
-   */
-  getSenderInfo() {
-    const senderName = this.sanitizeSenderName(this.config?.senderName || 'Langoora');
-    const senderEmail = this.config?.senderEmail || 'noreply@langoora.com';
-    return `${senderName} <${senderEmail}>`;
   }
 }
 

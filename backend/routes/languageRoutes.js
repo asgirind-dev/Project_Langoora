@@ -2,36 +2,42 @@ const express = require('express');
 const router = express.Router();
 const {
   addCategory,
+  updateCategory,
   addLevelToCategory,
   getLanguageClusterSchema,
   getActiveSchemaForSystem,
   updateCategoryStatus,
   deleteCategory,
-  getActiveLanguages           // ✅ Newly added import
+  getActiveLanguages,
+  updateLevel,
+  getLevelById,
+  getCategoryById
 } = require('../controllers/languageController');
 const { protect, authorizeRoles } = require('../middleware/authMiddleware');
 
 // 🌐 0. Public endpoint – no authentication required
-// Used by the registration page to populate the language dropdown for tutors
 router.get('/active-languages', getActiveLanguages);
 
-// 🔒 Authentication Perimeter Layer (All system users must be logged in)
+// 🔒 Authentication Perimeter Layer
 router.use(protect);
 
 // 🌐 1. Semi-Public / Multi-Role Shared Endpoints
-// (Tutors, Finance Admins, and Students can access this priced matrix)
 router.get('/active-schema', getActiveSchemaForSystem);
 
-// ⛔ 2. Absolute Perimeter Isolation for System Administration Control Blocks
-// (Only Academic System Admins can bypass this gatekeeper layer)
-// ✅ FIX: Allow both 'admin' and 'super_admin' roles
+// ⛔ 2. Admin Only endpoints
 router.use(authorizeRoles('admin', 'super_admin'));
 
-// Admin-only endpoints
+// Category endpoints
 router.get('/schema', getLanguageClusterSchema);
+router.get('/categories/:categoryId', getCategoryById);
 router.post('/categories', addCategory);
-router.post('/categories/:categoryId/levels', addLevelToCategory);
-router.put('/categories/:categoryId', updateCategoryStatus);
+router.put('/categories/:categoryId', updateCategory);
+router.put('/categories/:categoryId/status', updateCategoryStatus);
 router.delete('/categories/:categoryId', deleteCategory);
+
+// Level endpoints
+router.post('/categories/:categoryId/levels', addLevelToCategory);
+router.put('/categories/:categoryId/levels/:levelId', updateLevel);
+router.get('/categories/:categoryId/levels/:levelId', getLevelById);
 
 module.exports = router;
