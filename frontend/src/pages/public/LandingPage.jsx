@@ -90,7 +90,7 @@ export default function LandingPage() {
     const fetchPlans = async () => {
       try {
         setPlansLoading(true);
-        const response = await axios.get('http://localhost:5000/api/subscription-management/plans');
+        const response = await axios.get('http://localhost:5000/api/subscription-plans');
         setPlans(response.data || []);
       } catch (error) {
         console.error("Error loading plans:", error);

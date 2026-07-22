@@ -1,5 +1,5 @@
 import { Outlet, Navigate } from 'react-router-dom';
-import { CreditCard, DollarSign, BookOpen, PieChart } from 'lucide-react';
+import { DollarSign, BookOpen, PieChart, Layers, Coins } from 'lucide-react';
 import DashboardSidebar from '../components/layout/DashboardSidebar';
 import { useAuth } from '../context/AuthContext'; 
 
@@ -10,10 +10,16 @@ const financeNavItems = [
     icon: PieChart 
   },
   { 
-    label: 'Subscription Manager', 
+    label: 'Subscription Plans', 
     path: 'subscriptions', 
-    icon: CreditCard, 
+    icon: Layers, 
     requiredPrivilege: 'manage_subscriptions' 
+  },
+  { 
+    label: 'Exam Credit Rates', 
+    path: 'exam-credits', 
+    icon: Coins, 
+    requiredPrivilege: 'manage_subscriptions' // හෝ වෙනත් privilege එකක් තිබේ නම්
   },
   { 
     label: 'Tutor Payouts', 
@@ -32,15 +38,14 @@ const financeNavItems = [
 export default function FinanceAdminLayout() {
   const { user, role } = useAuth();
 
-
   if (role !== 'finance' && role !== 'finance_admin') {
     return <Navigate to="/auth/login" replace />;
   }
+
   const filteredNavItems = financeNavItems.filter(item => {
     if (!item.requiredPrivilege) return true;
     return user?.privileges?.includes(item.requiredPrivilege);
   });
-
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#060d1f] text-slate-900 dark:text-white flex transition-colors duration-200">
