@@ -1,5 +1,5 @@
 // frontend/src/components/admin/globalConfigurations.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   DollarSign, TrendingUp, Mail, AlertTriangle, RefreshCw,
   CheckCircle, XCircle
@@ -9,8 +9,9 @@ import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import { fetchGlobalConfig, saveGlobalConfig, sendTestEmail } from '../../services/globalConfigService';
 
-export default function GlobalConfigurations() {
+const GlobalConfigurations = forwardRef((props, ref) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [testEmailLogs, setTestEmailLogs] = useState([]);
 
   const [globalConfig, setGlobalConfig] = useState({
@@ -24,6 +25,24 @@ export default function GlobalConfigurations() {
     announcementText: '',
     announcementColor: 'amber'
   });
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    getGlobalConfig: () => globalConfig,
+    setGlobalConfig: (config) => setGlobalConfig(config),
+    getConfig: () => globalConfig,
+    saveGlobalConfig: async () => {
+      try {
+        setIsSaving(true);
+        const response = await saveGlobalConfig(globalConfig);
+        return { success: true, message: 'Global configurations saved successfully', data: response };
+      } catch (error) {
+        return { success: false, message: error.message };
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  }));
 
   useEffect(() => {
     loadGlobalConfigData();
@@ -355,4 +374,8 @@ export default function GlobalConfigurations() {
 
     </div>
   );
-}
+});
+
+GlobalConfigurations.displayName = 'GlobalConfigurations';
+
+export default GlobalConfigurations;

@@ -1,3 +1,4 @@
+// backend/server.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path'); 
@@ -22,7 +23,6 @@ const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
 const emailLogRoutes = require('./routes/emailLogRoutes');
-
 
 const app = express();
 

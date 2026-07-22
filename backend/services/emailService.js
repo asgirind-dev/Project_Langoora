@@ -54,17 +54,14 @@ class EmailService {
    */
   async initialize() {
     try {
-      // Load config from Firestore first
       await this.loadConfig();
 
-      // Get SMTP settings from environment - with explicit fallbacks
       const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
       const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD;
       const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
       const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
       const smtpSecure = process.env.SMTP_SECURE === 'true' || false;
 
-      // Validate credentials
       if (!smtpUser || !smtpPass) {
         console.error('❌ SMTP credentials missing!');
         console.error('   SMTP_USER:', smtpUser ? 'Set' : 'Missing');
@@ -89,14 +86,12 @@ class EmailService {
       };
 
       this.transporter = nodemailer.createTransport(smtpConfig);
-      
-      // Verify connection
       await this.transporter.verify();
       this.initialized = true;
       console.log(`✅ Email service initialized successfully!`);
       console.log(`   Sender: ${this.getSenderInfo()}`);
       return true;
-      
+
     } catch (error) {
       console.error('❌ Email service initialization failed:', error.message);
       this.initialized = false;
@@ -119,10 +114,55 @@ class EmailService {
   }
 
   /**
+   * Helper: Header HTML matching logo.html branding exactly
+   */
+  getHeaderHtml() {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    return `
+      <div style="text-align: center; padding-bottom: 28px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 28px;">
+        <a href="${frontendUrl}" target="_blank" style="text-decoration: none; display: inline-block;">
+          <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+            <tr>
+              <td style="vertical-align: middle;">
+                <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%); border-radius: 12px; text-align: center; line-height: 36px; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);">
+                  <img src="https://img.icons8.com/ios-filled/50/ffffff/open-book.png" width="18" height="18" alt="Langoora Logo" style="vertical-align: middle; margin-top: -2px; display: inline-block;" />
+                </div>
+              </td>
+              <td style="vertical-align: middle; padding-left: 10px;">
+                <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">Langoora</span><span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 800; color: #06b6d4;">.com</span>
+              </td>
+            </tr>
+          </table>
+        </a>
+        <p style="color: #64748b; margin: 6px 0 0 0; font-size: 11px; letter-spacing: 1px; font-weight: 500; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          PRECISION CBTs FOR LANGUAGE MASTERY
+        </p>
+      </div>
+    `;
+  }
+
+  /**
+   * Helper: Footer HTML
+   */
+  getFooterHtml(supportEmail = 'support@langoora.com') {
+    return `
+      <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center; color: #64748b; font-size: 12px; line-height: 1.8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        <p style="margin: 0 0 6px 0;">
+          This is an automated notification from Langoora.<br>
+          If you have any questions, please contact our support team at 
+          <a href="mailto:${supportEmail}" style="color: #38bdf8; text-decoration: none;">${supportEmail}</a>
+        </p>
+        <p style="margin: 0; font-size: 11px; color: #475569;">
+          &copy; ${new Date().getFullYear()} Langoora. All rights reserved.
+        </p>
+      </div>
+    `;
+  }
+
+  /**
    * Send tutor approval email - With Logging & Rate Limiting
    */
   async sendTutorApprovalEmail(tutorEmail, tutorName, tutorId) {
-    // Prepare log data
     const logData = {
       recipient: tutorEmail,
       type: 'tutor_approval',
@@ -133,7 +173,6 @@ class EmailService {
     };
 
     try {
-      // ✅ Rate limiting check
       const rateCheck = await emailRateLimitService.canSend(tutorEmail);
       if (!rateCheck.allowed) {
         logData.status = 'failed';
@@ -144,12 +183,9 @@ class EmailService {
       }
 
       await this.ensureInitialized();
-
-      // Reload config for latest sender settings
       await this.loadConfig();
 
       const loginLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/login`;
-      const dashboardLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/tutor/dashboard`;
 
       const htmlContent = `
         <!DOCTYPE html>
@@ -158,300 +194,88 @@ class EmailService {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Welcome to Langoora - Tutor Account Approved</title>
-          <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              background-color: #060d1f;
-              margin: 0;
-              padding: 0;
-              color: #e0e0e0;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              padding: 40px 20px;
-              background: #0a0e1a;
-              border-radius: 16px;
-              border: 1px solid #1e293b;
-            }
-            .header {
-              text-align: center;
-              padding-bottom: 30px;
-              border-bottom: 1px solid #1e293b;
-              margin-bottom: 30px;
-            }
-            .logo-wrapper {
-              display: inline-flex;
-              align-items: center;
-              gap: 12px;
-              text-decoration: none;
-            }
-            .logo-icon {
-              width: 36px;
-              height: 36px;
-              background: linear-gradient(135deg, #3b82f6, #06b6d4);
-              border-radius: 10px;
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 18px;
-              font-weight: 700;
-              color: #ffffff;
-              box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
-            }
-            .logo-text {
-              font-size: 26px;
-              font-weight: 800;
-              color: #ffffff;
-              letter-spacing: -0.5px;
-            }
-            .logo-text span {
-              color: #60a5fa;
-            }
-            .subtitle {
-              color: #64748b;
-              margin: 6px 0 0 0;
-              font-size: 12px;
-              letter-spacing: 1px;
-              font-weight: 400;
-            }
-            .content {
-              padding: 0 10px;
-            }
-            .greeting {
-              font-size: 24px;
-              font-weight: 700;
-              color: #ffffff;
-              margin-bottom: 16px;
-            }
-            .greeting span {
-              color: #60a5fa;
-            }
-            .message {
-              color: #94a3b8;
-              line-height: 1.8;
-              font-size: 15px;
-              margin-bottom: 24px;
-            }
-            .message strong {
-              color: #ffffff;
-            }
-            .success-box {
-              background: #064e3b;
-              border: 1px solid #34d399;
-              border-radius: 12px;
-              padding: 24px;
-              margin: 24px 0;
-              text-align: center;
-            }
-            .success-box h3 {
-              color: #34d399;
-              margin: 0 0 8px 0;
-              font-size: 18px;
-            }
-            .success-box p {
-              color: #6ee7b7;
-              margin: 0;
-              font-size: 14px;
-            }
-            .divider {
-              border: none;
-              height: 1px;
-              background: linear-gradient(to right, transparent, #1e293b, transparent);
-              margin: 30px 0;
-            }
-            .opportunities {
-              margin: 24px 0;
-            }
-            .opportunities h4 {
-              font-size: 13px;
-              font-weight: 600;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-              color: #60a5fa;
-              margin-bottom: 16px;
-              text-align: center;
-            }
-            .opportunity-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 12px;
-            }
-            .opportunity-item {
-              background: #0f1629;
-              padding: 16px 14px;
-              border-radius: 10px;
-              border: 1px solid #1e293b;
-              text-align: center;
-            }
-            .opportunity-item .icon {
-              width: 28px;
-              height: 28px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              margin: 0 auto 8px auto;
-              background: rgba(59, 130, 246, 0.15);
-              border: 1px solid rgba(59, 130, 246, 0.3);
-              border-radius: 8px;
-              color: #60a5fa;
-              font-size: 13px;
-              font-weight: 700;
-            }
-            .opportunity-item .label {
-              font-size: 12px;
-              color: #94a3b8;
-              font-weight: 500;
-              line-height: 1.4;
-            }
-            .opportunity-item .label strong {
-              color: #e0e0e0;
-              display: block;
-              font-weight: 600;
-            }
-            .button-group {
-              display: flex;
-              flex-direction: column;
-              gap: 10px;
-              margin: 30px 0 24px 0;
-            }
-            .btn-primary {
-              display: block;
-              padding: 14px 32px;
-              background: #3b82f6;
-              color: #ffffff !important;
-              text-decoration: none;
-              border-radius: 12px;
-              font-weight: 600;
-              font-size: 16px;
-              text-align: center;
-              transition: background 0.2s;
-            }
-            .btn-primary:hover {
-              background: #2563eb;
-            }
-            .note {
-              font-size: 13px;
-              color: #64748b;
-              text-align: center;
-              margin: 16px 0 0 0;
-              line-height: 1.6;
-            }
-            .note strong {
-              color: #94a3b8;
-            }
-            .footer {
-              margin-top: 30px;
-              padding-top: 24px;
-              border-top: 1px solid #1e293b;
-              text-align: center;
-              color: #64748b;
-              font-size: 13px;
-              line-height: 1.8;
-            }
-            .footer a {
-              color: #60a5fa;
-              text-decoration: none;
-            }
-            .footer a:hover {
-              text-decoration: underline;
-            }
-            .footer .copyright {
-              font-size: 11px;
-              color: #475569;
-              margin-top: 8px;
-            }
-            @media (max-width: 480px) {
-              .container { padding: 24px 16px; }
-              .greeting { font-size: 20px; }
-              .opportunity-grid { grid-template-columns: 1fr; }
-              .logo-text { font-size: 22px; }
-            }
-          </style>
         </head>
-        <body>
-          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 20px 0;">
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
             <tr>
               <td align="center">
-                <div class="container">
-                  <!-- Header with Logo -->
-                  <div class="header">
-                    <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" class="logo-wrapper" style="text-decoration: none;">
-                      <span class="logo-icon">L</span>
-                      <span class="logo-text">Langoora<span>.</span></span>
-                    </a>
-                    <p class="subtitle">Precision CBTs for Language Mastery.</p>
-                  </div>
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
 
-                  <!-- Content -->
-                  <div class="content">
-                    <h1 class="greeting">Welcome aboard, <span>${tutorName}</span>!</h1>
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0; line-height: 1.4;">
+                      Welcome aboard, <span style="color: #38bdf8;">${tutorName}</span>!
+                    </h1>
                     
-                    <p class="message">
-                      We are pleased to inform you that your tutor application has been <strong>approved</strong>. 
-                      Your qualifications have been verified, and you are now officially part of the Langoora 
-                      tutor community.
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      We are pleased to inform you that your tutor application has been <strong style="color: #ffffff;">approved</strong>. 
+                      Your qualifications have been verified, and you are now officially part of the Langoora tutor community.
                     </p>
 
-                    <div class="success-box">
-                      <h3>Account Activated</h3>
-                      <p>Your tutor dashboard is now accessible.</p>
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 18px 20px; margin: 20px 0; text-align: center;">
+                      <h3 style="color: #34d399; margin: 0 0 4px 0; font-size: 16px; font-weight: 700;">Account Activated</h3>
+                      <p style="color: #6ee7b7; margin: 0; font-size: 13px;">Your tutor dashboard is now accessible.</p>
                     </div>
 
-                    <hr class="divider">
+                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
 
-                    <!-- Opportunities Section -->
-                    <div class="opportunities">
-                      <h4>What You Can Do Now</h4>
-                      <div class="opportunity-grid">
-                        <div class="opportunity-item">
-                          <span class="icon">01</span>
-                          <span class="label"><strong>Create Exam Packs</strong>Design and publish mock exams</span>
-                        </div>
-                        <div class="opportunity-item">
-                          <span class="icon">02</span>
-                          <span class="label"><strong>Earn Revenue</strong>Monetize your expertise</span>
-                        </div>
-                        <div class="opportunity-item">
-                          <span class="icon">03</span>
-                          <span class="label"><strong>Track Performance</strong>Monitor exam analytics</span>
-                        </div>
-                        <div class="opportunity-item">
-                          <span class="icon">04</span>
-                          <span class="label"><strong>View Reviews</strong>See student feedback</span>
-                        </div>
-                      </div>
+                    <div style="margin: 20px 0;">
+                      <h4 style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8; margin: 0 0 16px 0; text-align: center;">
+                        What You Can Do Now
+                      </h4>
+                      
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td width="50%" style="padding: 0 6px 12px 0;">
+                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
+                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">01</div>
+                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Create Exam Packs</div>
+                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Design & publish mock exams</div>
+                            </div>
+                          </td>
+                          <td width="50%" style="padding: 0 0 12px 6px;">
+                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
+                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">02</div>
+                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Earn Revenue</div>
+                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Monetize your expertise</div>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td width="50%" style="padding: 0 6px 0 0;">
+                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
+                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">03</div>
+                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Track Performance</div>
+                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Monitor exam analytics</div>
+                            </div>
+                          </td>
+                          <td width="50%" style="padding: 0 0 0 6px;">
+                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
+                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">04</div>
+                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">View Reviews</div>
+                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">See student feedback</div>
+                            </div>
+                          </td>
+                        </tr>
+                      </table>
                     </div>
 
-                    <hr class="divider">
+                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
 
-                    <!-- Action Buttons -->
-                    <div class="button-group">
-                      <a href="${loginLink}" class="btn-primary">Sign In to Your Account</a>
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${loginLink}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        Sign In to Your Account →
+                      </a>
                     </div>
 
-                    <p class="note">
-                      <strong>Next Steps:</strong> Once signed in, start by creating your first exam pack and setting your pricing. 
-                      Students are waiting to learn from your expertise.
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
+                      <strong style="color: #94a3b8;">Next Steps:</strong> Once signed in, start by creating your first exam pack and setting your pricing. Students are waiting to learn from your expertise.
                     </p>
                   </div>
 
-                  <!-- Footer -->
-                  <div class="footer">
-                    <p>
-                      This is an automated notification from Langoora.<br>
-                      If you have any questions, please contact our support team at 
-                      <a href="mailto:support@langoora.com">support@langoora.com</a>
-                    </p>
-                    <p class="copyright">
-                      &copy; 2026 Langoora. All rights reserved.
-                    </p>
-                  </div>
+                  ${this.getFooterHtml()}
+
                 </div>
               </td>
             </tr>
@@ -469,7 +293,6 @@ class EmailService {
 
       const result = await this.transporter.sendMail(mailOptions);
       
-      // ✅ Log success
       logData.status = 'sent';
       logData.messageId = result.messageId;
       await emailLogService.logEmail(logData);
@@ -478,7 +301,6 @@ class EmailService {
       return { success: true, messageId: result.messageId };
 
     } catch (error) {
-      // ✅ Log failure
       logData.status = 'failed';
       logData.error = error.message;
       await emailLogService.logEmail(logData);
@@ -492,7 +314,6 @@ class EmailService {
    * Send tutor rejection email with reason - With Logging & Rate Limiting
    */
   async sendTutorRejectionEmail(tutorEmail, tutorName, rejectionReason = null) {
-    // Prepare log data
     const logData = {
       recipient: tutorEmail,
       type: 'tutor_rejection',
@@ -503,7 +324,6 @@ class EmailService {
     };
 
     try {
-      // ✅ Rate limiting check
       const rateCheck = await emailRateLimitService.canSend(tutorEmail);
       if (!rateCheck.allowed) {
         logData.status = 'failed';
@@ -514,8 +334,6 @@ class EmailService {
       }
 
       await this.ensureInitialized();
-
-      // Reload config for latest sender settings
       await this.loadConfig();
 
       const supportEmail = process.env.SUPPORT_EMAIL || 'support@langoora.com';
@@ -531,281 +349,60 @@ class EmailService {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Langoora - Tutor Application Update</title>
-          <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              background-color: #060d1f;
-              margin: 0;
-              padding: 0;
-              color: #e0e0e0;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              padding: 40px 20px;
-              background: #0a0e1a;
-              border-radius: 16px;
-              border: 1px solid #1e293b;
-            }
-            .header {
-              text-align: center;
-              padding-bottom: 30px;
-              border-bottom: 1px solid #1e293b;
-              margin-bottom: 30px;
-            }
-            .logo-wrapper {
-              display: inline-flex;
-              align-items: center;
-              gap: 12px;
-              text-decoration: none;
-            }
-            .logo-icon {
-              width: 36px;
-              height: 36px;
-              background: linear-gradient(135deg, #3b82f6, #06b6d4);
-              border-radius: 10px;
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 18px;
-              font-weight: 700;
-              color: #ffffff;
-              box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
-            }
-            .logo-text {
-              font-size: 26px;
-              font-weight: 800;
-              color: #ffffff;
-              letter-spacing: -0.5px;
-            }
-            .logo-text span {
-              color: #60a5fa;
-            }
-            .subtitle {
-              color: #64748b;
-              margin: 6px 0 0 0;
-              font-size: 12px;
-              letter-spacing: 1px;
-              font-weight: 400;
-            }
-            .content {
-              padding: 0 10px;
-            }
-            .greeting {
-              font-size: 24px;
-              font-weight: 700;
-              color: #ffffff;
-              margin-bottom: 16px;
-            }
-            .greeting span {
-              color: #f87171;
-            }
-            .message {
-              color: #94a3b8;
-              line-height: 1.8;
-              font-size: 15px;
-              margin-bottom: 20px;
-            }
-            .message strong {
-              color: #ffffff;
-            }
-            .rejection-box {
-              background: #450a0a;
-              border: 1px solid #f87171;
-              border-radius: 12px;
-              padding: 24px;
-              margin: 24px 0;
-            }
-            .rejection-box h3 {
-              color: #f87171;
-              margin: 0 0 12px 0;
-              font-size: 18px;
-              text-align: center;
-            }
-            .reason-label {
-              font-size: 11px;
-              color: #94a3b8;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              font-weight: 600;
-              margin-bottom: 6px;
-              display: block;
-            }
-            .reason-text {
-              background: #1a0a0a;
-              padding: 14px 16px;
-              border-radius: 8px;
-              color: #fca5a5;
-              font-size: 14px;
-              border-left: 3px solid #f87171;
-              line-height: 1.6;
-              margin: 0;
-            }
-            .divider {
-              border: none;
-              height: 1px;
-              background: linear-gradient(to right, transparent, #1e293b, transparent);
-              margin: 30px 0;
-            }
-            .help-box {
-              background: #1e293b;
-              padding: 16px 20px;
-              border-radius: 10px;
-              margin: 20px 0;
-              border-left: 3px solid #60a5fa;
-            }
-            .help-box h4 {
-              color: #60a5fa;
-              margin: 0 0 6px 0;
-              font-size: 14px;
-            }
-            .help-box p {
-              color: #94a3b8;
-              font-size: 14px;
-              margin: 0;
-              line-height: 1.6;
-            }
-            .help-box a {
-              color: #60a5fa;
-              text-decoration: none;
-            }
-            .help-box a:hover {
-              text-decoration: underline;
-            }
-            .button-group {
-              display: flex;
-              flex-direction: column;
-              gap: 10px;
-              margin: 24px 0;
-            }
-            .btn-primary {
-              display: block;
-              padding: 14px 32px;
-              background: #3b82f6;
-              color: #ffffff !important;
-              text-decoration: none;
-              border-radius: 12px;
-              font-weight: 600;
-              font-size: 16px;
-              text-align: center;
-              transition: background 0.2s;
-            }
-            .btn-primary:hover {
-              background: #2563eb;
-            }
-            .btn-secondary {
-              display: block;
-              padding: 14px 32px;
-              background: transparent;
-              color: #94a3b8 !important;
-              text-decoration: none;
-              border-radius: 12px;
-              font-weight: 500;
-              font-size: 15px;
-              text-align: center;
-              border: 1px solid #334155;
-              transition: all 0.2s;
-            }
-            .btn-secondary:hover {
-              background: #1e293b;
-              color: #e0e0e0 !important;
-            }
-            .footer {
-              margin-top: 30px;
-              padding-top: 24px;
-              border-top: 1px solid #1e293b;
-              text-align: center;
-              color: #64748b;
-              font-size: 13px;
-              line-height: 1.8;
-            }
-            .footer a {
-              color: #60a5fa;
-              text-decoration: none;
-            }
-            .footer a:hover {
-              text-decoration: underline;
-            }
-            .footer .copyright {
-              font-size: 11px;
-              color: #475569;
-              margin-top: 8px;
-            }
-            @media (max-width: 480px) {
-              .container { padding: 24px 16px; }
-              .greeting { font-size: 20px; }
-              .logo-text { font-size: 22px; }
-            }
-          </style>
         </head>
-        <body>
-          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 20px 0;">
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
             <tr>
               <td align="center">
-                <div class="container">
-                  <!-- Header with Logo -->
-                  <div class="header">
-                    <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" class="logo-wrapper" style="text-decoration: none;">
-                      <span class="logo-icon">L</span>
-                      <span class="logo-text">Langoora<span>.</span></span>
-                    </a>
-                    <p class="subtitle">Precision CBTs for Language Mastery.</p>
-                  </div>
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
 
-                  <!-- Content -->
-                  <div class="content">
-                    <h1 class="greeting">Hello <span>${tutorName}</span></h1>
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      Hello <span style="color: #f87171;">${tutorName}</span>,
+                    </h1>
                     
-                    <p class="message">
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
                       We have carefully reviewed your tutor application. After thorough evaluation of your 
                       submitted qualifications and credentials, we regret to inform you that your application 
                       has been <strong style="color: #f87171;">declined</strong> at this time.
                     </p>
 
-                    <div class="rejection-box">
-                      <h3>Application Status: Declined</h3>
-                      <span class="reason-label">Reason for Decision</span>
-                      <p class="reason-text">${reason}</p>
-                    </div>
-
-                    <p class="message" style="font-size: 14px; color: #94a3b8;">
-                      We encourage you to review our tutor requirements and consider reapplying in the future 
-                      with additional qualifications or updated credentials.
-                    </p>
-
-                    <hr class="divider">
-
-                    <div class="help-box">
-                      <h4>Need Clarification?</h4>
-                      <p>
-                        If you believe this decision was made in error or need further clarification about the 
-                        requirements, please don't hesitate to contact our support team at 
-                        <a href="mailto:${supportEmail}">${supportEmail}</a>
+                    <div style="background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.25); border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <h3 style="color: #f87171; margin: 0 0 8px 0; font-size: 15px; font-weight: 700; text-align: center;">Application Status: Declined</h3>
+                      <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: block; margin-bottom: 6px;">Reason for Decision</span>
+                      <p style="background: #18090a; padding: 12px 14px; border-radius: 8px; color: #fca5a5; font-size: 13px; border-left: 3px solid #f87171; line-height: 1.6; margin: 0;">
+                        "${reason}"
                       </p>
                     </div>
 
-                    <div class="button-group">
-                      <a href="${signupLink}" class="btn-primary">Reapply as Tutor</a>
-                      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" class="btn-secondary">Return to Langoora</a>
+                    <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px;">
+                      We encourage you to review our tutor requirements and consider reapplying in the future with additional qualifications or updated credentials.
+                    </p>
+
+                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
+
+                    <div style="background: #0f1629; padding: 16px; border-radius: 10px; margin: 20px 0; border-left: 3px solid #38bdf8;">
+                      <h4 style="color: #38bdf8; margin: 0 0 4px 0; font-size: 13px; font-weight: 700;">Need Clarification?</h4>
+                      <p style="color: #94a3b8; font-size: 13px; margin: 0; line-height: 1.6;">
+                        If you believe this decision was made in error or need further clarification, please contact our support team at 
+                        <a href="mailto:${supportEmail}" style="color: #38bdf8; text-decoration: none;">${supportEmail}</a>.
+                      </p>
+                    </div>
+
+                    <div style="margin: 24px 0;">
+                      <a href="${signupLink}" target="_blank" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; background: #3b82f6; color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; margin-bottom: 10px;">
+                        Reapply as Tutor
+                      </a>
+                      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" target="_blank" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; background: transparent; color: #94a3b8 !important; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 14px; text-align: center; border: 1px solid #334155;">
+                        Return to Langoora
+                      </a>
                     </div>
                   </div>
 
-                  <!-- Footer -->
-                  <div class="footer">
-                    <p>
-                      This is an automated notification from Langoora.<br>
-                      For any queries, please contact us at 
-                      <a href="mailto:${supportEmail}">${supportEmail}</a>
-                    </p>
-                    <p class="copyright">
-                      &copy; 2026 Langoora. All rights reserved.
-                    </p>
-                  </div>
+                  ${this.getFooterHtml(supportEmail)}
+
                 </div>
               </td>
             </tr>
@@ -823,7 +420,6 @@ class EmailService {
 
       const result = await this.transporter.sendMail(mailOptions);
       
-      // ✅ Log success
       logData.status = 'sent';
       logData.messageId = result.messageId;
       await emailLogService.logEmail(logData);
@@ -832,7 +428,6 @@ class EmailService {
       return { success: true, messageId: result.messageId };
 
     } catch (error) {
-      // ✅ Log failure
       logData.status = 'failed';
       logData.error = error.message;
       await emailLogService.logEmail(logData);
@@ -846,7 +441,6 @@ class EmailService {
    * Send test email - For system settings testing with Logging & Rate Limiting
    */
   async sendTestEmail(to, senderEmail, senderName) {
-    // Prepare log data
     const logData = {
       recipient: to,
       type: 'test',
@@ -856,7 +450,6 @@ class EmailService {
     };
 
     try {
-      // ✅ Rate limiting check
       const rateCheck = await emailRateLimitService.canSend(to);
       if (!rateCheck.allowed) {
         logData.status = 'failed';
@@ -879,174 +472,44 @@ class EmailService {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Langoora - Email Test</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              background-color: #060d1f;
-              margin: 0;
-              padding: 0;
-              color: #e0e0e0;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              padding: 40px 20px;
-              background: #0a0e1a;
-              border-radius: 16px;
-              border: 1px solid #1e293b;
-            }
-            .header {
-              text-align: center;
-              padding-bottom: 30px;
-              border-bottom: 1px solid #1e293b;
-              margin-bottom: 30px;
-            }
-            .logo-wrapper {
-              display: inline-flex;
-              align-items: center;
-              gap: 12px;
-              text-decoration: none;
-            }
-            .logo-icon {
-              width: 36px;
-              height: 36px;
-              background: linear-gradient(135deg, #3b82f6, #06b6d4);
-              border-radius: 10px;
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 18px;
-              font-weight: 700;
-              color: #ffffff;
-              box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
-            }
-            .logo-text {
-              font-size: 26px;
-              font-weight: 800;
-              color: #ffffff;
-              letter-spacing: -0.5px;
-            }
-            .logo-text span {
-              color: #60a5fa;
-            }
-            .subtitle {
-              color: #64748b;
-              margin: 6px 0 0 0;
-              font-size: 12px;
-              letter-spacing: 1px;
-              font-weight: 400;
-            }
-            .content {
-              padding: 0 10px;
-              text-align: center;
-            }
-            .success-icon {
-              width: 56px;
-              height: 56px;
-              margin: 0 auto 16px auto;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              background: rgba(52, 211, 153, 0.15);
-              border: 1px solid rgba(52, 211, 153, 0.35);
-              border-radius: 14px;
-              color: #34d399;
-              font-size: 24px;
-              font-weight: 700;
-            }
-            h2 {
-              color: #34d399;
-              font-size: 22px;
-              margin-bottom: 12px;
-            }
-            p {
-              color: #94a3b8;
-              line-height: 1.8;
-              font-size: 15px;
-              margin-bottom: 8px;
-            }
-            .details {
-              background: #0f1629;
-              border: 1px solid #1e293b;
-              border-radius: 12px;
-              padding: 20px;
-              margin: 24px 0;
-              text-align: left;
-            }
-            .details .row {
-              display: flex;
-              justify-content: space-between;
-              padding: 6px 0;
-              font-size: 14px;
-            }
-            .details .row .label {
-              color: #64748b;
-            }
-            .details .row .value {
-              color: #e0e0e0;
-            }
-            .footer {
-              margin-top: 30px;
-              padding-top: 24px;
-              border-top: 1px solid #1e293b;
-              text-align: center;
-              color: #64748b;
-              font-size: 13px;
-              line-height: 1.8;
-            }
-            .footer a {
-              color: #60a5fa;
-              text-decoration: none;
-            }
-            .footer .copyright {
-              font-size: 11px;
-              color: #475569;
-              margin-top: 8px;
-            }
-            @media (max-width: 480px) {
-              .container { padding: 24px 16px; }
-            }
-          </style>
         </head>
-        <body>
-          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 20px 0;">
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
             <tr>
               <td align="center">
-                <div class="container">
-                  <div class="header">
-                    <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" class="logo-wrapper" style="text-decoration: none;">
-                      <span class="logo-icon">L</span>
-                      <span class="logo-text">Langoora<span>.</span></span>
-                    </a>
-                    <p class="subtitle">Precision CBTs for Language Mastery.</p>
-                  </div>
-                  <div class="content">
-                    <div class="success-icon">OK</div>
-                    <h2>Email Configuration Test</h2>
-                    <p>If you are reading this email, your email settings are configured correctly!</p>
-                    <div class="details">
-                      <div class="row">
-                        <span class="label">Sender Name</span>
-                        <span class="value">${fromName}</span>
-                      </div>
-                      <div class="row">
-                        <span class="label">Sender Email</span>
-                        <span class="value">${fromEmail}</span>
-                      </div>
-                      <div class="row">
-                        <span class="label">Sent To</span>
-                        <span class="value">${to}</span>
-                      </div>
-                      <div class="row">
-                        <span class="label">Time</span>
-                        <span class="value">${new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' })}</span>
-                      </div>
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="text-align: center; padding: 0 4px;">
+                    <div style="width: 52px; height: 52px; margin: 0 auto 16px auto; line-height: 52px; background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 14px; color: #34d399; font-size: 20px; font-weight: 700;">✓</div>
+                    <h2 style="color: #34d399; font-size: 20px; margin: 0 0 8px 0; font-weight: 700;">Email Configuration Test</h2>
+                    <p style="color: #94a3b8; font-size: 14px; margin: 0 0 20px 0;">If you are reading this email, your email settings are configured correctly!</p>
+                    
+                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px; margin: 20px 0; text-align: left;">
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sender Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${fromName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sender Email</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${fromEmail}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sent To</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${to}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Time</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' })}</td>
+                        </tr>
+                      </table>
                     </div>
-                    <p style="font-size: 13px; color: #64748b;">This is an automated test email from Langoora.</p>
                   </div>
-                  <div class="footer">
-                    <p>&copy; 2026 Langoora. All rights reserved.</p>
-                  </div>
+
+                  ${this.getFooterHtml()}
+
                 </div>
               </td>
             </tr>
@@ -1064,7 +527,6 @@ class EmailService {
 
       const result = await this.transporter.sendMail(mailOptions);
       
-      // ✅ Log success
       logData.status = 'sent';
       logData.messageId = result.messageId;
       await emailLogService.logEmail(logData);
@@ -1073,7 +535,6 @@ class EmailService {
       return { success: true, messageId: result.messageId };
 
     } catch (error) {
-      // ✅ Log failure
       logData.status = 'failed';
       logData.error = error.message;
       await emailLogService.logEmail(logData);

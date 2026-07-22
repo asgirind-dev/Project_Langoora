@@ -461,6 +461,7 @@ module.exports = {
   updateExamDraft,
   updateExam,
   getAllExams,
+  getAllExamsDev, // NEW: Development endpoint
   deleteStudentExam,
   uploadAsset,
   deleteAsset

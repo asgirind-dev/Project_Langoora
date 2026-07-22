@@ -1,17 +1,35 @@
 // frontend/src/components/admin/governanceSecurity.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Shield, RefreshCw, Hourglass, Power } from 'lucide-react';
 import GlassCard from '../ui/GlassCard';
 import studentApi from '../../services/examExecutionService';
 
-export default function GovernanceSecurity() {
+const GovernanceSecurity = forwardRef((props, ref) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [securityConfig, setSecurityConfig] = useState({
     enableAntiCheat: true,
     maxViolationWarnings: 3,
     maintenanceMode: false,
     sessionTimeouts: { admin: 15, tutor: 20, student: 45, finance: 10, validator: 15 }
   });
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    getSecurityConfig: () => securityConfig,
+    setSecurityConfig: (config) => setSecurityConfig(config),
+    saveSecurityConfig: async () => {
+      try {
+        setIsSaving(true);
+        const response = await studentApi.post('/system-settings/security', securityConfig);
+        return { success: response.data.success, message: response.data.message };
+      } catch (error) {
+        return { success: false, message: error.message };
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  }));
 
   useEffect(() => {
     loadSecuritySpecs();
@@ -147,4 +165,8 @@ export default function GovernanceSecurity() {
 
     </div>
   );
-}
+});
+
+GovernanceSecurity.displayName = 'GovernanceSecurity';
+
+export default GovernanceSecurity;
