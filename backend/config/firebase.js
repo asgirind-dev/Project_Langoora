@@ -15,8 +15,13 @@ if (getApps().length === 0) {
   app = getApp();
 }
 
+// ✅ FIX: Enable ignoreUndefinedProperties to prevent undefined field errors
 const db = getFirestore(app);
+db.settings({
+  ignoreUndefinedProperties: true
+});
+
 const auth = getAuth(app);
-const storage = getStorage(app).bucket(); // 👈 Storage bucket එක සෙට් කළා
+const storage = getStorage(app).bucket();
 
 module.exports = { db, auth, storage };
