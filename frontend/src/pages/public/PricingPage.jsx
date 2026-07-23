@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Zap, CheckCircle, Star, ArrowRight, RefreshCw, Rocket, Crown, Infinity, Award, Layers, AlertCircle } from 'lucide-react';
+import { CheckCircle, RefreshCw, Rocket, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
 import axios from 'axios';
 import Navbar from '../../components/layout/Navbar';
 import Footer from '../../components/layout/Footer';
@@ -47,36 +47,45 @@ export default function PricingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#060d1f] text-white">
+      <div className="min-h-screen bg-[#060d1f] text-white flex flex-col justify-between">
         <Navbar />
-        <section className="pt-32 pb-20 px-4 relative overflow-hidden">
+        <section className="pt-32 pb-20 px-4 relative overflow-hidden flex-1">
           <div className="max-w-6xl mx-auto relative z-10">
             <div className="flex flex-col items-center justify-center py-24 gap-3">
-              <RefreshCw className="animate-spin text-blue-500" size={36} />
-              <p className="text-gray-400 text-sm font-medium">Loading plans...</p>
+              <RefreshCw className="animate-spin text-purple-400" size={36} />
+              <p className="text-gray-400 text-sm font-medium">Loading dynamic subscription tiers...</p>
             </div>
           </div>
         </section>
+        <Footer />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#060d1f] text-white">
+      <div className="min-h-screen bg-[#060d1f] text-white flex flex-col justify-between">
         <Navbar />
-        <section className="pt-32 pb-20 px-4 relative overflow-hidden">
+        <section className="pt-32 pb-20 px-4 relative overflow-hidden flex-1">
           <div className="max-w-6xl mx-auto relative z-10">
             <div className="flex flex-col items-center justify-center py-24 gap-3">
               <AlertCircle className="text-red-400" size={36} />
               <p className="text-gray-400 text-sm">{error}</p>
-              <Button variant="primary" onClick={() => window.location.reload()}>Try Again</Button>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="mt-2 px-4 py-2 bg-purple-600 rounded-xl text-xs font-bold hover:bg-purple-500 transition-all cursor-pointer"
+              >
+                Try Again
+              </button>
             </div>
           </div>
         </section>
+        <Footer />
       </div>
     );
   }
+
+  const activePlans = plans.filter(plan => plan.active !== false);
 
   return (
     <div className="min-h-screen bg-[#060d1f] text-white selection:bg-purple-500/30 font-sans flex flex-col justify-between">
@@ -104,116 +113,96 @@ export default function PricingPage() {
             </p>
           </motion.div>
 
-          {/* Loading State */}
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-3">
-              <RefreshCw className="animate-spin text-purple-400" size={36} />
-              <p className="text-gray-400 text-sm">Loading dynamic subscription tiers...</p>
-            </div>
-          ) : plans.length === 0 ? (
-            <div className="text-center py-24 text-gray-400">
-              <p>No subscription plans available at the moment.</p>
-          {plans.length === 0 ? (
-            <div className="text-center py-24 text-gray-400 bg-white/[0.01] border border-white/5 rounded-2xl">
-              <AlertCircle className="mx-auto text-gray-600 mb-2" size={24} />
-              <p className="text-sm">No active plans available at the moment.</p>
+          {/* Cards Grid or Empty State */}
+          {activePlans.length === 0 ? (
+            <div className="text-center py-24 text-gray-400 bg-white/[0.01] border border-white/5 rounded-3xl p-8 max-w-md mx-auto">
+              <AlertCircle className="mx-auto text-gray-500 mb-2" size={32} />
+              <p className="text-sm font-semibold text-white">No active subscription plans available at the moment.</p>
             </div>
           ) : (
-            /* Cards Grid */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {plans
-                .filter(plan => plan.active !== false) 
-                .map((plan, index) => {
-                  const features = normalizeFeatures(plan.features);
-                  const isPopular = plan.popular || false;
-                  
-                  return (
-                    <motion.div 
-                      key={plan._id || plan.id}
-                      whileHover={{ y: -6 }}
-                      className={`relative bg-[#0b1221]/60 backdrop-blur-md border rounded-3xl p-8 flex flex-col shadow-2xl transition-all duration-300 ${
-                        isPopular ? 'border-blue-500 shadow-blue-500/10' : 'border-white/10'
-                      }`}
-                    >
-                      {/* MOST POPULAR BADGE */}
-                      {isPopular && (
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-10">
-                          <span className="px-3.5 py-0.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-[10px] font-extrabold uppercase tracking-wider text-white shadow-md shadow-purple-500/20">
-                            MOST POPULAR
-                          </span>
-                        </div>
-                      )}
+              {activePlans.map((plan) => {
+                const features = normalizeFeatures(plan.features);
+                const isPopular = plan.popular || false;
+                
+                return (
+                  <motion.div 
+                    key={plan._id || plan.id}
+                    whileHover={{ y: -6 }}
+                    className={`relative rounded-3xl flex flex-col transition-all duration-300 ${
+                      isPopular ? 'shadow-2xl shadow-purple-500/10' : ''
+                    }`}
+                  >
+                    {/* MOST POPULAR BADGE */}
+                    {isPopular && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20">
+                        <span className="px-3.5 py-0.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-[10px] font-extrabold uppercase tracking-wider text-white shadow-md shadow-purple-500/20">
+                          MOST POPULAR
+                        </span>
+                      </div>
+                    )}
 
-                      {/* CARD CONTAINER */}
-                      <div className={`p-6 border-2 text-left transition-all duration-300 relative rounded-2xl bg-[#0f1424]/90 backdrop-blur-xl flex flex-col h-full ${
-                        isPopular 
-                          ? 'border-purple-500/40 shadow-2xl shadow-purple-500/10 scale-[1.02]' 
-                          : 'border-white/10 hover:border-white/20'
-                      }`}>
-                        
-                        {/* Rocket Icon Container */}
-                        <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-center mb-3">
-                          <Rocket size={18} className="text-purple-400" />
-                        </div>
+                    {/* CARD CONTAINER */}
+                    <div className={`p-6 border-2 text-left transition-all duration-300 relative rounded-2xl bg-[#0f1424]/90 backdrop-blur-xl flex flex-col h-full ${
+                      isPopular 
+                        ? 'border-purple-500/40 shadow-2xl shadow-purple-500/10' 
+                        : 'border-white/10 hover:border-white/20'
+                    }`}>
+                      
+                      {/* Rocket Icon Container */}
+                      <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-center mb-3">
+                        <Rocket size={18} className="text-purple-400" />
+                      </div>
 
-                        {/* Plan Title */}
-                        <h2 className="text-xl font-bold text-white tracking-wide uppercase">{plan.name}</h2>
+                      {/* Plan Title */}
+                      <h2 className="text-xl font-bold text-white tracking-wide uppercase">{plan.name}</h2>
 
-                        {/* Price Display */}
-                        <div className="mt-1 flex items-baseline gap-1">
-                          <span className="text-3xl font-extrabold text-white tracking-tight">
-                            LKR {Number(plan.price || 0).toLocaleString()}
-                          </span>
-                          <span className="text-xs font-medium text-gray-400">/month</span>
-                        </div>
+                      {/* Price Display */}
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="text-3xl font-extrabold text-white tracking-tight">
+                          LKR {Number(plan.price || 0).toLocaleString()}
+                        </span>
+                        <span className="text-xs font-medium text-gray-400">/month</span>
+                      </div>
 
-                        {/* Credits Granted Badge */}
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 mt-2.5 mb-4">
-                          <Sparkles size={13} className="fill-amber-400/20" />
-                          <span>{plan.credits || 0} credits granted</span>
-                        </div>
+                      {/* Credits Granted Badge */}
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 mt-2.5 mb-4">
+                        <Sparkles size={13} className="fill-amber-400/20" />
+                        <span>{plan.credits || 0} credits granted</span>
+                      </div>
 
-                        {/* Features List */}
-                        <div className="space-y-2.5 my-4 flex-1">
-                          {features.map((feature, idx) => (
+                      {/* Features List */}
+                      <div className="space-y-2.5 my-4 flex-1">
+                        {features.length > 0 ? (
+                          features.map((feature, idx) => (
                             <div key={idx} className="flex items-start gap-2.5 text-xs font-medium text-gray-300">
                               <CheckCircle size={15} className="text-emerald-400 shrink-0 mt-0.5" />
                               <span>{feature}</span>
                             </div>
-                          ))}
-                        </div>
-                      {/* ✅ FIXED: Safe features rendering */}
-                      <ul className="space-y-4 mb-8 flex-grow mt-4">
-                        {Array.isArray(plan.features) && plan.features.length > 0 ? (
-                          plan.features.map((feature, idx) => (
-                            <li key={idx} className="flex items-start gap-3 text-sm text-gray-300 font-light">
-                              <CheckCircle size={16} className={`${isPopular ? 'text-cyan-400' : 'text-emerald-400'} mt-0.5 flex-shrink-0`} />
-                              <span>{feature}</span>
-                            </li>
                           ))
                         ) : (
-                          <li className="text-sm text-gray-500 font-light">No features listed</li>
+                          <div className="text-xs text-gray-500 italic">No features listed</div>
                         )}
-                      </ul>
-
-                        {/* CTA Button */}
-                        <div className="mt-auto pt-4 border-t border-white/5">
-                          <button
-                            onClick={() => navigate('/auth/register')}
-                            className={`w-full py-3 px-4 rounded-xl text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 ${
-                              isPopular 
-                                ? 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 shadow-purple-500/20' 
-                                : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-blue-500/20'
-                            }`}
-                          >
-                            <span>Choose {plan.name}</span>
-                            <ArrowRight size={14} />
-                          </button>
-                        </div>
                       </div>
-                    </motion.div>
-                  );
-                })}
+
+                      {/* CTA Button */}
+                      <div className="mt-auto pt-4 border-t border-white/5">
+                        <button
+                          onClick={() => navigate('/auth/register')}
+                          className={`w-full py-3 px-4 rounded-xl text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 ${
+                            isPopular 
+                              ? 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 shadow-purple-500/20' 
+                              : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-blue-500/20'
+                          }`}
+                        >
+                          <span>Choose {plan.name}</span>
+                          <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </div>

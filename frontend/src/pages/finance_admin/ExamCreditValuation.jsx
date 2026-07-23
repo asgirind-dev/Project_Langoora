@@ -4,7 +4,7 @@ import {
   Award, Coins, ChevronDown, History, Save, RefreshCw, X, Loader2, Trash, CheckCircle2, AlertCircle, Sparkles
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
-import SubscriptionService from '../../services/subscriptionService';
+import CreditValuationService from "../../services/CreditValuationService";
 
 function ExamCreditValuation() {
   const [allLevels, setAllLevels] = useState([]);
@@ -34,7 +34,8 @@ function ExamCreditValuation() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const levelsData = await SubscriptionService.getAllCategories();
+      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
+      const levelsData = await CreditValuationService.getCategories();
       setAllLevels(levelsData || []);
       const uniqueCategories = [...new Set((levelsData || []).map(l => l.categoryId))];
       if (uniqueCategories.length > 0 && !selectedCategory) {
@@ -51,7 +52,8 @@ function ExamCreditValuation() {
   const fetchCreditHistory = async () => {
     setLoadingHistory(true);
     try {
-      const data = await SubscriptionService.getCreditHistory();
+      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
+      const data = await CreditValuationService.getCreditHistory();
       if (Array.isArray(data)) setCreditHistory(data);
     } catch (error) {
       console.error("Error fetching history:", error);
@@ -64,7 +66,8 @@ function ExamCreditValuation() {
     if (!window.confirm('⚠️ Are you sure you want to clear ALL credit history logs?')) return;
     setClearingHistory(true);
     try {
-      await SubscriptionService.clearCreditHistory();
+      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
+      await CreditValuationService.clearCreditHistory();
       setCreditHistory([]);
       alert('✅ Credit history cleared successfully!');
     } catch (error) {
@@ -102,7 +105,8 @@ function ExamCreditValuation() {
 
     try {
       setLoading(true);
-      await SubscriptionService.updateCategoryCredits(categoryId, levelId, { credits: parseInt(creditToUpdate) || 0 });
+      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
+      await CreditValuationService.updateLevelCredits(categoryId, levelId, parseInt(creditToUpdate) || 0);
       setAllLevels(allLevels.map((lvl) =>
         lvl.id === levelId && lvl.categoryId === categoryId 
           ? { ...lvl, credits: parseInt(creditToUpdate) || 0 } 
@@ -134,7 +138,8 @@ function ExamCreditValuation() {
     const creditToUpdate = tempCredits[categoryId] !== undefined ? tempCredits[categoryId] : currentCredit;
     try {
       setLoading(true);
-      await SubscriptionService.updateCategoryCreditsDirect(categoryId, { credits: parseInt(creditToUpdate) || 0 });
+      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
+      await CreditValuationService.updateCategoryCredits(categoryId, parseInt(creditToUpdate) || 0);
       setAllLevels(allLevels.map((lvl) =>
         lvl.id === categoryId && lvl.categoryId === categoryId 
           ? { ...lvl, credits: parseInt(creditToUpdate) || 0 } 
@@ -164,13 +169,11 @@ function ExamCreditValuation() {
 
   return (
     <div className="space-y-8 text-gray-100 font-sans relative">
-      {/* Background Ambient Glows */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-20 right-20 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-20 left-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
 
-      {/* Header Area */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 pb-6 border-b border-white/10">
         <div>
           <div className="flex items-center gap-3">
@@ -211,7 +214,6 @@ function ExamCreditValuation() {
         </div>
       </div>
 
-      {/* Category Dropdown Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-gradient-to-r from-[#0f1424] to-[#0b0e1b] p-4 rounded-2xl border border-white/10 shadow-xl gap-4">
         <div className="flex items-center gap-2.5">
           <Award size={18} className="text-amber-400" />
@@ -231,7 +233,6 @@ function ExamCreditValuation() {
         </div>
       </div>
 
-      {/* Level Cards Grid */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 text-gray-400 space-y-4">
           <div className="p-4 bg-amber-500/10 rounded-full border border-amber-500/20 animate-bounce">
@@ -260,7 +261,6 @@ function ExamCreditValuation() {
                       ? 'border-red-500/30 bg-red-950/10' 
                       : 'border-white/10 hover:border-amber-500/30 bg-[#0d1222]/90 shadow-lg'
                   }`}>
-                    {/* Top Status & Title */}
                     <div>
                       <div className="flex justify-between items-start mb-4">
                         <div>
@@ -282,7 +282,6 @@ function ExamCreditValuation() {
                         </span>
                       </div>
 
-                      {/* Credit Input Field */}
                       <div className="flex items-center justify-between bg-black/40 rounded-xl p-3 mb-6 border border-white/5 group-hover:border-white/10 transition-colors">
                         <div className="flex items-center gap-2">
                           <Coins size={16} className="text-amber-400" />
@@ -297,7 +296,6 @@ function ExamCreditValuation() {
                       </div>
                     </div>
 
-                    {/* Submit Button */}
                     {hasLevels ? (
                       <button 
                         onClick={() => handleUpdateLevel(item.categoryId, item.id, item.credits, item.name)}
@@ -328,7 +326,6 @@ function ExamCreditValuation() {
         </div>
       )}
 
-      {/* History Modal Window */}
       <AnimatePresence>
         {showHistoryModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">

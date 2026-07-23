@@ -5,7 +5,7 @@ import {
   RefreshCw, Rocket, Layers, X, Loader2, Zap
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
-import SubscriptionService from '../../services/subscriptionService';
+import PlanService from "../../services/PlanService"; // 👈 නිවැරදි PlanService Import එක
 
 const normalizeFeatures = (features) => {
   if (!features) return [];
@@ -40,7 +40,8 @@ function SubscriptionPlans() {
   const fetchPlans = async () => {
     setLoading(true);
     try {
-      const data = await SubscriptionService.getAllPlans();
+      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
+      const data = await PlanService.getAllPlans();
       const normalizedPlans = (data || []).map(plan => ({
         ...plan,
         id: plan.id || plan._id,
@@ -75,7 +76,8 @@ function SubscriptionPlans() {
         active: true
       };
 
-      const res = await SubscriptionService.createNewPlan(payload);
+      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
+      const res = await PlanService.createNewPlan(payload);
       setPlans([...plans, { ...res, id: res.id || res._id, features: normalizeFeatures(res.features), active: true, popular: Boolean(formData.popular) }]);
       alert("✅ New Subscription Plan Created!");
       resetForm();
@@ -99,7 +101,8 @@ function SubscriptionPlans() {
         popular: Boolean(formData.popular)
       };
 
-      await SubscriptionService.updateExistingPlan(targetId, payload);
+      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
+      await PlanService.updateExistingPlan(targetId, payload);
       setPlans(plans.map(p => (p.id === targetId || p._id === targetId) ? { ...p, ...payload } : p));
       alert("✅ Plan Updated Successfully!");
       resetForm();
@@ -113,7 +116,8 @@ function SubscriptionPlans() {
   const deletePlan = async (id) => {
     if (!window.confirm("Are you sure you want to permanently delete this plan?")) return;
     try {
-      await SubscriptionService.deleteExistingPlan(id);
+      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
+      await PlanService.deleteExistingPlan(id);
       setPlans(plans.filter(p => p.id !== id && p._id !== id));
       alert("✅ Plan deleted successfully!");
     } catch (error) {
@@ -136,7 +140,8 @@ function SubscriptionPlans() {
         active: nextStatus 
       };
 
-      await SubscriptionService.updateExistingPlan(planId, payload);
+      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
+      await PlanService.updateExistingPlan(planId, payload);
       setPlans(plans.map(p => (p.id === planId || p._id === planId) ? { ...p, active: nextStatus } : p));
     } catch (error) {
       alert("❌ Status update failed.");
@@ -168,13 +173,11 @@ function SubscriptionPlans() {
 
   return (
     <div className="space-y-8 text-gray-100 font-sans relative">
-      {/* Subtle Ambient Background Glows */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-10 right-10 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-10 left-10 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
 
-      {/* Header Area */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 pb-6 border-b border-white/10">
         <div>
           <div className="flex items-center gap-3">
@@ -212,7 +215,6 @@ function SubscriptionPlans() {
         </div>
       </div>
 
-      {/* Main Content Area */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 text-gray-400 space-y-4">
           <div className="p-4 bg-purple-500/10 rounded-full border border-purple-500/20 animate-bounce">
@@ -310,7 +312,6 @@ function SubscriptionPlans() {
         </>
       )}
 
-      {/* Plan Create / Edit Modal */}
       <AnimatePresence>
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
