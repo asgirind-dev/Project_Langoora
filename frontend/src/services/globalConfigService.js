@@ -6,7 +6,6 @@ const API_URL = 'http://localhost:5000/api/system-settings';
 
 /**
  * 🌐 Get Global Configurations
- * Firebase එකෙන් Global Settings ගන්නවා
  */
 export const fetchGlobalConfig = async () => {
   try {
@@ -20,21 +19,28 @@ export const fetchGlobalConfig = async () => {
 
 /**
  * 💾 Save Global Configurations
- * Global Settings Firebase එකට Save කරනවා
  */
 export const saveGlobalConfig = async (configData) => {
   try {
+    console.log('📤 Sending global config:', configData);
+    
     const response = await axios.post(`${API_URL}/global`, configData);
-    return response.data.data;
+    
+    console.log('📥 Response:', response.data);
+    
+    // ✅ Return the full response object, not just response.data.data
+    // The backend returns: { success: true, message: '...', data: updatedConfig }
+    // So we need to return the whole response.data
+    return response.data;
   } catch (error) {
     console.error("Error saving global configurations:", error);
+    console.error("Response error:", error.response?.data);
     throw error;
   }
 };
 
 /**
  * 📧 Send Test Email
- * Email configuration එක Test කරනවා
  */
 export const sendTestEmail = async (senderEmail, senderName) => {
   try {
@@ -45,6 +51,7 @@ export const sendTestEmail = async (senderEmail, senderName) => {
     return response.data;
   } catch (error) {
     console.error("Error sending test email:", error);
+    console.error("Response error:", error.response?.data);
     throw error;
   }
 };

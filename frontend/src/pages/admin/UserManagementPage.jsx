@@ -101,13 +101,13 @@ export default function UserManagementPage() {
   const [roleFormError, setRoleFormError] = useState('');
   const [isRoleSubmitting, setIsRoleSubmitting] = useState(false);
 
-  // Updated createForm with firstName and lastName
+  // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
   const [createForm, setCreateForm] = useState({
     firstName: '',
     lastName: '',
     email: '',
     roleId: 'validator',
-    institution: 'LNBTI',
+    institution: 'Langoora',
     languageScope: 'Japanese',
     privileges: []
   });
@@ -152,7 +152,7 @@ export default function UserManagementPage() {
     fetchAllRoles();
   }, []);
 
-  // --- User lifecycle (unchanged) ---
+  // --- User lifecycle ---
   const toggleSuspend = async (uid, currentStatus, email) => {
     try {
       const data = await toggleUserLifecycle(uid, currentStatus, email);
@@ -194,7 +194,7 @@ export default function UserManagementPage() {
     }
   };
 
-  // --- Privileges (unchanged) ---
+  // --- Privileges ---
   const savePrivileges = async () => {
     try {
       const payload = {
@@ -236,7 +236,7 @@ export default function UserManagementPage() {
     });
   };
 
-  // --- Create user (updated) ---
+  // --- Create user ---
   const handleProvisionUser = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -270,12 +270,13 @@ export default function UserManagementPage() {
       if (data.success) {
         setUsers(prev => [data.user, ...prev]);
         setIsCreateModalOpen(false);
+        // ✅ FIX: Reset form with "Langoora" as default institution
         setCreateForm({
           firstName: '',
           lastName: '',
           email: '',
           roleId: 'validator',
-          institution: 'LNBTI',
+          institution: 'Langoora',
           languageScope: 'Japanese',
           privileges: []
         });
@@ -300,7 +301,7 @@ export default function UserManagementPage() {
     });
   };
 
-  // --- Role Management (unchanged) ---
+  // --- Role Management ---
   const openRoleModal = (role = null) => {
     if (role) {
       setEditingRole(role);
@@ -705,7 +706,7 @@ export default function UserManagementPage() {
         </div>
       </GlassCard>
 
-      {/* --- ADD STAFF MODAL (Updated) --- */}
+      {/* --- ADD STAFF MODAL --- */}
       <AnimatePresence>
         {isCreateModalOpen && (
           <Portal>
@@ -812,9 +813,10 @@ export default function UserManagementPage() {
                         ) : (
                           <>
                             <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Institution</label>
+                            {/* ✅ FIX: Changed placeholder from "e.g., LNBTI" to "e.g., Langoora" */}
                             <input
                               type="text"
-                              placeholder="e.g., LNBTI"
+                              placeholder="e.g., Langoora"
                               value={createForm.institution}
                               onChange={e => setCreateForm(p => ({ ...p, institution: e.target.value }))}
                               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"

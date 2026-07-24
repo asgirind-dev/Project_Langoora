@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Play, BarChart2, Clock, CheckCircle, XCircle, Trash2, Plus,
-  CalendarPlus, Check, User, GraduationCap, Building2, Layers, FileText
+  CalendarPlus, Check, User, GraduationCap, Building2, Layers, FileText,
+  Filter, Grid3x3, List, AlertCircle, ShoppingBag
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import studentApi from '../../services/examExecutionService';
+import axios from 'axios';
 
 const statusColors = { 'published': 'green', 'draft': 'gray', 'archived': 'red', 'active': 'green' };
 
@@ -21,7 +22,7 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ─── Loading Spinner Component (Same as LandingPage / ExamTakePage) ─────
+// ─── Loading Spinner Component ─────
 function LoadingSpinner({ message = "Loading your exams..." }) {
   return (
     <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-4 text-white">
@@ -39,7 +40,7 @@ function LoadingSpinner({ message = "Loading your exams..." }) {
   );
 }
 
-// ─── Tutor Avatar (with graceful fallback to initials) ──────────────────
+// ─── Tutor Avatar ──────────────────
 function TutorAvatar({ tutor, name, size = 36 }) {
   const [imgError, setImgError] = useState(false);
   const initials = (name || 'T').trim().charAt(0).toUpperCase();
@@ -77,6 +78,7 @@ export default function MyExamsPage() {
   const [tutors, setTutors] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('grid');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedExamId, setSelectedExamId] = useState(null);
@@ -84,10 +86,15 @@ export default function MyExamsPage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [successExamId, setSuccessExamId] = useState(null);
 
+  // Get unique categories and levels from exams
+  const categories = [...new Set(exams.map(e => e.category_id).filter(Boolean))];
+  const levels = [...new Set(exams.map(e => e.level_id).filter(Boolean))];
+
   useEffect(() => {
     const fetchExams = async () => {
       try {
-        const res = await studentApi.get('/exams/available');
+        // Use the development endpoint to get all exams
+        const res = await axios.get('http://localhost:5000/api/exams/dev/all');
         const examList = res.data.data || [];
         setExams(examList);
         setLoading(false);
@@ -98,7 +105,7 @@ export default function MyExamsPage() {
           const tutorEntries = await Promise.all(
             tutorIds.map(async (id) => {
               try {
-                const tRes = await studentApi.get(`/tutor-profile/${id}`);
+                const tRes = await axios.get(`http://localhost:5000/api/tutor-profile/${id}`);
                 return [id, tRes.data?.data || null];
               } catch (err) {
                 console.error(`Failed to fetch tutor profile for ${id}:`, err);
@@ -124,7 +131,9 @@ export default function MyExamsPage() {
 
   const handleConfirmDelete = async () => {
     try {
-      await studentApi.delete(`/exams/student-exams/${selectedExamId}`);
+      await axios.delete(`http://localhost:5000/api/exams/student-exams/${selectedExamId}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
       setExams(exams.filter(exam => exam.id !== selectedExamId));
       setIsModalOpen(false);
     } catch (error) {
@@ -164,7 +173,20 @@ export default function MyExamsPage() {
     }
   };
 
-  const filtered = filter === 'all' ? exams : exams.filter(e => e.status === filter);
+  // Filter logic with category and level support
+  const filteredExams = exams.filter(exam => {
+    if (filter === 'all') return true;
+    if (filter === 'completed') return exam.attempts_count > 0;
+    if (filter.startsWith('cat_')) {
+      const category = filter.replace('cat_', '');
+      return exam.category_id === category;
+    }
+    if (filter.startsWith('lvl_')) {
+      const level = filter.replace('lvl_', '');
+      return exam.level_id === level;
+    }
+    return false;
+  });
 
   if (loading) {
     return <LoadingSpinner message="Loading your exams..." />;
@@ -175,53 +197,151 @@ export default function MyExamsPage() {
       <div className="flex justify-between items-center">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-3xl font-bold text-white mb-1">My Exams</h1>
-          <p className="text-gray-400">All your purchased exam packs in one place</p>
+          <p className="text-gray-400">All available exam packs in one place</p>
         </motion.div>
-        <Button variant="primary" onClick={() => navigate('/student/marketplace')}>
-          <Plus size={16} /> Buy New Exams
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="primary" onClick={() => navigate('/student/marketplace')}>
+            <ShoppingBag size={16} /> Browse Marketplace
+          </Button>
+        </div>
       </div>
 
-      <div className="flex gap-2">
-        {[['all', 'All'], ['draft', 'Draft'], ['published', 'Published'], ['archived', 'Archived']].map(([val, label]) => (
+      {/* Filters Section */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-2 flex-wrap">
           <button
-            key={val}
-            onClick={() => setFilter(val)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${filter === val ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'}`}
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              filter === 'all' 
+                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' 
+                : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
+            }`}
           >
-            {label}
+            All
           </button>
-        ))}
+          <button
+            onClick={() => setFilter('completed')}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              filter === 'completed' 
+                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' 
+                : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
+            }`}
+          >
+            Completed
+          </button>
+          {categories.length > 0 && (
+            <div className="relative group">
+              <button className="px-4 py-2 rounded-xl text-sm font-medium bg-white/5 text-gray-400 hover:text-white border border-white/10 flex items-center gap-1">
+                <Filter size={14} /> Category
+              </button>
+              <div className="absolute top-full left-0 mt-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-2 min-w-[150px] hidden group-hover:block z-20">
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setFilter(`cat_${cat}`)}
+                    className={`block w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                      filter === `cat_${cat}` 
+                        ? 'bg-blue-500/20 text-blue-400' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    {cat.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {levels.length > 0 && (
+            <div className="relative group">
+              <button className="px-4 py-2 rounded-xl text-sm font-medium bg-white/5 text-gray-400 hover:text-white border border-white/10 flex items-center gap-1">
+                <Layers size={14} /> Level
+              </button>
+              <div className="absolute top-full left-0 mt-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-2 min-w-[150px] hidden group-hover:block z-20">
+                {levels.map(lvl => (
+                  <button
+                    key={lvl}
+                    onClick={() => setFilter(`lvl_${lvl}`)}
+                    className={`block w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                      filter === `lvl_${lvl}` 
+                        ? 'bg-blue-500/20 text-blue-400' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    {lvl.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex ml-auto gap-1 bg-white/5 rounded-xl p-1 border border-white/10">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`p-2 rounded-lg transition-all ${
+              viewMode === 'grid' 
+                ? 'bg-blue-500/20 text-blue-400' 
+                : 'text-gray-500 hover:text-white'
+            }`}
+          >
+            <Grid3x3 size={16} />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`p-2 rounded-lg transition-all ${
+              viewMode === 'list' 
+                ? 'bg-blue-500/20 text-blue-400' 
+                : 'text-gray-500 hover:text-white'
+            }`}
+          >
+            <List size={16} />
+          </button>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {/* Active filter display */}
+      {filter !== 'all' && filter !== 'completed' && (
+        <div className="text-sm text-blue-400 flex items-center gap-2">
+          <Filter size={14} />
+          Filtering by: <span className="font-medium">{filter.replace(/^cat_|^lvl_/, '').toUpperCase()}</span>
+          <button onClick={() => setFilter('all')} className="text-gray-400 hover:text-white text-xs underline">
+            Clear
+          </button>
+        </div>
+      )}
+
+      {filteredExams.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-center py-20 px-6 border border-dashed border-white/10 rounded-2xl bg-white/[0.02]"
         >
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 flex items-center justify-center">
-            <BookOpen size={28} className="text-gray-500" />
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 flex items-center justify-center">
+            <BookOpen size={36} className="text-blue-400" />
           </div>
-          <h3 className="text-white font-semibold text-lg mb-1">No exams here yet</h3>
-          <p className="text-gray-500 text-sm mb-6">
-            {filter === 'all' ? "You haven't purchased any exams." : `You have no exams in "${filter}".`}
+          <h3 className="text-white font-semibold text-2xl mb-2">No exams here yet</h3>
+          <p className="text-gray-500 text-base mb-3 max-w-md mx-auto">
+            {filter !== 'all' && filter !== 'completed' 
+              ? `No exams found for the selected filter.` 
+              : "You haven't purchased any exams yet. Explore the marketplace to find the perfect exam for your learning journey."}
           </p>
-          <Button variant="primary" onClick={() => navigate('/student/marketplace')}>
-            <Plus size={16} /> Browse Marketplace
+          <p className="text-gray-600 text-sm mb-8 max-w-sm mx-auto">
+            🚀 Start your learning adventure with our curated exam packs designed to help you succeed.
+          </p>
+          <Button variant="primary" size="lg" onClick={() => navigate('/student/marketplace')}>
+            <ShoppingBag size={18} /> Explore Marketplace
           </Button>
         </motion.div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {filtered.map((exam, i) => {
+        <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'} gap-5`}>
+          {filteredExams.map((exam, i) => {
             const tutor = tutors[exam.tutor_id];
             const tutorName = tutor?.name || exam.tutor_name || 'Expert Tutor';
 
             return (
               <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                <GlassCard className="overflow-hidden relative group border-white/5 hover:border-white/10 hover:shadow-xl hover:shadow-black/20 transition-all h-full">
-                  <div className="flex h-full min-h-[210px]">
-                    <div className="relative w-32 flex-shrink-0 overflow-hidden">
+                <GlassCard className={`overflow-hidden relative group border-white/5 hover:border-white/10 hover:shadow-xl hover:shadow-black/20 transition-all h-full ${viewMode === 'list' ? 'flex' : ''}`}>
+                  <div className={`flex ${viewMode === 'list' ? 'w-full' : 'h-full min-h-[210px]'}`}>
+                    <div className={`relative ${viewMode === 'list' ? 'w-48 flex-shrink-0' : 'w-32 flex-shrink-0'} overflow-hidden`}>
                       <img
                         src={exam.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400'}
                         alt={exam.title}
@@ -230,7 +350,7 @@ export default function MyExamsPage() {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
                     </div>
 
-                    <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
+                    <div className={`p-4 flex-1 flex flex-col justify-between min-w-0 ${viewMode === 'list' ? 'h-full' : ''}`}>
                       <div className="space-y-2.5">
                         {/* Tutor Info Row */}
                         <div className="flex items-center gap-2.5">
@@ -263,7 +383,7 @@ export default function MyExamsPage() {
 
                         {/* Description */}
                         {exam.description && (
-                          <p className="text-sm text-gray-400 line-clamp-2 leading-relaxed">
+                          <p className={`text-sm text-gray-400 ${viewMode === 'list' ? '' : 'line-clamp-2'} leading-relaxed`}>
                             {exam.description}
                           </p>
                         )}

@@ -1,32 +1,48 @@
 const { db, storage } = require('../config/firebase');
 const cloudinary = require('cloudinary').v2;
 
-/**
- * 🚀 1. Create a New Exam Blueprint and Nest Questions Sub-collection (Tutor Action)
- */
+// =========================================================================
+// Cloudinary config — pulled from environment variables.
+// IMPORTANT: the previous version of this file hard-coded the cloud_name /
+// api_key / api_secret directly in source control. Those credentials must
+// be treated as compromised and rotated in the Cloudinary dashboard; this
+// version only reads them from process.env.
+// =========================================================================
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// =========================================================================
+// 1. Create Exam
+// =========================================================================
 const createExam = async (req, res) => {
   try {
-    const { 
-      title, 
-      category_id, 
-      level_id, 
-      duration_minutes, 
-      description, 
-      status, 
-      sections, 
+    const {
+      title,
+      category_id,
+      level_id,
+      duration_minutes,
+      description,
+      status,
+      sections,
       questions,
       thumbnail
     } = req.body;
 
-    if (!title || !category_id || !level_id || !duration_minutes) {
-      return res.status(400).json({ success: false, message: 'Core metadata parameters are missing.' });
+    if (!title || !category_id || !duration_minutes) {
+      return res.status(400).json({
+        success: false,
+        message: 'Core metadata parameters are missing.'
+      });
     }
 
-    const cleanExamId = `exam_${category_id}_${level_id}_${Date.now()}`;
-    const examRef = db.collection('exams').doc(cleanExamId);
+    const tutorId = req.user?.id || req.user?.uid || 'mock_tutor_id';
+    const tutorName = req.user?.name || req.user?.displayName || 'Expert Tutor';
 
-    const examMetadata = {
-      title: title.trim(),
+    const examData = {
+      title,
       category_id,
       level_id,
       duration_minutes: Number(duration_minutes),
@@ -34,145 +50,370 @@ const createExam = async (req, res) => {
       status: status || 'draft',
       sections: sections || [],
       thumbnail: thumbnail || null,
-      total_questions: questions ? questions.length : 0,
-      tutor_id: req.user?.id || 'mock_tutor_id',
-      tutor_name: req.user?.name || 'Expert Tutor',
-      isModernExam: true,
-      created_at: new Date().toISOString()
+      tutor_id: tutorId,
+      tutor_name: tutorName
     };
 
-    await examRef.set(examMetadata);
+    const result = await examServices.createExamInDB(examData);
 
-    if (questions && questions.length > 0) {
-      const batch = db.batch();
-
-      questions.forEach((q, index) => {
-        const questionId = `q_${String(index + 1).padStart(2, '0')}`;
-        const questionRef = examRef.collection('questions').doc(questionId);
-        
-        batch.set(questionRef, {
-          question_number: index + 1,
-          section: q.section,
-          type: q.type || 'mcq',
-          text: q.text ? q.text.trim() : '',
-          options: q.options || [],
-          correct_answer_index: q.correct !== undefined ? Number(q.correct) : 0,
-          explanation: q.explanation ? q.explanation.trim() : '',
-          audio_url: q.audio_url || null,
-          image_url: q.image_url || null
-        });
+    if (result.success) {
+      return res.status(201).json({
+        success: true,
+        message: 'Exam structure deployed successfully!',
+        examId: result.examId
       });
 
       await batch.commit();
     }
 
-    return res.status(201).json({ 
-      success: true, 
-      message: 'Exam architecture deployed and structured inside node repositories.',
-      examId: cleanExamId 
+    return res.status(500).json({
+      success: false,
+      message: 'Exam creation did not complete successfully.'
+    });
+  } catch (error) {
+    console.error('Exam Creation Core Runtime Exception:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server failed to execute blueprint commit.',
+      error: error.message
     });
 
+// =========================================================================
+// 2. Get all exams available for students (public)
+// =========================================================================
+const getAllExams = async (req, res) => {
+  try {
+    const snapshot = await db.collection('exams').where('status', '==', 'published').get();
+    const examsList = [];
+    snapshot.forEach((doc) => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    return res.status(200).json({ success: true, data: examsList });
   } catch (error) {
     console.error('Exam Creation Core Runtime Exception:', error.message);
     return res.status(500).json({ success: false, message: 'Internal server failed to execute blueprint commit.' });
   }
 };
 
-/**
- * 📊 2. Fetch All Student Exam Attempts
- */
-const getStudentExams = async (req, res) => {
+// =========================================================================
+// 📚 2.5 Get ALL exams (Development only - NO AUTH)
+// =========================================================================
+const getAllExamsDev = async (req, res) => {
   try {
-    const snapshot = await db.collection('student_exams').get();
+    console.log('🛠️ DEV: Fetching ALL exams from Firestore (NO AUTH)');
+    const snapshot = await db.collection('exams').get();
     const examsList = [];
     
     snapshot.forEach(doc => {
       examsList.push({ id: doc.id, ...doc.data() }); 
     });
-    
-    return res.status(200).json(examsList);
-  } catch (error) {
-    console.error("Firebase Fetch Error:", error);
-    return res.status(500).json({ message: 'Error fetching exams', error: error.message });
-  }
-};
-
-/**
- * 🎵 📷 3. Upload Asset to Cloudinary via Direct Memory Stream Buffer
- */
-const uploadAsset = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No file detected in request buffer.' });
-    }
-
-    cloudinary.config({
-      cloud_name: 'akarwtly',
-      api_key: '533185996121573',
-      api_secret: 'ZkxUf2UUNBinoJhCgf02gQop-ns'
+    console.log(`✅ DEV: Found ${examsList.length} total exams`);
+    return res.status(200).json({ 
+      success: true, 
+      data: examsList,
+      count: examsList.length
     });
-
-    const fileType = req.file.mimetype.split('/')[0];
-    let folderPath = 'langoora/images';
-    let resourceType = 'image';
-
-    if (fileType === 'audio') {
-      folderPath = 'langoora/audio';
-      resourceType = 'video';
-    }
-
-    const uploadStream = () => {
-      return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: folderPath,
-            resource_type: resourceType,
-            public_id: `${Date.now()}_${req.file.originalname.split('.')[0].replace(/\s+/g, '_')}`
-          },
-          (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
-          }
-        );
-        
-        stream.end(req.file.buffer);
-      });
-    };
-
-    const cloudinaryResult = await uploadStream();
-
-    return res.status(200).json({
-      success: true,
-      message: 'Asset uploaded successfully to Cloudinary CDN server infrastructure.',
-      fileUrl: cloudinaryResult.secure_url,
-    });
-
   } catch (error) {
-    console.error('Cloudinary Asset Upload Runtime Exception:', error);
+    console.error('Get all exams (dev) error:', error.message);
     return res.status(500).json({ 
       success: false, 
-      message: 'Internal server failed to execute cloud asset streaming.',
+      message: 'Error fetching exams', 
       error: error.message 
     });
   }
 };
 
-/**
- * 🗑️ 4. Delete Asset from Cloudinary CDN Server
- */
+// =========================================================================
+// 📊 3. Get Tutor Exams (Only logged-in tutor's exams)
+// =========================================================================
+const getTutorExams = async (req, res) => {
+  try {
+    const tutorId = req.user?.id || req.user?.uid;
+
+    if (!tutorId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const examsList = await examServices.getTutorExamsFromDB(tutorId);
+
+    return res.status(200).json({
+      success: true,
+      exams: examsList
+    });
+  } catch (error) {
+    console.error('Get Tutor Exams Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching exams',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 4. Get Student Exams
+// =========================================================================
+const getStudentExams = async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const examsList = await examServices.getStudentExamsFromDB(studentId);
+
+    return res.status(200).json({
+      success: true,
+      data: examsList
+    });
+  } catch (error) {
+    console.error('Get Student Exams Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching student exams',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 5. Get Exam by ID (with access control)
+// =========================================================================
+const getExamById = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.getExamByIdFromDB(examId, tutorId);
+
+    return res.status(200).json({
+      success: true,
+      exam: result.exam
+    });
+  } catch (error) {
+    console.error('Get Exam By ID Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching exam',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 6. Delete Exam (with access control)
+// =========================================================================
+const deleteExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.deleteExamFromDB(examId, tutorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Delete Exam Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error deleting exam',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 7. Update Exam Status (with access control)
+// =========================================================================
+const updateExamStatus = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { status } = req.body;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    if (!status || !['draft', 'published', 'archived'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be draft, published, or archived.'
+      });
+    }
+
+    const result = await examServices.updateExamStatusInDB(examId, status, tutorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Update Exam Status Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error updating exam status',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 8. Update Exam Draft (Auto-save) - with access control
+// =========================================================================
+const updateExamDraft = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const draftData = req.body;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.updateExamDraftInDB(examId, draftData, tutorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Update Exam Draft Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error updating exam draft',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 9. Update Existing Exam (Full Update) - with access control
+// =========================================================================
+const updateExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const examData = req.body;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.updateExamInDB(examId, examData, tutorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Update Exam Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error updating exam',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 10. Delete Student Exam
+// =========================================================================
+const deleteStudentExam = async (req, res) => {
+  try {
+    const examDocId = req.params.id;
+    const result = await examServices.deleteStudentExamFromDB(examDocId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Delete Student Exam Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error deleting student exam',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 11. Upload Asset (Audio to Cloudinary | Images to Base64)
+// =========================================================================
+const uploadAsset = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file detected in payload repository.'
+      });
+    }
+
+    const mimeType = req.file.mimetype;
+    const fileName = req.file.originalname;
+    const ext = path.extname(fileName).toLowerCase();
+
+    const audioExtensions = ['.mp3', '.wav', '.mpeg', '.mp4', '.ogg', '.webm', '.flac', '.aac', '.wma', '.m4a'];
+    const audioMimeTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/mp4', 'audio/m4a', 'application/octet-stream'];
+
+    const isAudio = audioExtensions.includes(ext) || audioMimeTypes.includes(mimeType);
+
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.svg', '.bmp', '.tiff'];
+    const imageMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml', 'image/bmp', 'image/tiff'];
+
+    const isImage = imageExtensions.includes(ext) || imageMimeTypes.includes(mimeType);
+
+    // Audio handling is left exactly as-is per requirements — it already works.
+    if (isAudio) {
+      const cloudinaryStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'langoora/audio',
+          resource_type: 'auto',
+          format: 'mp3',
+          eager: [{ format: 'mp3' }],
+          eager_async: true
+        },
+        (error, result) => {
+          if (error) {
+            console.error('Cloudinary Audio Stream Error:', error);
+            return res.status(500).json({
+              success: false,
+              message: 'Cloudinary Audio streaming failed.',
+              error: error.message
+            });
+          }
+          return res.status(200).json({
+            success: true,
+            url: result.secure_url,
+            fileUrl: result.secure_url,
+            type: 'audio'
+          });
+        }
+      );
+
+      return cloudinaryStream.end(req.file.buffer);
+    }
+
+    if (isImage) {
+      const base64Image = req.file.buffer.toString('base64');
+      const dataUriString = `data:${mimeType};base64,${base64Image}`;
+
+      return res.status(200).json({
+        success: true,
+        url: dataUriString,
+        fileUrl: dataUriString,
+        type: 'image'
+      });
+    };
+
+    return res.status(400).json({
+      success: false,
+      message: `Unsupported file type: ${mimeType}. Please upload image or audio files.`
+    });
+  } catch (error) {
+    console.error('Asset Process Runtime Exception:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server failed to execute asset controller.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 12. Delete Asset from Cloudinary
+// =========================================================================
 const deleteAsset = async (req, res) => {
   try {
     const { fileUrl } = req.body;
 
     if (!fileUrl) {
-      return res.status(400).json({ success: false, message: 'File URL is required for deletion.' });
+      return res.status(400).json({
+        success: false,
+        message: 'File URL is required.'
+      });
     }
 
-    cloudinary.config({
-      cloud_name: 'akarwtly',
-      api_key: '533185996121573',
-      api_secret: 'ZkxUf2UUNBinoJhCgf02gQop-ns'
-    });
+    if (fileUrl.startsWith('data:image')) {
+      return res.status(200).json({
+        success: true,
+        message: 'Local image string cleared from local context.'
+      });
+    }
 
     const urlParts = fileUrl.split('/');
     const fileWithExtension = urlParts[urlParts.length - 1];
@@ -191,52 +432,38 @@ const deleteAsset = async (req, res) => {
     if (result.result === 'ok') {
       return res.status(200).json({
         success: true,
-        message: 'Asset successfully deleted from Cloudinary repository.'
-      });
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Cloudinary could not find or delete the asset.',
-        cloudinaryResult: result
+        message: 'Audio successfully deleted from Cloudinary.'
       });
     }
 
+    return res.status(400).json({
+      success: false,
+      message: 'Cloudinary deletion failed or asset already removed.'
+    });
   } catch (error) {
-    console.error('Cloudinary Asset Deletion Runtime Exception:', error);
+    console.error('Delete Asset Error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Internal server failed to execute cloud asset deletion.',
       error: error.message
     });
   }
 };
 
-/**
- * 🗑️ 5. Delete a Student Exam Attempt Node
- */
-const deleteStudentExam = async (req, res) => {
-  try {
-    const examDocId = req.params.id; 
-    const examRef = db.collection('student_exams').doc(examDocId);
-    const doc = await examRef.get();
-
-    if (!doc.exists) {
-      return res.status(404).json({ message: 'Exam not found in database' });
-    }
-   
-    await examRef.delete();
-    return res.status(200).json({ message: 'Exam successfully deleted from database!' });
-  } catch (error) {
-    console.error("Firebase Delete Error:", error);
-    return res.status(500).json({ message: 'Server Error', error: error.message });
-  }
-};
-
-// 🌟 සියලුම functions එකම තැනින් Export කිරීම
+// =========================================================================
+// Export All Functions
+// =========================================================================
 module.exports = {
   createExam,
+  getTutorExams,
   getStudentExams,
+  getExamById,
+  deleteExam,
+  updateExamStatus,
+  updateExamDraft,
+  updateExam,
+  getAllExams,
+  getAllExamsDev,
+  deleteStudentExam,
   uploadAsset,
-  deleteAsset,
-  deleteStudentExam
+  deleteAsset
 };

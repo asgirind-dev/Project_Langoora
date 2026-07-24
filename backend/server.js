@@ -14,7 +14,6 @@ require('./config/firebase');
 const examRoutes = require('./routes/examRoutes');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
-const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const studyPlannerRoutes = require('./routes/studyPlannerRoutes'); 
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
@@ -23,9 +22,11 @@ const languageRoutes = require('./routes/languageRoutes');
 const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
-
-// ✅ ADD THIS - Import payout routes directly
 const payoutRoutes = require('./routes/payoutRoutes');
+const emailLogRoutes = require('./routes/emailLogRoutes');
+const planRoutes = require('./routes/planRoutes');
+const creditValuationRoutes = require('./routes/creditValuationRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 
@@ -38,17 +39,18 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/api/exams', examRoutes); 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes); 
-app.use('/api/subscription-management', subscriptionRoutes);
 app.use('/api/tutors', tutorProfileRoutes); 
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
 app.use('/api/validator/tutors', tutorValidationRoutes);
 app.use('/api/languages', languageRoutes);
 app.use('/api/system-settings', systemSettingsRoutes);
-app.use('/api/finance', financeRoutes); // මෙය පවතිනවා
+app.use('/api/finance', financeRoutes); 
 app.use('/api/exam-execution', examExecutionRoutes);
-
-// ✅ ADD THIS - Use payout routes directly
+app.use('/api/email-logs', emailLogRoutes);
+app.use('/api/subscription-plans', planRoutes);
+app.use('/api/exam-credits', creditValuationRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/finance', payoutRoutes);
 
 // Serve static uploads if applicable
