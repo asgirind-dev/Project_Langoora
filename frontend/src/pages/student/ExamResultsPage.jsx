@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   CheckCircle, XCircle, Trophy, Target, RotateCcw, BookOpen, ArrowRight, 
-  Loader2, Star, ThumbsUp, Send, Clock, Award, AlertCircle, Info,
-  Layers, Percent, AlertTriangle, Medal, Sparkles
+  Loader2, Star, ThumbsUp, Send, Clock, AlertCircle, Info,
+  Layers, AlertTriangle, Medal
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -16,7 +16,6 @@ import studentApi from '../../services/examExecutionService';
 export default function ExamResultsPage() {
   const { id: attemptId } = useParams();
   const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [error, setError] = useState('');
@@ -136,14 +135,9 @@ export default function ExamResultsPage() {
     totalQuestions = 0,
     autoSubmitted = false,
     timeTakenSeconds = 0,
-    // JLPT specific
-    totalPassed,
-    allSectionsPassed,
     overallPass,
     sectionResults = [],
-    // EPS-TOPIK specific
     cutOffScore,
-    // TOPIK specific
     achievedLevel,
     failReason,
   } = result;
@@ -276,10 +270,8 @@ export default function ExamResultsPage() {
     );
   };
 
-  // ----- Format Section Data for Charts -----
   const sectionData = sectionScores.length > 0 ? sectionScores : [];
 
-  // ----- Build Review Questions -----
   const reviewQuestions = (questionResults || []).map((q, index) => {
     const questionText = q.problemTitle 
       ? `${q.problemTitle}: ${q.text || `Question ${index + 1}`}` 
@@ -297,7 +289,6 @@ export default function ExamResultsPage() {
 
   const displayQuestions = showAllAnswers ? reviewQuestions : reviewQuestions.slice(0, 5);
 
-  // Star rating component
   const StarRating = ({ rating, setRating, size = 32 }) => {
     return (
       <div className="flex gap-2">
@@ -318,7 +309,7 @@ export default function ExamResultsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 py-8 px-4">
+    <div className="max-w-5xl mx-auto space-y-8 py-8 px-4 text-white">
       {/* Result Summary */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <GlassCard className={`p-8 text-center ${passed ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
@@ -326,11 +317,11 @@ export default function ExamResultsPage() {
             {passed ? <Trophy size={36} className="text-emerald-400" /> : <Target size={36} className="text-red-400" />}
           </div>
           
-          <h1 className="text-4xl font-bold text-white mb-2">
+          <h1 className="text-4xl font-bold mb-2">
             {passed ? '🎉 Congratulations!' : '💪 Keep Practicing!'}
           </h1>
           
-          <p className="text-gray-300 mb-2">
+          <p className="text-gray-300 mb-4">
             {passed 
               ? `You passed ${examTitle || 'the exam'}!` 
               : `You did not pass ${examTitle || 'the exam'} this time`}
@@ -391,7 +382,7 @@ export default function ExamResultsPage() {
 
       {/* Score Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <GlassCard className="p-6 flex items-center justify-center">
+        <GlassCard className="p-6 flex items-center justify-center bg-[#060d1f]/40">
           <div className="text-center">
             <CircularProgress 
               value={percentage} 
@@ -418,8 +409,8 @@ export default function ExamResultsPage() {
           </div>
         </GlassCard>
 
-        <GlassCard className="lg:col-span-2 p-6">
-          <h3 className="text-lg font-semibold text-white mb-5">Section Breakdown</h3>
+        <GlassCard className="lg:col-span-2 p-6 bg-[#060d1f]/40">
+          <h3 className="text-lg font-semibold mb-5">Section Breakdown</h3>
           {sectionData.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={sectionData}>
@@ -471,9 +462,9 @@ export default function ExamResultsPage() {
       )}
 
       {/* Answer Review */}
-      <GlassCard className="p-6">
+      <GlassCard className="p-6 bg-[#060d1f]/40">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-white">Answer Review</h3>
+          <h3 className="text-lg font-semibold">Answer Review</h3>
           <span className="text-xs text-gray-500">
             {reviewQuestions.filter(q => q.isAnswered).length}/{reviewQuestions.length} answered
           </span>
@@ -486,7 +477,7 @@ export default function ExamResultsPage() {
               <div key={i} className={`p-4 rounded-xl border ${q.wrong ? 'border-red-500/30 bg-red-500/5' : 'border-emerald-500/30 bg-emerald-500/5'}`}>
                 <div className="flex items-start gap-3 mb-3">
                   {q.wrong ? <XCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5" /> : <CheckCircle size={18} className="text-emerald-400 flex-shrink-0 mt-0.5" />}
-                  <p className="text-sm font-medium text-white">{q.q}</p>
+                  <p className="text-sm font-medium">{q.q}</p>
                 </div>
                 <div className="ml-7 space-y-1 text-sm">
                   {!q.isAnswered && (
@@ -519,7 +510,7 @@ export default function ExamResultsPage() {
         <GlassCard className="p-6 border border-blue-500/20 bg-blue-500/5">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-white mb-2">Share Your Feedback</h3>
+              <h3 className="text-lg font-semibold mb-2">Share Your Feedback</h3>
               <p className="text-gray-400 text-sm">Help us improve by rating this exam and sharing your experience.</p>
             </div>
             <Button variant="primary" size="sm" onClick={() => setShowFeedbackForm(!showFeedbackForm)}>
@@ -698,7 +689,7 @@ export default function ExamResultsPage() {
           <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle size={24} className="text-emerald-400" />
           </div>
-          <h3 className="text-lg font-semibold text-white mb-2">Thank You for Your Feedback!</h3>
+          <h3 className="text-lg font-semibold mb-2">Thank You for Your Feedback!</h3>
           <p className="text-gray-400 text-sm">Your feedback helps us create better learning experiences.</p>
         </GlassCard>
       )}
