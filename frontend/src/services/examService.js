@@ -10,11 +10,11 @@ const getFreshToken = async () => {
     const { getAuth } = await import('firebase/auth');
     const auth = getAuth();
     const user = auth.currentUser;
-    
+
     if (!user) {
       throw new Error('No user logged in');
     }
-    
+
     const token = await user.getIdToken(true);
     localStorage.setItem('token', token);
     return token;
@@ -29,11 +29,11 @@ const getFreshToken = async () => {
  */
 const getAuthConfig = async () => {
   let token = localStorage.getItem('token');
-  
+
   if (!token) {
     token = await getFreshToken();
   }
-  
+
   return {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -49,14 +49,14 @@ export const createTutorExam = async (examPayload) => {
   try {
     const config = await getAuthConfig();
     const response = await axios.post(
-      `${API_URL}/create`, 
-      examPayload, 
+      `${API_URL}/create`,
+      examPayload,
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to commit exam blueprint layer.' 
+    throw error.response?.data || {
+      message: 'Failed to commit exam blueprint layer.'
     };
   }
 };
@@ -73,8 +73,8 @@ export const getTutorExams = async () => {
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to fetch tutor exams.' 
+    throw error.response?.data || {
+      message: 'Failed to fetch tutor exams.'
     };
   }
 };
@@ -91,8 +91,8 @@ export const getExamById = async (examId) => {
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to fetch exam details.' 
+    throw error.response?.data || {
+      message: 'Failed to fetch exam details.'
     };
   }
 };
@@ -109,8 +109,8 @@ export const deleteExam = async (examId) => {
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to delete exam.' 
+    throw error.response?.data || {
+      message: 'Failed to delete exam.'
     };
   }
 };
@@ -128,8 +128,8 @@ export const updateExamStatus = async (examId, status) => {
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to update exam status.' 
+    throw error.response?.data || {
+      message: 'Failed to update exam status.'
     };
   }
 };
@@ -140,11 +140,11 @@ export const updateExamStatus = async (examId, status) => {
 export const uploadExamAsset = async (fileBlob) => {
   try {
     let token = localStorage.getItem('token');
-    
+
     if (!token) {
       token = await getFreshToken();
     }
-    
+
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       const exp = payload.exp * 1000;
@@ -170,13 +170,13 @@ export const uploadExamAsset = async (fileBlob) => {
 
   } catch (error) {
     console.error('❌ Upload error:', error.response?.data || error.message);
-    
+
     if (error.response?.status === 401) {
       try {
         const token = await getFreshToken();
         const formData = new FormData();
         formData.append('file', fileBlob);
-        
+
         const response = await axios.post(`${API_URL}/upload-asset`, formData, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -185,14 +185,14 @@ export const uploadExamAsset = async (fileBlob) => {
         });
         return response.data;
       } catch (retryError) {
-        throw retryError.response?.data || { 
-          message: 'Upload failed after token refresh. Please login again.' 
+        throw retryError.response?.data || {
+          message: 'Upload failed after token refresh. Please login again.'
         };
       }
     }
-    
-    throw error.response?.data || { 
-      message: error.message || 'Asset streaming pipeline rejected.' 
+
+    throw error.response?.data || {
+      message: error.message || 'Asset streaming pipeline rejected.'
     };
   }
 };
@@ -210,8 +210,63 @@ export const deleteExamAsset = async (fileUrl) => {
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to delete asset from cloud.' 
+    throw error.response?.data || {
+      message: 'Failed to delete asset from cloud.'
+    };
+  }
+};
+/**
+ * 📋 Get pending exams for quality audits
+ */
+export const getPendingExams = async () => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.get(
+      `${API_URL}/quality/pending`,
+      config
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || {
+      message: 'Failed to fetch pending exams.'
+    };
+  }
+};
+
+/**
+ * ✅ Approve exam (publish)
+ */
+export const approveExam = async (examId) => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.post(
+      `${API_URL}/quality/approve/${examId}`,
+      {},
+      config
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || {
+      message: 'Failed to approve exam.'
+    };
+  }
+};
+
+/**
+ * ❌ Reject exam with feedback
+ */
+export const rejectExam = async (examId, feedback) => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.post(
+      `${API_URL}/quality/reject/${examId}`,
+      { feedback },
+      config
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || {
+      message: 'Failed to reject exam.'
     };
   }
 };

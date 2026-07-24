@@ -5,7 +5,7 @@ const { auth, db } = require('../config/firebase');
  * 1. Authentication Middleware
  * Intercepts incoming requests and validates either a Custom JWT Token (Internal Staff)
  * or a Native Firebase ID Token (Students/Tutors).
- * 
+ *
  * Now also fetches the user's role document and attaches permissions to req.user.
  */
 const protect = async (req, res, next) => {
@@ -215,3 +215,4 @@ module.exports = {
   requirePermission,
   requireLevel
 };
+

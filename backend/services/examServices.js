@@ -1,34 +1,41 @@
-const { db } = require('../config/firebase');
+const { db } = require("../config/firebase");
 
-/**
- * 📝 Create a new exam with problems and sub-questions
- */
+// =========================================================================
+// 📝 Create a new exam with problems and sub-questions
+// =========================================================================
 const createExamInDB = async (examData) => {
   try {
-    const { 
-      title, 
-      category_id, 
-      level_id, 
-      duration_minutes, 
-      description, 
-      status, 
-      sections, 
+    const {
+      title,
+      category_id,
+      level_id,
+      duration_minutes,
+      description,
+      status,
+      sections,
       questions,
       thumbnail,
       tutor_id,
-      tutor_name
+      tutor_name,
     } = examData;
 
+    // 🚀 Determine language from category (default: japanese)
+    let language = "japanese";
+    if (category_id && category_id.toLowerCase().includes("topik")) {
+      language = "korean";
+    }
+    // Add more mappings as needed (e.g., 'jlpt' -> japanese)
+
     const cleanExamId = `exam_${category_id}_${level_id}_${Date.now()}`;
-    const examRef = db.collection('exams').doc(cleanExamId);
+    const examRef = db.collection("exams").doc(cleanExamId);
 
     // Separate problems and sub-questions
-    const problems = questions.filter(q => q.is_problem === true);
-    const subQuestions = questions.filter(q => q.is_problem === false);
+    const problems = questions.filter((q) => q.is_problem === true);
+    const subQuestions = questions.filter((q) => q.is_problem === false);
 
     // Group sub-questions by parent problem id
     const subQuestionsByProblem = {};
-    subQuestions.forEach(q => {
+    subQuestions.forEach((q) => {
       const parentId = q.parent_problem_id;
       if (!subQuestionsByProblem[parentId]) {
         subQuestionsByProblem[parentId] = [];
@@ -36,18 +43,18 @@ const createExamInDB = async (examData) => {
       subQuestionsByProblem[parentId].push(q);
     });
 
-    // Build exam metadata
+    // Build exam metadata WITH language field
     const examMetadata = {
       title: title.trim(),
       category_id,
       level_id,
       duration_minutes: Number(duration_minutes),
-      description: description ? description.trim() : '',
-      status: status || 'draft',
+      description: description ? description.trim() : "",
+      status: status || "draft",
       sections: sections || [],
       thumbnail: thumbnail || null,
-      tutor_id: tutor_id || 'mock_tutor_id',
-      tutor_name: tutor_name || 'Expert Tutor',
+      tutor_id: tutor_id || "mock_tutor_id",
+      tutor_name: tutor_name || "Expert Tutor",
       isModernExam: true,
       total_problems: problems.length,
       total_questions: subQuestions.length,
@@ -56,57 +63,65 @@ const createExamInDB = async (examData) => {
       rating: 0,
       reviews: 0,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      language: language, // ✅ Added language field
     };
 
     await examRef.set(examMetadata);
 
-    // 🚀 Insert Problems with Sub-Questions
+    // Insert Problems with Sub-Questions
     if (problems.length > 0) {
       const batch = db.batch();
-      
+
       problems.forEach((problem, index) => {
-        const problemId = `problem_${String(index + 1).padStart(2, '0')}`;
-        const problemRef = examRef.collection('problems').doc(problemId);
-        
+        const problemId = `problem_${String(index + 1).padStart(2, "0")}`;
+        const problemRef = examRef.collection("problems").doc(problemId);
+
         const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
 
         const problemData = {
           problem_number: index + 1,
           section: problem.section,
-          problem_title: problem.problem_title ? problem.problem_title.trim() : `Problem ${index + 1}`,
-          explanation: problem.explanation || '',
+          problem_title: problem.problem_title
+            ? problem.problem_title.trim()
+            : `Problem ${index + 1}`,
+          explanation: problem.explanation || "",
           total_sub_questions: problemSubQuestions.length,
           created_at: new Date().toISOString(),
-          
-          example: problem.example_question ? {
-            text: problem.example_question.trim(),
-            options: problem.options || ['', '', '', ''],
-            correct_answer_index: Number(problem.example_correct_option || 0),
-            explanation: problem.example_explanation || '',
-            image_url: problem.example_image_url || null,
-            audio_url: problem.example_audio_url || null
-          } : null
+
+          example: problem.example_question
+            ? {
+                text: problem.example_question.trim(),
+                options: problem.options || ["", "", "", ""],
+                correct_answer_index: Number(
+                  problem.example_correct_option || 0,
+                ),
+                explanation: problem.example_explanation || "",
+                image_url: problem.example_image_url || null,
+                audio_url: problem.example_audio_url || null,
+              }
+            : null,
         };
 
         batch.set(problemRef, problemData);
 
         if (problemSubQuestions.length > 0) {
-          const subQuestionsCollectionRef = problemRef.collection('sub_questions');
-          
+          const subQuestionsCollectionRef =
+            problemRef.collection("sub_questions");
+
           problemSubQuestions.forEach((sub, subIndex) => {
-            const subId = `sub_${String(subIndex + 1).padStart(2, '0')}`;
+            const subId = `sub_${String(subIndex + 1).padStart(2, "0")}`;
             const subRef = subQuestionsCollectionRef.doc(subId);
-            
+
             const subData = {
               sub_number: subIndex + 1,
-              text: sub.text ? sub.text.trim() : '',
-              options: sub.options || ['', '', '', ''],
+              text: sub.text ? sub.text.trim() : "",
+              options: sub.options || ["", "", "", ""],
               correct_answer_index: Number(sub.correct || 0),
-              explanation: sub.explanation || '',
+              explanation: sub.explanation || "",
               image_url: sub.image_url || null,
               audio_url: sub.audio_url || null,
-              created_at: new Date().toISOString()
+              created_at: new Date().toISOString(),
             };
 
             batch.set(subRef, subData);
@@ -118,246 +133,333 @@ const createExamInDB = async (examData) => {
     }
 
     console.log(`✅ Exam created: ${cleanExamId}`);
-    
     return { success: true, examId: cleanExamId };
-
   } catch (error) {
-    console.error('Exam Creation Service Error:', error);
+    console.error("Exam Creation Service Error:", error);
     throw new Error(error.message);
   }
 };
 
-/**
- * 📊 Get all exams for a tutor
- */
+// =========================================================================
+// 📊 Get all exams for a tutor
+// =========================================================================
 const getTutorExamsFromDB = async (tutorId) => {
   try {
-    let query = db.collection('exams');
-    
+    let query = db.collection("exams");
     if (tutorId) {
-      query = query.where('tutor_id', '==', tutorId);
+      query = query.where("tutor_id", "==", tutorId);
     }
-    
     const snapshot = await query.get();
     const examsList = [];
-    
-    snapshot.forEach(doc => {
+    snapshot.forEach((doc) => {
       examsList.push({ id: doc.id, ...doc.data() });
     });
-    
-    examsList.sort((a, b) => {
-      return new Date(b.created_at) - new Date(a.created_at);
-    });
-    
+    examsList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     return examsList;
   } catch (error) {
-    console.error('Get Tutor Exams Service Error:', error);
+    console.error("Get Tutor Exams Service Error:", error);
     return [];
   }
 };
 
-// ✅ ADD THIS FUNCTION - Get Student Exams
+// =========================================================================
+// 📊 Get student exams
+// =========================================================================
 const getStudentExamsFromDB = async (studentId = null) => {
   try {
-    let query = db.collection('student_exams');
-    
-    // If studentId is provided, filter by student
+    let query = db.collection("student_exams");
     if (studentId) {
-      query = query.where('studentId', '==', studentId);
+      query = query.where("studentId", "==", studentId);
     }
-    
     const snapshot = await query.get();
     const examsList = [];
-    
-    snapshot.forEach(doc => {
+    snapshot.forEach((doc) => {
       examsList.push({ id: doc.id, ...doc.data() });
     });
-    
-    // Sort by newest first
-    examsList.sort((a, b) => {
-      return new Date(b.startTime || b.created_at) - new Date(a.startTime || a.created_at);
-    });
-    
+    examsList.sort(
+      (a, b) =>
+        new Date(b.startTime || b.created_at) -
+        new Date(a.startTime || a.created_at),
+    );
     return examsList;
   } catch (error) {
-    console.error('Get Student Exams Service Error:', error);
+    console.error("Get Student Exams Service Error:", error);
     throw new Error(error.message);
   }
 };
 
-/**
- * 📊 Get a single exam by ID
- */
+// =========================================================================
+// 📊 Get a single exam by ID (with full structure)
+// =========================================================================
 const getExamByIdFromDB = async (examId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
-    
+    const examDoc = await db.collection("exams").doc(examId).get();
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
-    
     const examData = examDoc.data();
-    
-    const problemsSnapshot = await db.collection('exams')
+
+    const problemsSnapshot = await db
+      .collection("exams")
       .doc(examId)
-      .collection('problems')
+      .collection("problems")
       .get();
-    
+
     const problems = [];
-    
     for (const problemDoc of problemsSnapshot.docs) {
       const problemData = problemDoc.data();
       const problemId = problemDoc.id;
-      
+
       let example = null;
       try {
-        const exampleDoc = await db.collection('exams')
+        const exampleDoc = await db
+          .collection("exams")
           .doc(examId)
-          .collection('problems')
+          .collection("problems")
           .doc(problemId)
-          .collection('example_question')
-          .doc('example')
+          .collection("example_question")
+          .doc("example")
           .get();
-        
         if (exampleDoc.exists) {
           example = exampleDoc.data();
         }
       } catch (exampleError) {
         example = null;
       }
-      
-      const subQuestionsSnapshot = await db.collection('exams')
+
+      const subQuestionsSnapshot = await db
+        .collection("exams")
         .doc(examId)
-        .collection('problems')
+        .collection("problems")
         .doc(problemId)
-        .collection('sub_questions')
+        .collection("sub_questions")
         .get();
-      
-      const subQuestions = subQuestionsSnapshot.docs.map(subDoc => ({
+
+      const subQuestions = subQuestionsSnapshot.docs.map((subDoc) => ({
         id: subDoc.id,
-        ...subDoc.data()
+        ...subDoc.data(),
       }));
-      
+
       problems.push({
         id: problemId,
         ...problemData,
         example: example,
-        sub_questions: subQuestions
+        sub_questions: subQuestions,
       });
     }
-    
+
     return {
       success: true,
       exam: {
         id: examId,
         ...examData,
-        problems: problems
-      }
+        problems: problems,
+      },
     };
-    
   } catch (error) {
-    console.error('Get Exam By ID Service Error:', error);
+    console.error("Get Exam By ID Service Error:", error);
     throw new Error(error.message);
   }
 };
 
-/**
- * 🗑️ Delete an exam
- */
+// =========================================================================
+// 🗑️ Delete an exam (including all sub-collections)
+// =========================================================================
 const deleteExamFromDB = async (examId) => {
   try {
-    const problemsSnapshot = await db.collection('exams')
+    const problemsSnapshot = await db
+      .collection("exams")
       .doc(examId)
-      .collection('problems')
+      .collection("problems")
       .get();
-    
+
     const batch = db.batch();
-    
+
     for (const problemDoc of problemsSnapshot.docs) {
       const problemId = problemDoc.id;
-      
+
       try {
-        const exampleDoc = await db.collection('exams')
+        const exampleDoc = await db
+          .collection("exams")
           .doc(examId)
-          .collection('problems')
+          .collection("problems")
           .doc(problemId)
-          .collection('example_question')
-          .doc('example')
+          .collection("example_question")
+          .doc("example")
           .get();
-        
         if (exampleDoc.exists) {
           batch.delete(exampleDoc.ref);
         }
       } catch (e) {}
-      
-      const subQuestionsSnapshot = await db.collection('exams')
+
+      const subQuestionsSnapshot = await db
+        .collection("exams")
         .doc(examId)
-        .collection('problems')
+        .collection("problems")
         .doc(problemId)
-        .collection('sub_questions')
+        .collection("sub_questions")
         .get();
-      
-      subQuestionsSnapshot.forEach(subDoc => {
+
+      subQuestionsSnapshot.forEach((subDoc) => {
         batch.delete(subDoc.ref);
       });
-      
+
       batch.delete(problemDoc.ref);
     }
-    
-    batch.delete(db.collection('exams').doc(examId));
-    
+
+    batch.delete(db.collection("exams").doc(examId));
     await batch.commit();
-    
-    return { success: true, message: 'Exam deleted successfully!' };
+
+    return { success: true, message: "Exam deleted successfully!" };
   } catch (error) {
-    console.error('Delete Exam Service Error:', error);
+    console.error("Delete Exam Service Error:", error);
     throw new Error(error.message);
   }
 };
 
-/**
- * 📝 Update exam status
- */
+// =========================================================================
+// 📝 Update exam status
+// =========================================================================
 const updateExamStatusInDB = async (examId, status) => {
   try {
-    await db.collection('exams').doc(examId).update({
+    await db.collection("exams").doc(examId).update({
       status: status,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     });
-    
     return { success: true, message: `Exam status updated to ${status}` };
   } catch (error) {
-    console.error('Update Exam Status Error:', error);
+    console.error("Update Exam Status Error:", error);
     throw new Error(error.message);
   }
 };
 
-/**
- * 🗑️ Delete Student Exam
- */
+// =========================================================================
+// 🗑️ Delete a student exam attempt
+// =========================================================================
 const deleteStudentExamFromDB = async (examDocId) => {
   try {
-    const examRef = db.collection('student_exams').doc(examDocId);
+    const examRef = db.collection("student_exams").doc(examDocId);
     const doc = await examRef.get();
-
     if (!doc.exists) {
-      throw new Error('Exam not found in database');
+      throw new Error("Exam not found in database");
     }
-   
     await examRef.delete();
-    return { success: true, message: 'Exam successfully deleted!' };
+    return { success: true, message: "Exam successfully deleted!" };
   } catch (error) {
-    console.error('Delete Student Exam Service Error:', error);
+    console.error("Delete Student Exam Service Error:", error);
     throw new Error(error.message);
   }
 };
 
+// =========================================================================
+// 📋 NEW: Get pending exams filtered by validator's language
+// =========================================================================
+const getPendingExamsByLanguage = async (language) => {
+  try {
+    const snapshot = await db
+      .collection("exams")
+      .where("status", "==", "pending")
+      .where("language", "==", language)
+      .get();
+
+    const examsList = [];
+    snapshot.forEach((doc) => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    return examsList;
+  } catch (error) {
+    console.error("Get Pending Exams Error:", error);
+    throw new Error(error.message);
+  }
+};
+
+// =========================================================================
+// ✅ NEW: Approve exam (publish)
+// =========================================================================
+const approveExam = async (examId, validatorId) => {
+  try {
+    const examRef = db.collection("exams").doc(examId);
+    await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(examRef);
+      if (!doc.exists) {
+        throw new Error("Exam not found");
+      }
+      const data = doc.data();
+      if (data.status !== "pending") {
+        throw new Error("Exam is no longer pending.");
+      }
+      transaction.update(examRef, {
+        status: "published",
+        validatorId: validatorId,
+        reviewedAt: new Date().toISOString(),
+        publishedAt: new Date().toISOString(),
+        rejectionFeedback: null, // clear any previous feedback
+      });
+    });
+    return { success: true, message: "Exam approved and published." };
+  } catch (error) {
+    console.error("Approve Exam Error:", error);
+    throw new Error(error.message);
+  }
+};
+
+// =========================================================================
+// ❌ NEW: Reject exam with feedback + create notification
+// =========================================================================
+const rejectExam = async (examId, validatorId, feedback) => {
+  try {
+    const examRef = db.collection("exams").doc(examId);
+    let examData;
+
+    await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(examRef);
+      if (!doc.exists) {
+        throw new Error("Exam not found");
+      }
+      examData = doc.data();
+      if (examData.status !== "pending") {
+        throw new Error("Exam is no longer pending.");
+      }
+      transaction.update(examRef, {
+        status: "rejected",
+        validatorId: validatorId,
+        reviewedAt: new Date().toISOString(),
+        rejectionFeedback: feedback || [],
+        publishedAt: null,
+      });
+    });
+
+    // Create notification for tutor
+    const notification = {
+      userId: examData.tutor_id,
+      type: "exam_rejected",
+      examId: examId,
+      examTitle: examData.title,
+      message: `Your exam "${examData.title}" was rejected by a validator. Please review the feedback.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+    await db.collection("notifications").add(notification);
+
+    return { success: true, message: "Exam rejected. Tutor notified." };
+  } catch (error) {
+    console.error("Reject Exam Error:", error);
+    throw new Error(error.message);
+  }
+};
+
+// =========================================================================
+// 📦 EXPORT ALL
+// =========================================================================
 module.exports = {
   createExamInDB,
   getTutorExamsFromDB,
-  getStudentExamsFromDB,  // ✅ Added this
+  getStudentExamsFromDB,
   getExamByIdFromDB,
   deleteExamFromDB,
   updateExamStatusInDB,
-  deleteStudentExamFromDB
+  deleteStudentExamFromDB,
+  getPendingExamsByLanguage, // ✅ Added
+  approveExam, // ✅ Added
+  rejectExam, // ✅ Added
 };
