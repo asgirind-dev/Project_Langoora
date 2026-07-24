@@ -1,3 +1,5 @@
+// server.js
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path'); 
@@ -25,6 +27,7 @@ const languageRoutes = require('./routes/languageRoutes');
 const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
+const payoutRoutes = require('./routes/payoutRoutes');
 const emailLogRoutes = require('./routes/emailLogRoutes');
 const planRoutes = require('./routes/planRoutes');
 const creditValuationRoutes = require('./routes/creditValuationRoutes');
@@ -50,12 +53,13 @@ app.use('/api/validator/tutors', tutorValidationRoutes);
 app.use('/api/performance', performanceRoutes);
 app.use('/api/languages', languageRoutes);
 app.use('/api/system-settings', systemSettingsRoutes);
-app.use('/api/finance', financeRoutes);
+app.use('/api/finance', financeRoutes); 
 app.use('/api/exam-execution', examExecutionRoutes);
 app.use('/api/email-logs', emailLogRoutes);
 app.use('/api/subscription-plans', planRoutes);
 app.use('/api/exam-credits', creditValuationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/finance', payoutRoutes);
 
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

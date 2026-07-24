@@ -55,3 +55,77 @@ export const sendTestEmail = async (senderEmail, senderName) => {
     throw error;
   }
 };
+
+// =============================================
+// ⭐ NEW - EXCHANGE RATE & PLATFORM COMMISSION
+// =============================================
+
+/**
+ * ⭐ Get Exchange Rate + Platform Commission එකට
+ * GET /api/system-settings/rates
+ */
+export const getRates = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/rates`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching rates:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Get Exchange Rate විතරක්
+ * GET /api/system-settings/exchange-rate
+ */
+export const getExchangeRate = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/exchange-rate`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching exchange rate:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Get Platform Commission විතරක්
+ * GET /api/system-settings/platform-commission
+ */
+export const getPlatformCommission = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/platform-commission`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching platform commission:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Update Exchange Rate (creditPrice)
+ * PUT /api/system-settings/exchange-rate
+ */
+export const updateExchangeRate = async (creditPrice) => {
+  try {
+    const response = await axios.put(`${API_URL}/exchange-rate`, { creditPrice });
+    return response.data;
+  } catch (error) {
+    console.error("Error updating exchange rate:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Update Platform Commission
+ * PUT /api/system-settings/platform-commission
+ */
+export const updatePlatformCommission = async (platformCommission) => {
+  try {
+    const response = await axios.put(`${API_URL}/platform-commission`, { platformCommission });
+    return response.data;
+  } catch (error) {
+    console.error("Error updating platform commission:", error);
+    throw error;
+  }
+};
