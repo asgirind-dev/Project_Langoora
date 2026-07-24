@@ -1,3 +1,5 @@
+// server.js
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path'); 
@@ -22,6 +24,8 @@ const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
 
+// ✅ ADD THIS - Import payout routes directly
+const payoutRoutes = require('./routes/payoutRoutes');
 
 const app = express();
 
@@ -41,12 +45,14 @@ app.use('/api/planner', studyPlannerRoutes);
 app.use('/api/validator/tutors', tutorValidationRoutes);
 app.use('/api/languages', languageRoutes);
 app.use('/api/system-settings', systemSettingsRoutes);
-app.use('/api/finance', financeRoutes);
+app.use('/api/finance', financeRoutes); // මෙය පවතිනවා
 app.use('/api/exam-execution', examExecutionRoutes);
+
+// ✅ ADD THIS - Use payout routes directly
+app.use('/api/finance', payoutRoutes);
 
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
