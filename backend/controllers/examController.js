@@ -78,7 +78,7 @@ const createExam = async (req, res) => {
 };
 
 // =========================================================================
-// 2. Get Purchased Exams for Logged-In Student
+// 2. Get Purchased Exams for Logged-In Student (UPDATED FOR UI FIX)
 // =========================================================================
 const getStudentExams = async (req, res) => {
   try {
@@ -116,16 +116,42 @@ const getStudentExams = async (req, res) => {
 
             if (examDoc.exists) {
               const examData = examDoc.data();
+              
+              // Extract Tutor Name with multiple fallbacks
+              const tutorName = examData.tutor_name || examData.tutorName || examData.tutor?.name || 'Expert Tutor';
+
+              // Extract Questions count (check Array length first, then direct numbers)
+              const questionsCount = Array.isArray(examData.questions) 
+                ? examData.questions.length 
+                : (examData.total_questions || examData.questions_count || 0);
+
+              // Extract Duration
+              const duration = examData.duration_minutes || examData.duration || examData.time_limit || 'N/A';
+
               return {
                 id: doc.id,
                 exam_id: examId,
                 title: examData.title || examData.name || `Exam Pack (${examData.level_id || 'JLPT'})`,
-                tutor: examData.tutor_name || 'Alternative Tutor',
-                duration: examData.duration_minutes || examData.duration || 'N/A',
-                questions: examData.questions || examData.total_questions || 0,
+                description: examData.description || '',
+                
+                // 🎯 FIXED METADATA FOR FRONTEND CARDS
+                tutor_id: examData.tutor_id || examData.tutorId || null,
+                tutor_name: tutorName,
+                tutor: tutorName, // backwards compatibility
+                
+                duration_minutes: duration,
+                duration: duration, // backwards compatibility
+                
+                total_questions: questionsCount,
+                questions: questionsCount, // backwards compatibility
+                
+                category: examData.category_id || examData.category || '',
+                level: examData.level_id || examData.level || '',
+                
                 thumbnail: examData.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400',
-                status: purchaseData.status || 'not-started',
+                status: purchaseData.status || 'active',
                 lastScore: purchaseData.lastScore !== undefined ? purchaseData.lastScore : null,
+                attempts_count: purchaseData.attempts || purchaseData.attempts_count || 0,
                 attempts: purchaseData.attempts || 0
               };
             } else {
@@ -178,19 +204,28 @@ const deleteStudentExam = async (req, res) => {
 };
 
 // =========================================================================
-// 4. Purchase an Exam
+// 4. Purchase an Exam (FIXED UNDEFINED QUERY & CREDIT DEDUCTION)
 // =========================================================================
 const purchaseExam = async (req, res) => {
   try {
     const studentId = req.user?.uid || req.user?.id;
-    const { exam_id, level_id, category_id } = req.body;
+    const { exam_id, level_id, category_id, credits: requestCredits } = req.body;
 
     if (!studentId) {
       return res.status(401).json({ success: false, message: "Unauthorized user." });
     }
 
-    const targetExamId = exam_id || level_id;
+    // 🎯 Ensure targetExamId is NEVER undefined to avoid Firestore query crash
+    const targetExamId = exam_id || level_id || req.body.id;
 
+    if (!targetExamId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid Request: Exam ID or Level ID is missing." 
+      });
+    }
+
+    // Check existing purchase
     const existingPurchase = await db.collection('purchased_exams')
       .where('student_id', '==', studentId)
       .where('exam_id', '==', targetExamId)
@@ -205,11 +240,12 @@ const purchaseExam = async (req, res) => {
 
     let examData = null;
 
+    // 1. Try to fetch from exam_categories/levels
     if (category_id && level_id) {
       const levelDoc = await db.collection('exam_categories')
-        .doc(category_id)
+        .doc(category_id.toLowerCase())
         .collection('levels')
-        .doc(level_id)
+        .doc(level_id.toLowerCase())
         .get();
 
       if (levelDoc.exists) {
@@ -217,18 +253,22 @@ const purchaseExam = async (req, res) => {
       }
     }
 
-    if (!examData && exam_id) {
-      const examDoc = await db.collection('exams').doc(exam_id).get();
+    // 2. Try to fetch directly from exams collection
+    if (!examData && targetExamId) {
+      const examDoc = await db.collection('exams').doc(targetExamId).get();
       if (examDoc.exists) {
         examData = examDoc.data();
       }
     }
 
-    if (!examData) {
-      return res.status(404).json({ success: false, message: "Exam level details not found!" });
+    // 🎯 Determine required credits accurately (Priority: Request > credits > price > credit_cost)
+    let requiredCredits = 0;
+    if (requestCredits !== undefined && Number(requestCredits) > 0) {
+      requiredCredits = Number(requestCredits);
+    } else if (examData) {
+      requiredCredits = Number(examData.credits || examData.price || examData.credit_cost || 0);
     }
 
-    const requiredCredits = Number(examData.credits !== undefined ? examData.credits : (examData.credit_cost || 0));
     const userRef = db.collection('users').doc(studentId);
     const transactionId = `TRX-${Date.now()}`;
 
@@ -239,21 +279,35 @@ const purchaseExam = async (req, res) => {
       }
 
       const freshUserData = freshUserDoc.data();
+      
+      // Get current credits/wallet_balance from user document
       const currentCredits = Number(
         freshUserData.credits !== undefined 
           ? freshUserData.credits 
-          : (freshUserData.walletBalance || freshUserData.wallet_balance || 0)
+          : (freshUserData.wallet_balance !== undefined ? freshUserData.wallet_balance : freshUserData.walletBalance || 0)
       );
 
       if (currentCredits < requiredCredits) {
         throw new Error(`Insufficient credits! Required: ${requiredCredits}, Available: ${currentCredits}`);
       }
 
-      transaction.update(userRef, {
-        credits: currentCredits - requiredCredits,
-        updatedAt: new Date().toISOString()
-      });
+      const newBalance = currentCredits - requiredCredits;
 
+      // Update User Wallet/Credits
+      const updateData = { updatedAt: new Date().toISOString() };
+      if (freshUserData.credits !== undefined) updateData.credits = newBalance;
+      if (freshUserData.wallet_balance !== undefined) updateData.wallet_balance = newBalance;
+      if (freshUserData.walletBalance !== undefined) updateData.walletBalance = newBalance;
+      
+      // Fallback if none existed
+      if (freshUserData.credits === undefined && freshUserData.wallet_balance === undefined) {
+        updateData.credits = newBalance;
+        updateData.wallet_balance = newBalance;
+      }
+
+      transaction.update(userRef, updateData);
+
+      // Add to Purchased Exams
       const purchaseRef = db.collection('purchased_exams').doc();
       transaction.set(purchaseRef, {
         student_id: studentId,
@@ -262,13 +316,14 @@ const purchaseExam = async (req, res) => {
         status: 'active'
       });
 
+      // Save Transaction Log
       const transactionRef = db.collection('transactions').doc(transactionId);
       transaction.set(transactionRef, {
         order_id: transactionId,
         student_id: studentId,
-        plan_name: `Exam Purchase: ${examData.level_name || examData.title || 'Mock Exam'}`,
+        plan_name: `Exam Purchase: ${examData?.level_name || examData?.levelName || examData?.title || targetExamId}`,
         credits: requiredCredits,
-        amount: 0,
+        amount: requiredCredits,
         payment_method: 'Wallet Credits',
         status: 'SUCCESS',
         type: 'EXAM_PURCHASE',
@@ -310,10 +365,10 @@ const getAllExams = async (req, res) => {
         title: data.title || 'Untitled Exam',
         category: data.category_id || data.category || 'JLPT',
         level: data.level_id || data.level || 'N/A',
-        tutor: data.tutor_name || 'Alternative Tutor',
+        tutor: data.tutor_name || 'Expert Tutor',
         tutorAvatar: data.tutor_avatar || 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?w=40',
         duration: data.duration_minutes ? `${data.duration_minutes} min` : (data.time ? `${data.time} min` : 'N/A'),
-        questions: data.total_questions || 0,
+        questions: Array.isArray(data.questions) ? data.questions.length : (data.total_questions || 0),
         credits: data.credits || 0,
         rating: data.rating || 5.0,
         reviews: data.reviews || 0,

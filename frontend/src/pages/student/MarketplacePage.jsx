@@ -47,11 +47,16 @@ export default function MarketplacePage() {
     fetchLiveExams();
   }, []);
 
-  // 🛒 Exam එකක් Unlock කිරීම සඳහා:
-  const handleUnlockExam = async (examId, e) => {
-    e.stopPropagation(); 
+  // 🛒 Exam එකක් Unlock කිරීම සඳහා (FIXED OBJECT PASSING)
+  const handleUnlockExam = async (exam, e) => {
+    e.stopPropagation(); // Card navigation වැළැක්වීමට
 
-    const confirmUnlock = window.confirm("Are you sure you want to unlock this exam using your credits?");
+    if (!exam) return;
+
+    const examTitle = exam.title || 'Selected Exam';
+    const examCredits = exam.credits !== undefined ? exam.credits : 0;
+
+    const confirmUnlock = window.confirm(`Are you sure you want to unlock "${examTitle}" for ${examCredits} credits?`);
     if (!confirmUnlock) return;
 
     try {
@@ -65,7 +70,12 @@ export default function MarketplacePage() {
 
       const response = await axios.post(
         'http://localhost:5000/api/exams/purchase',
-        { exam_id: examId },
+        { 
+          exam_id: exam.id,
+          category_id: exam.category_id || exam.category?.toLowerCase() || 'jlpt',
+          level_id: exam.level_id || exam.level?.toLowerCase() || exam.id,
+          credits: examCredits
+        },
         {
           headers: {
             Authorization: `Bearer ${token}` 
@@ -86,7 +96,7 @@ export default function MarketplacePage() {
   // 🔄 Filter + Sorting එකතු කරන ලද කොටස:
   const filtered = exams
     .filter((e) => {
-      if (search && !e.title.toLowerCase().includes(search.toLowerCase()) && !e.category.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search && !e.title?.toLowerCase().includes(search.toLowerCase()) && !e.category?.toLowerCase().includes(search.toLowerCase())) return false;
       if (activeCategory !== 'All' && e.category !== activeCategory) return false;
       if (e.credits < creditRange[0] || e.credits > creditRange[1]) return false;
       if (e.rating < minRating) return false;
@@ -112,12 +122,6 @@ export default function MarketplacePage() {
   };
 
   const hasActiveFilters = search || activeCategory !== 'All' || creditRange[1] < 100 || minRating > 0 || difficulty !== 'All' || dateFrom || dateTo;
-
-  // Handle Unlock button click
-  const handleUnlockClick = (examId, e) => {
-    e.stopPropagation(); // Prevent triggering parent card click
-    navigate(`/exam/${examId}/preview`);
-  };
 
   return (
     <div className="space-y-6 pt-24 px-4 max-w-7xl mx-auto min-h-screen text-white"> 
@@ -250,14 +254,8 @@ export default function MarketplacePage() {
                   <div className="absolute bottom-3 left-3">
                     <Badge color={exam.difficulty === 'Advanced' || exam.difficulty === 'Expert' ? 'red' : 'yellow'}>{exam.difficulty}</Badge>
                   </div>
-                  <Button 
-                    variant="primary" 
-                    size="sm"
-                    onClick={(e) => handleUnlockClick(exam.id, e)}
-                  >
-                    Unlock
-                  </Button>
                 </div>
+
                 <div className="p-4">
                   <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">{exam.title}</h3>
                   <div className="flex items-center gap-2 mb-3">
@@ -275,10 +273,11 @@ export default function MarketplacePage() {
                       <span className="text-lg sm:text-xl font-bold text-amber-400">{exam.credits}</span>
                       <span className="text-xs text-gray-400">Credits</span>
                     </div>
+                    {/* 🎯 FIXED: Passing entire exam object */}
                     <Button 
                       variant="primary" 
                       size="sm"
-                      onClick={(e) => handleUnlockExam(exam.id, e)}
+                      onClick={(e) => handleUnlockExam(exam, e)}
                     >
                       Unlock
                     </Button>

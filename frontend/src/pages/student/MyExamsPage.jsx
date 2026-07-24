@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Play, BarChart2, Clock, CheckCircle, XCircle, Trash2, Plus,
-  CalendarPlus, Check, User, GraduationCap, Building2, Layers, FileText,
-  Filter, Grid3x3, List, ShoppingBag
+  BookOpen, Play, BarChart2, Clock, Trash2, Plus,
+  CalendarPlus, Check, GraduationCap, FileText,
+  Filter, Grid3x3, List, ShoppingBag, Layers
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -30,7 +30,7 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ─── Loading Spinner Component ─────
+// ─── Loading Spinner Component ──────────────────────────────────────────────
 function LoadingSpinner({ message = "Loading your exams..." }) {
   return (
     <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-4 text-white">
@@ -48,7 +48,7 @@ function LoadingSpinner({ message = "Loading your exams..." }) {
   );
 }
 
-// ─── Tutor Avatar Component ──────────────────
+// ─── Tutor Avatar Component ─────────────────────────────────────────────────
 function TutorAvatar({ tutor, name, size = 36 }) {
   const [imgError, setImgError] = useState(false);
   const initials = (name || 'T').trim().charAt(0).toUpperCase();
@@ -80,7 +80,7 @@ function TutorAvatar({ tutor, name, size = 36 }) {
   );
 }
 
-// ─── Main Page Component ─────
+// ─── Main Page Component ───────────────────────────────────────────────────
 export default function MyExamsPage() {
   const navigate = useNavigate();
   const [exams, setExams] = useState([]);
@@ -95,9 +95,9 @@ export default function MyExamsPage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [successExamId, setSuccessExamId] = useState(null);
 
-  // Categories & Levels calculation
-  const categories = [...new Set(exams.map(e => e.category_id).filter(Boolean))];
-  const levels = [...new Set(exams.map(e => e.level_id).filter(Boolean))];
+  // Dynamic Categories & Levels Extractor (Handles multiple potential backend naming conventions)
+  const categories = [...new Set(exams.map(e => e.category_id || e.category || e.category_name).filter(Boolean))];
+  const levels = [...new Set(exams.map(e => e.level_id || e.level || e.level_name).filter(Boolean))];
 
   useEffect(() => {
     const fetchPurchasedExams = async () => {
@@ -147,11 +147,11 @@ export default function MyExamsPage() {
       await axios.delete(`http://localhost:5000/api/exams/my-exams/${selectedExamId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setExams(prev => prev.filter(exam => exam.id !== selectedExamId));
+      setExams(prev => prev.filter(exam => (exam.exam_id || exam.id) !== selectedExamId));
     } catch (error) {
       console.error("Delete error:", error);
       // Fallback UI deletion
-      setExams(prev => prev.filter(exam => exam.id !== selectedExamId));
+      setExams(prev => prev.filter(exam => (exam.exam_id || exam.id) !== selectedExamId));
     } finally {
       setIsModalOpen(false);
     }
@@ -159,6 +159,7 @@ export default function MyExamsPage() {
 
   const handleAddToPlanner = async (exam) => {
     if (!selectedDate) return alert("Please select a valid study execution date.");
+    const targetId = exam.exam_id || exam.id;
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('http://localhost:5000/api/planner/add', {
@@ -169,7 +170,7 @@ export default function MyExamsPage() {
         },
         body: JSON.stringify({
           title: `Complete ${exam.title}`,
-          description: `Tutor: ${exam.tutor_name || 'Expert'} · Expected duration: ${exam.duration_minutes || 60} min.`,
+          description: `Tutor: ${exam.tutor_name || 'Expert'} · Expected duration: ${exam.duration_minutes || exam.duration || 60} min.`,
           scheduled_date: selectedDate
         })
       });
@@ -177,7 +178,7 @@ export default function MyExamsPage() {
       if (response.status === 403 || !result.success) {
         alert("🔒 Subscription Premium Locked: Please check your active subscription cluster.");
       } else if (result.success) {
-        setSuccessExamId(exam.id);
+        setSuccessExamId(targetId);
         setSchedulingExamId(null);
         setSelectedDate('');
         setTimeout(() => setSuccessExamId(null), 2500);
@@ -188,14 +189,22 @@ export default function MyExamsPage() {
   };
 
   const filteredExams = exams.filter(exam => {
+    const attempts = exam.attempts_count || 0;
+    const isCompleted = attempts > 0 || exam.status === 'completed' || exam.is_completed;
+
     if (filter === 'all') return true;
-    if (filter === 'completed') return (exam.attempts_count || 0) > 0;
-    if (filter === 'not-started') return (exam.attempts_count || 0) === 0;
+    if (filter === 'completed') return isCompleted;
+    if (filter === 'not-started') return !isCompleted;
+
     if (filter.startsWith('cat_')) {
-      return exam.category_id === filter.replace('cat_', '');
+      const catVal = filter.replace('cat_', '');
+      const examCat = exam.category_id || exam.category || exam.category_name;
+      return String(examCat) === String(catVal);
     }
     if (filter.startsWith('lvl_')) {
-      return exam.level_id === filter.replace('lvl_', '');
+      const lvlVal = filter.replace('lvl_', '');
+      const examLvl = exam.level_id || exam.level || exam.level_name;
+      return String(examLvl) === String(lvlVal);
     }
     return true;
   });
@@ -240,14 +249,14 @@ export default function MyExamsPage() {
               <button className="px-4 py-2 rounded-xl text-sm font-medium bg-white/5 text-gray-400 hover:text-white border border-white/10 flex items-center gap-1">
                 <Filter size={14} /> Category
               </button>
-              <div className="absolute top-full left-0 mt-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-2 min-w-[150px] hidden group-hover:block z-20">
+              <div className="absolute top-full left-0 mt-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-2 min-w-[150px] hidden group-hover:block z-20 shadow-2xl">
                 {categories.map(cat => (
                   <button
                     key={cat}
                     onClick={() => setFilter(`cat_${cat}`)}
                     className={`block w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
                       filter === `cat_${cat}` 
-                        ? 'bg-blue-500/20 text-blue-400' 
+                        ? 'bg-blue-500/20 text-blue-400 font-semibold' 
                         : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
@@ -263,14 +272,14 @@ export default function MyExamsPage() {
               <button className="px-4 py-2 rounded-xl text-sm font-medium bg-white/5 text-gray-400 hover:text-white border border-white/10 flex items-center gap-1">
                 <Layers size={14} /> Level
               </button>
-              <div className="absolute top-full left-0 mt-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-2 min-w-[150px] hidden group-hover:block z-20">
+              <div className="absolute top-full left-0 mt-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-2 min-w-[150px] hidden group-hover:block z-20 shadow-2xl">
                 {levels.map(lvl => (
                   <button
                     key={lvl}
                     onClick={() => setFilter(`lvl_${lvl}`)}
                     className={`block w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
                       filter === `lvl_${lvl}` 
-                        ? 'bg-blue-500/20 text-blue-400' 
+                        ? 'bg-blue-500/20 text-blue-400 font-semibold' 
                         : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
@@ -329,9 +338,15 @@ export default function MyExamsPage() {
           {filteredExams.map((exam, i) => {
             const tutor = tutors[exam.tutor_id];
             const tutorName = tutor?.name || exam.tutor_name || 'Expert Tutor';
+            const targetExamId = exam.exam_id || exam.id;
+
+            // Duration & Question Fallback Calculations
+            const duration = exam.duration_minutes || exam.duration || exam.time || "N/A";
+            const totalQuestions = exam.total_questions || exam.questions_count || exam.totalQuestions || exam.questions?.length || 0;
+            const isCompleted = (exam.attempts_count || 0) > 0 || exam.status === 'completed' || exam.is_completed;
 
             return (
-              <motion.div key={exam.id || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+              <motion.div key={targetExamId || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
                 <GlassCard className={`overflow-hidden relative group border-white/5 hover:border-white/10 hover:shadow-xl hover:shadow-black/20 transition-all h-full ${viewMode === 'list' ? 'flex' : ''}`}>
                   <div className={`flex ${viewMode === 'list' ? 'w-full' : 'h-full min-h-[210px]'}`}>
                     <div className={`relative ${viewMode === 'list' ? 'w-48 flex-shrink-0' : 'w-32 flex-shrink-0'} overflow-hidden`}>
@@ -358,7 +373,7 @@ export default function MyExamsPage() {
                             )}
                           </div>
                           <div className="flex-shrink-0">
-                            <Badge color={statusColors[exam.status] || 'gray'}>{exam.status || 'active'}</Badge>
+                            <Badge color={statusColors[exam.status] || 'green'}>{exam.status || 'active'}</Badge>
                           </div>
                         </div>
 
@@ -376,13 +391,17 @@ export default function MyExamsPage() {
 
                         {/* Meta Tags */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          {exam.category_id && <Badge color="blue">{String(exam.category_id).toUpperCase()}</Badge>}
-                          {exam.level_id && <Badge color="purple">{String(exam.level_id).toUpperCase()}</Badge>}
-                          <span className="flex items-center gap-1 text-xs text-gray-500 font-mono bg-white/[0.02] py-1 px-2 rounded-lg border border-white/5">
-                            <Clock size={11} />{exam.duration_minutes || exam.duration || 60} min
+                          {(exam.category_id || exam.category) && (
+                            <Badge color="blue">{String(exam.category_id || exam.category).toUpperCase()}</Badge>
+                          )}
+                          {(exam.level_id || exam.level) && (
+                            <Badge color="purple">{String(exam.level_id || exam.level).toUpperCase()}</Badge>
+                          )}
+                          <span className="flex items-center gap-1 text-xs text-gray-400 font-mono bg-white/[0.03] py-1 px-2 rounded-lg border border-white/5">
+                            <Clock size={11} />{duration} min
                           </span>
-                          <span className="flex items-center gap-1 text-xs text-gray-500 font-mono bg-white/[0.02] py-1 px-2 rounded-lg border border-white/5">
-                            <FileText size={11} />{exam.total_questions || 0} Q
+                          <span className="flex items-center gap-1 text-xs text-gray-400 font-mono bg-white/[0.03] py-1 px-2 rounded-lg border border-white/5">
+                            <FileText size={11} />{totalQuestions} Q
                           </span>
                         </div>
                       </div>
@@ -390,21 +409,29 @@ export default function MyExamsPage() {
                       {/* Actions */}
                       <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
                         <div className="flex gap-2 items-center flex-wrap">
-                          <Button variant="primary" size="sm" onClick={() => navigate(`/exam/${exam.id}/take`)}>
-                            <Play size={12} fill="currentColor" /> {(exam.attempts_count || 0) > 0 ? 'Retake' : 'Start'}
+                          <Button 
+                            variant="primary" 
+                            size="sm" 
+                            onClick={() => navigate(`/exam/${targetExamId}/take`)}
+                          >
+                            <Play size={12} fill="currentColor" /> {isCompleted ? 'Retake' : 'Start'}
                           </Button>
 
-                          {(exam.attempts_count || 0) > 0 && (
-                            <Button variant="secondary" size="sm" onClick={() => navigate(`/exam/${exam.id}/results`)}>
+                          {isCompleted && (
+                            <Button 
+                              variant="secondary" 
+                              size="sm" 
+                              onClick={() => navigate(`/exam/${targetExamId}/results`)}
+                            >
                               <BarChart2 size={12} /> Results
                             </Button>
                           )}
 
-                          {successExamId === exam.id ? (
+                          {successExamId === targetExamId ? (
                             <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-medium">
                               <Check size={12} /> Scheduled!
                             </span>
-                          ) : schedulingExamId === exam.id ? (
+                          ) : schedulingExamId === targetExamId ? (
                             <div className="flex items-center gap-1.5 bg-slate-900 border border-white/10 p-1 rounded-xl shadow-xl z-10">
                               <input
                                 type="date"
@@ -428,7 +455,7 @@ export default function MyExamsPage() {
                             </div>
                           ) : (
                             <button
-                              onClick={() => { setSchedulingExamId(exam.id); setSelectedDate(''); }}
+                              onClick={() => { setSchedulingExamId(targetExamId); setSelectedDate(''); }}
                               className="p-2 bg-white/5 hover:bg-blue-500/10 border border-white/5 hover:border-blue-500/20 text-gray-400 hover:text-blue-400 rounded-xl transition-all flex items-center gap-1 text-xs font-medium"
                               title="Schedule into Study Planner"
                             >
@@ -438,7 +465,7 @@ export default function MyExamsPage() {
                         </div>
 
                         <button
-                          onClick={() => openDeleteConfirm(exam.id)}
+                          onClick={() => openDeleteConfirm(targetExamId)}
                           className="p-2 bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 text-gray-500 hover:text-red-400 rounded-xl transition-all flex-shrink-0"
                           title="Remove Exam"
                         >
