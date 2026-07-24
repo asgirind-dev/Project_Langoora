@@ -12,7 +12,6 @@ require('./config/firebase');
 const examRoutes = require('./routes/examRoutes');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
-const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const studyPlannerRoutes = require('./routes/studyPlannerRoutes'); 
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
@@ -26,6 +25,7 @@ const planRoutes = require('./routes/planRoutes');
 const creditValuationRoutes = require('./routes/creditValuationRoutes');
 
 
+
 const app = express();
 
 // Middlewares
@@ -37,7 +37,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/api/exams', examRoutes); 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes); 
-app.use('/api/subscription-management', subscriptionRoutes);
 app.use('/api/tutors', tutorProfileRoutes); 
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
