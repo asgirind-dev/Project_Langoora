@@ -1,3 +1,4 @@
+// frontend/src/pages/finance_admin/TransactionLedger.jsx
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -7,6 +8,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import GlassCard from '../../components/ui/GlassCard';
+import axios from 'axios';
 import FinanceService from '../../services/financeService';
 
 export default function TransactionLedger() {
@@ -20,6 +22,57 @@ export default function TransactionLedger() {
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // ============================================
+  // ⭐ FETCH TRANSACTIONS FROM FIRESTORE
+  // ============================================
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        setLoading(true);
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        
+        const response = await axios.get(`${API_URL}/api/finance/transactions`);
+        console.log('📊 Transactions Response:', response.data);
+        
+        if (response.data && Array.isArray(response.data)) {
+          // Transform data to match UI format
+          const transformedLogs = response.data.map(tx => ({
+            ref: tx.id || tx.transactionId || `TXN-${Date.now()}`,
+            student: tx.student_name || tx.userName || tx.user || 'Unknown Student',
+            tier: tx.plan || tx.subscriptionType || 'Standard Plan',
+            amount: tx.amount || 0,
+            gateway: tx.gateway || tx.paymentMethod || 'Stripe',
+            status: tx.status || 'Pending',
+            timestamp: tx.created_at || tx.createdAt || new Date().toISOString(),
+            email: tx.email || tx.student_email || '',
+            plan: tx.plan || tx.subscriptionType || 'Standard Plan',
+            credits: tx.credits || 0,
+            transactionId: tx.id,
+            paymentMethod: tx.paymentMethod || tx.gateway || 'Stripe'
+          }));
+          
+          setLogs(transformedLogs);
+        } else {
+          console.log('⚠️ No transactions found');
+          setLogs([]);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching transactions:', error);
+        setLogs([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchTransactions();
+  }, []);
+
+  // Summary Stats
+  const totalTransactions = logs.length;
+  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? log.amount : 0), 0);
+  const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
+  const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : 0;
+  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
   // 🎯 Fetch Real Database Transactions
   const fetchLedgerData = async () => {
     setLoading(true);
@@ -47,6 +100,10 @@ export default function TransactionLedger() {
   // Search & Filters
   const filteredLogs = logs.filter(log => {
     const matchSearch = (log.student || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                       (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                       (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
+    const matchGateway = filterGateway === 'all' || (log.gateway || '').toLowerCase() === filterGateway.toLowerCase();
                         (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                         (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
@@ -55,7 +112,7 @@ export default function TransactionLedger() {
   });
 
   const getStatusConfig = (status) => {
-    const configs = {
+    const statusMap = {
       'Success': { 
         bg: 'bg-emerald-500/10', 
         border: 'border-emerald-500/20',
@@ -63,12 +120,28 @@ export default function TransactionLedger() {
         icon: CheckCircle,
         label: 'Success'
       },
+      'Completed': { 
+        color: '#10b981', 
+        bg: 'bg-emerald-500/10', 
+        border: 'border-emerald-500/20',
+        text: 'text-emerald-400',
+        icon: CheckCircle,
+        label: 'Completed'
+      },
       'Failed': { 
         bg: 'bg-red-500/10', 
         border: 'border-red-500/20',
         text: 'text-red-400',
         icon: XCircle,
         label: 'Failed'
+      },
+      'Declined': { 
+        color: '#ef4444', 
+        bg: 'bg-red-500/10', 
+        border: 'border-red-500/20',
+        text: 'text-red-400',
+        icon: XCircle,
+        label: 'Declined'
       },
       'Pending': { 
         bg: 'bg-amber-500/10', 
@@ -78,7 +151,7 @@ export default function TransactionLedger() {
         label: 'Pending'
       }
     };
-    return configs[status] || configs['Pending'];
+    return statusMap[status] || statusMap['Pending'];
   };
 
   const copyToClipboard = (text) => {
@@ -87,6 +160,20 @@ export default function TransactionLedger() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Format date
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString('en-LK', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return dateStr;
   // 🎯 PDF Export Handler (Finance Dashboard Style)
   const handleExportPDF = () => {
     if (filteredLogs.length === 0) return alert("No transaction records available to export.");
@@ -196,6 +283,9 @@ export default function TransactionLedger() {
 
   if (loading) {
     return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+        <p className="text-gray-400">Loading transactions...</p>
       <div className="flex flex-col items-center justify-center py-28 gap-3">
         <RefreshCw className="animate-spin text-blue-500" size={36} />
         <p className="text-gray-400 text-sm">Fetching real-time transaction ledger...</p>
@@ -222,6 +312,12 @@ export default function TransactionLedger() {
         <p className="text-sm text-gray-400 mt-1 max-w-2xl font-medium">
           Immutable historic system tracking data logs for user real-money subscription execution nodes.
         </p>
+        <div className="mt-2 flex items-center gap-3">
+          <span className="text-xs text-gray-500 font-mono">{logs.length} total transactions</span>
+          <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
+            live data
+          </span>
+        </div>
       </motion.div>
 
       {/* STATS ROW */}
@@ -273,6 +369,12 @@ export default function TransactionLedger() {
               onChange={(e) => setFilterStatus(e.target.value)}
               className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
             >
+              <option value="all" className="bg-[#0a1628] text-white hover:bg-blue-500/20">All Status</option>
+              <option value="success" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Success</option>
+              <option value="completed" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Completed</option>
+              <option value="failed" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Failed</option>
+              <option value="declined" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Declined</option>
+              <option value="pending" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Pending</option>
               <option value="all">All Status</option>
               <option value="success">Success</option>
               <option value="failed">Failed</option>
@@ -363,19 +465,21 @@ export default function TransactionLedger() {
                                 <Copy size={14} className="text-gray-500 hover:text-white" />
                               </button>
                             </div>
-                            <div className="text-xs text-gray-500 font-mono mt-0.5">{log.timestamp}</div>
+                            <div className="text-xs text-gray-500 font-mono mt-0.5">{formatDate(log.timestamp)}</div>
                           </td>
                           <td className="px-5 py-4">
                             <div>
                               <div className="text-sm font-semibold text-white">{log.student}</div>
-                              <div className="text-xs text-gray-400">{log.email}</div>
+                              <div className="text-xs text-gray-400">{log.email || 'N/A'}</div>
                             </div>
                           </td>
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-2">
                               <Crown size={16} className="text-amber-400" />
-                              <span className="text-sm font-medium text-white">{log.plan}</span>
-                              <span className="text-xs text-gray-400">({log.credits}c)</span>
+                              <span className="text-sm font-medium text-white">{log.plan || 'Standard'}</span>
+                              {log.credits > 0 && (
+                                <span className="text-xs text-gray-400">({log.credits}c)</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-5 py-4">
@@ -384,7 +488,7 @@ export default function TransactionLedger() {
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-2">
                               <CreditCard size={16} className="text-gray-400" />
-                              <span className="text-sm text-gray-300">{log.gateway}</span>
+                              <span className="text-sm text-gray-300">{log.gateway || 'N/A'}</span>
                             </div>
                           </td>
                           <td className="px-5 py-4">
@@ -489,8 +593,8 @@ export default function TransactionLedger() {
                       {selectedLog.student?.charAt(0) || 'U'}
                     </div>
                     <div>
-                      <h3 className="text-base font-semibold text-white">{selectedLog.student}</h3>
-                      <p className="text-sm text-gray-400">{selectedLog.email}</p>
+                      <h3 className="text-base font-semibold text-white">{selectedLog.student || 'Unknown'}</h3>
+                      <p className="text-sm text-gray-400">{selectedLog.email || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
@@ -498,26 +602,39 @@ export default function TransactionLedger() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Plan</p>
-                    <p className="text-base font-bold text-white mt-1">{selectedLog.plan}</p>
-                    <p className="text-sm text-gray-400">{selectedLog.credits} Credits</p>
+                    <p className="text-base font-bold text-white mt-1">{selectedLog.plan || 'Standard'}</p>
+                    {selectedLog.credits > 0 && (
+                      <p className="text-sm text-gray-400">{selectedLog.credits} Credits</p>
+                    )}
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Amount</p>
+                    <p className="text-xl font-bold text-emerald-400 mt-1">LKR {selectedLog.amount?.toLocaleString() || 0}</p>
                     <p className="text-xl font-bold text-emerald-400 mt-1">LKR {Number(selectedLog.amount || 0).toLocaleString()}</p>
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Gateway</p>
-                    <p className="text-base font-semibold text-white mt-1">{selectedLog.gateway}</p>
+                    <p className="text-base font-semibold text-white mt-1">{selectedLog.gateway || 'N/A'}</p>
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Status</p>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${getStatusConfig(selectedLog.status).bg} border ${getStatusConfig(selectedLog.status).border} rounded-lg`}>
+                        {selectedLog.status === 'Success' && <CheckCircle size={14} className="text-emerald-400" />}
+                        {selectedLog.status === 'Completed' && <CheckCircle size={14} className="text-emerald-400" />}
+                        {selectedLog.status === 'Failed' && <XCircle size={14} className="text-red-400" />}
+                        {selectedLog.status === 'Declined' && <XCircle size={14} className="text-red-400" />}
+                        {selectedLog.status === 'Pending' && <Clock size={14} className="text-amber-400" />}
+                        <span className={`text-sm font-bold ${getStatusConfig(selectedLog.status).text}`}>{selectedLog.status || 'Pending'}</span>
+                      </span>
+                    </div>
                     <p className="text-base font-semibold text-emerald-400 mt-1">{selectedLog.status}</p>
                   </div>
                 </div>
 
                 <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Transaction Time</p>
-                  <p className="text-sm font-semibold text-white mt-1">{selectedLog.timestamp}</p>
+                  <p className="text-sm font-semibold text-white mt-1">{formatDate(selectedLog.timestamp)}</p>
                 </div>
               </div>
             </motion.div>

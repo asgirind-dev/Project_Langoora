@@ -13,8 +13,7 @@ const {
   getAllExamsDev, // NEW: Import dev function
   getStudentExams, 
   deleteStudentExam,
-  uploadAsset,
-  deleteAsset
+  uploadAsset 
 } = require('../controllers/examController');
 
 const { protect, authorizeRoles } = require('../middleware/authMiddleware');

@@ -1,7 +1,5 @@
-const { db } = require('../config/firebase');
+const { db, storage } = require('../config/firebase');
 const cloudinary = require('cloudinary').v2;
-const path = require('path');
-const examServices = require('../services/examServices');
 
 // =========================================================================
 // Cloudinary config — pulled from environment variables.
@@ -46,12 +44,11 @@ const createExam = async (req, res) => {
     const examData = {
       title,
       category_id,
-      level_id: level_id || '',
+      level_id,
       duration_minutes: Number(duration_minutes),
-      description: description || '',
+      description: description ? description.trim() : '',
       status: status || 'draft',
       sections: sections || [],
-      questions: questions || [],
       thumbnail: thumbnail || null,
       tutor_id: tutorId,
       tutor_name: tutorName
@@ -65,6 +62,8 @@ const createExam = async (req, res) => {
         message: 'Exam structure deployed successfully!',
         examId: result.examId
       });
+
+      await batch.commit();
     }
 
     return res.status(500).json({
@@ -78,8 +77,6 @@ const createExam = async (req, res) => {
       message: 'Internal server failed to execute blueprint commit.',
       error: error.message
     });
-  }
-};
 
 // =========================================================================
 // 2. Get all exams available for students (public)
@@ -93,8 +90,8 @@ const getAllExams = async (req, res) => {
     });
     return res.status(200).json({ success: true, data: examsList });
   } catch (error) {
-    console.error('Get all exams error:', error.message);
-    return res.status(500).json({ success: false, message: 'Error fetching exams', error: error.message });
+    console.error('Exam Creation Core Runtime Exception:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server failed to execute blueprint commit.' });
   }
 };
 
@@ -106,8 +103,9 @@ const getAllExamsDev = async (req, res) => {
     console.log('🛠️ DEV: Fetching ALL exams from Firestore (NO AUTH)');
     const snapshot = await db.collection('exams').get();
     const examsList = [];
+    
     snapshot.forEach(doc => {
-      examsList.push({ id: doc.id, ...doc.data() });
+      examsList.push({ id: doc.id, ...doc.data() }); 
     });
     console.log(`✅ DEV: Found ${examsList.length} total exams`);
     return res.status(200).json({ 
@@ -380,7 +378,7 @@ const uploadAsset = async (req, res) => {
         fileUrl: dataUriString,
         type: 'image'
       });
-    }
+    };
 
     return res.status(400).json({
       success: false,
@@ -420,10 +418,15 @@ const deleteAsset = async (req, res) => {
     const urlParts = fileUrl.split('/');
     const fileWithExtension = urlParts[urlParts.length - 1];
     const publicIdWithoutExt = fileWithExtension.split('.')[0];
-    const publicId = `langoora/audio/${publicIdWithoutExt}`;
+
+    const isAudio = fileUrl.includes('/audio/');
+    const folderPath = isAudio ? 'langoora/audio' : 'langoora/images';
+    const publicId = `${folderPath}/${publicIdWithoutExt}`;
+
+    const resourceType = isAudio ? 'video' : 'image';
 
     const result = await cloudinary.uploader.destroy(publicId, {
-      resource_type: 'video'
+      resource_type: resourceType
     });
 
     if (result.result === 'ok') {
