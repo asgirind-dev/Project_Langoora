@@ -1,8 +1,25 @@
+// backend/controllers/planController.js
 const planService = require('../services/PlanService');
 
 exports.getPlans = async (req, res) => {
   try {
-    const plans = await planService.getAllPlans();
+    const { status } = req.query;
+    let plans;
+    if (status) {
+      plans = await planService.getPlansByStatus(status);
+    } else {
+      plans = await planService.getAllPlans();
+    }
+    res.status(200).json(plans);
+  } catch (error) {
+    res.status(500).json({ message: "Plans fetch error", error: error.message });
+  }
+};
+
+exports.getPlansByStatus = async (req, res) => {
+  try {
+    const { status } = req.params;
+    const plans = await planService.getPlansByStatus(status);
     res.status(200).json(plans);
   } catch (error) {
     res.status(500).json({ message: "Plans fetch error", error: error.message });
@@ -24,8 +41,11 @@ exports.createPlan = async (req, res) => {
 exports.updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
-    await planService.updateExistingPlan(id, req.body);
-    res.status(200).json({ message: "Plan updated successfully", id });
+    const result = await planService.updateExistingPlan(id, req.body);
+    res.status(200).json({
+      message: "Plan updated successfully",
+      data: result
+    });
   } catch (error) {
     res.status(500).json({ message: "Plan update error", error: error.message });
   }
@@ -38,5 +58,33 @@ exports.deletePlan = async (req, res) => {
     res.status(200).json({ message: "Plan deleted successfully", id });
   } catch (error) {
     res.status(500).json({ message: "Plan deletion error", error: error.message });
+  }
+};
+
+exports.approvePlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    const result = await planService.approvePlan(id, notes);
+    res.status(200).json({
+      message: "Plan approved successfully",
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Plan approval error", error: error.message });
+  }
+};
+
+exports.rejectPlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    const result = await planService.rejectPlan(id, notes);
+    res.status(200).json({
+      message: "Plan rejected successfully",
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Plan rejection error", error: error.message });
   }
 };
