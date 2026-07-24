@@ -113,6 +113,12 @@ export default function MarketplacePage() {
 
   const hasActiveFilters = search || activeCategory !== 'All' || creditRange[1] < 100 || minRating > 0 || difficulty !== 'All' || dateFrom || dateTo;
 
+  // Handle Unlock button click
+  const handleUnlockClick = (examId, e) => {
+    e.stopPropagation(); // Prevent triggering parent card click
+    navigate(`/exam/${examId}/preview`);
+  };
+
   return (
     <div className="space-y-6 pt-24 px-4 max-w-7xl mx-auto min-h-screen text-white"> 
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
@@ -244,6 +250,13 @@ export default function MarketplacePage() {
                   <div className="absolute bottom-3 left-3">
                     <Badge color={exam.difficulty === 'Advanced' || exam.difficulty === 'Expert' ? 'red' : 'yellow'}>{exam.difficulty}</Badge>
                   </div>
+                  <Button 
+                    variant="primary" 
+                    size="sm"
+                    onClick={(e) => handleUnlockClick(exam.id, e)}
+                  >
+                    Unlock
+                  </Button>
                 </div>
                 <div className="p-4">
                   <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">{exam.title}</h3>

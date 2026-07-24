@@ -1,36 +1,115 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
-const { protect, authorizeRoles } = require('../middleware/authMiddleware');
+const {
+  protect,
+  authorizeRoles,
+  requirePermission,
+  requireLevel
+} = require('../middleware/authMiddleware');
 const { db, admin } = require('../config/firebase');
 
-// 🔒 සියලුම Routes සඳහා Auth Middleware එක ක්‍රියාත්මක කිරීම
+// ======================================================================
+// 🔓 1. PUBLIC ROUTES (Login වීම අවශ්‍ය නැත / Authentication NOT required)
+// ======================================================================
+
+/**
+ * ✅ Check if an email is pre-authorized for staff registration
+ * GET /api/users/preauth-check?email=user@example.com
+ */
+router.get('/preauth-check', async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required for pre-authorization check.' 
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid email format.' 
+      });
+    }
+
+    const formattedEmail = email.toLowerCase().trim();
+    
+    // Check if email exists in pre_authorized_staff collection
+    const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+
+    if (preAuthDoc.exists) {
+      const data = preAuthDoc.data();
+      
+      // Check if this pre-auth record is still valid (not expired)
+      const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+      const now = new Date();
+      
+      if (expiresAt && expiresAt < now) {
+        return res.status(200).json({
+          success: true,
+          isPreAuthorized: false,
+          expired: true,
+          message: 'This invitation has expired. Please contact your administrator.'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        isPreAuthorized: true,
+        role: data.role || 'validator',
+        languageScope: data.languageScope || 'All',
+        institution: data.institution || 'Langoora',
+        privileges: data.privileges || [],
+        name: data.name || '',
+        expiresAt: data.expiresAt || null
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      isPreAuthorized: false
+    });
+
+  } catch (error) {
+    console.error('Pre-authorization check error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to check pre-authorization status.',
+      error: error.message 
+    });
+  }
+});
+
+// ======================================================================
+// 🔒 2. PROTECTED ROUTES (මෙතැනින් පහළ සියලුම Routes සඳහා Auth Token එකක් අවශ්‍ය වේ)
+// ======================================================================
 router.use(protect);
 
-// ==========================================
+// ----------------------------------------------------------------------
 // 👤 STUDENT / USER PROFILE ENDPOINTS
-// ==========================================
+// ----------------------------------------------------------------------
 
-// 🔄 CRUD: Read (Updated with Fallback Collection Lookup)
+// 🔄 Get student profile
 router.get('/profile', async (req, res) => {
   try {
     const { uid } = req.query;
     if (!uid) return res.status(400).json({ success: false, message: "User ID (uid) is required" });
     
-    // 1. මුලින්ම ප්‍රධාන 'users' collection එකේ බලනවා
     let doc = await db.collection('users').doc(uid).get();
     
-    // 2. 'users' එකේ නැත්නම් විතරක් 'students' එකේ බලනවා
     if (!doc.exists) {
       doc = await db.collection('students').doc(uid).get();
     }
     
-    // 3. දෙකේම නැත්නම් හිස් object එකක් දෙනවා
     if (!doc.exists) {
       return res.status(200).json({ success: true, data: {} });
     }
     
-    // 4. ඩේටා තියෙනවා නම් id එකත් එක්කම Frontend එකට යවනවා
     res.status(200).json({ success: true, data: { id: doc.id, ...doc.data() } });
   } catch (error) {
     console.error("Backend Fetch Profile Error:", error);
@@ -38,11 +117,10 @@ router.get('/profile', async (req, res) => {
   }
 });
 
-// 👈 💳 NEW: FRONTEND CHECKOUT AUTOFILL ENDPOINT
-// Frontend එකේ Checkout Modal එක ඇතුළේ බැංකු විස්තර dynamic ඇදලා ගන්න කතා කරන්නේ මේකටයි.
-// (router.use(protect) උඩින් දාලා තියෙන නිසා මේකත් auto-protect වෙනවා මචන්)
+// 💳 Checkout Autofill Endpoint
 router.get('/checkout-profile', userController.getStudentProfile);
 
+// 🔄 Update student profile
 router.put('/profile/update', async (req, res) => {
   try {
     const { uid, name, phone, dob, city, targetExam, targetDate } = req.body;
@@ -58,9 +136,11 @@ router.put('/profile/update', async (req, res) => {
   }
 });
 
-// ==========================================
+// ----------------------------------------------------------------------
 // ⚙️ USER SETTINGS ENDPOINTS
-// ==========================================
+// ----------------------------------------------------------------------
+
+// 🔄 Update language settings
 router.put('/settings/language', async (req, res) => {
   try {
     const { uid, language } = req.body;
@@ -74,6 +154,7 @@ router.put('/settings/language', async (req, res) => {
   }
 });
 
+// 🔄 Update password
 router.put('/settings/password', async (req, res) => {
   try {
     const { uid, newPassword } = req.body;
@@ -85,15 +166,122 @@ router.put('/settings/password', async (req, res) => {
   }
 });
 
-// ==========================================
-// 🛡️ ADMIN PRIVILEGED BLOCK ENFORCEMENTS
-// ==========================================
+// ======================================================================
+// 🛡️ 3. ADMIN PRIVILEGED ROUTES (Admin හට පමණක් සීමා වේ)
+// ======================================================================
 router.use(authorizeRoles('admin'));
 
-router.get('/', userController.getAllUsers);
-router.post('/provision', userController.provisionStaffNode);
-router.put('/:uid/privileges', userController.updatePrivileges);
-router.put('/:uid/lifecycle', userController.toggleUserLifecycle);
-router.delete('/:uid', userController.deleteUserNode); 
+// ---- User Management ----
+router.get(
+  '/',
+  requirePermission('manage_users'),
+  userController.getAllUsers
+);
+
+router.post(
+  '/provision',
+  requirePermission('manage_users'),
+  userController.provisionStaffNode
+);
+
+router.put(
+  '/:uid/privileges',
+  requirePermission('manage_users'),
+  userController.updatePrivileges
+);
+
+router.put(
+  '/:uid/lifecycle',
+  requirePermission('manage_users'),
+  userController.toggleUserLifecycle
+);
+
+router.delete(
+  '/:uid',
+  requirePermission('manage_users'),
+  userController.deleteUserNode
+);
+
+// ---- Role Management ----
+router.get(
+  '/roles',
+  requirePermission('manage_roles'),
+  userController.getRoles
+);
+
+router.post(
+  '/roles',
+  requirePermission('manage_roles'),
+  requireLevel(2),
+  userController.createRole
+);
+
+router.put(
+  '/roles/:roleId',
+  requirePermission('manage_roles'),
+  requireLevel(2),
+  userController.updateRole
+);
+
+router.delete(
+  '/roles/:roleId',
+  requirePermission('manage_roles'),
+  requireLevel(2),
+  userController.deleteRole
+);
+
+// ---- Bulk Pre-authorization Check ----
+router.post(
+  '/preauth-bulk-check',
+  requirePermission('manage_users'),
+  async (req, res) => {
+    try {
+      const { emails } = req.body;
+      
+      if (!emails || !Array.isArray(emails) || emails.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Emails array is required.' 
+        });
+      }
+
+      const results = [];
+      
+      for (const email of emails) {
+        const formattedEmail = email.toLowerCase().trim();
+        const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+        
+        if (preAuthDoc.exists) {
+          const data = preAuthDoc.data();
+          results.push({
+            email: formattedEmail,
+            isPreAuthorized: true,
+            role: data.role || 'validator',
+            languageScope: data.languageScope || 'All',
+            institution: data.institution || 'Langoora'
+          });
+        } else {
+          results.push({
+            email: formattedEmail,
+            isPreAuthorized: false
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        results
+      });
+
+    } catch (error) {
+      console.error('Bulk pre-authorization check error:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to check pre-authorization statuses.',
+        error: error.message 
+      });
+    }
+  }
+);
 
 module.exports = router;
