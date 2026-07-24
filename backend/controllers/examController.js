@@ -99,7 +99,34 @@ const getAllExams = async (req, res) => {
 };
 
 // =========================================================================
-// 3. Get Tutor Exams (Only logged-in tutor's exams)
+// 📚 2.5 Get ALL exams (Development only - NO AUTH)
+// =========================================================================
+const getAllExamsDev = async (req, res) => {
+  try {
+    console.log('🛠️ DEV: Fetching ALL exams from Firestore (NO AUTH)');
+    const snapshot = await db.collection('exams').get();
+    const examsList = [];
+    snapshot.forEach(doc => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    console.log(`✅ DEV: Found ${examsList.length} total exams`);
+    return res.status(200).json({ 
+      success: true, 
+      data: examsList,
+      count: examsList.length
+    });
+  } catch (error) {
+    console.error('Get all exams (dev) error:', error.message);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching exams', 
+      error: error.message 
+    });
+  }
+};
+
+// =========================================================================
+// 📊 3. Get Tutor Exams (Only logged-in tutor's exams)
 // =========================================================================
 const getTutorExams = async (req, res) => {
   try {
@@ -432,6 +459,7 @@ module.exports = {
   updateExamDraft,
   updateExam,
   getAllExams,
+  getAllExamsDev,
   deleteStudentExam,
   uploadAsset,
   deleteAsset

@@ -17,7 +17,7 @@ router.put('/approve/:id', tutorValidationController.approveTutor);
 // ❌ Reject tutor with optional reason (sends rejection email)
 router.put('/reject/:id', tutorValidationController.rejectTutor);
 
-// 📝 Update rejection reason (optional - for updating reason after rejection)
+// 📝 Update rejection reason (optional)
 router.put('/rejection-reason/:id', tutorValidationController.updateRejectionReason);
 
 module.exports = router;

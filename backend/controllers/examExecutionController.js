@@ -7,7 +7,12 @@ const examExecutionService = require('../services/examExecutionService');
 const start = async (req, res) => {
   try {
     const { examId } = req.params;
-    const studentId = req.user?.id || 'mock_student_id';
+    const studentId = req.user?.id || req.user?.uid;
+    
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+    
     const attempt = await examExecutionService.startExam(examId, studentId);
     return res.status(201).json({ success: true, data: attempt });
   } catch (error) {
@@ -86,7 +91,9 @@ const submit = async (req, res) => {
   try {
     const { attemptId } = req.params;
     const { answers, flagged, autoSubmitted } = req.body;
-    const result = await examExecutionService.submitExam(attemptId, answers, flagged, autoSubmitted);
+    const studentId = req.user?.id || req.user?.uid;
+    
+    const result = await examExecutionService.submitExam(attemptId, answers, flagged, autoSubmitted, studentId);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error('Submit exam execution error:', error.message);
@@ -111,24 +118,69 @@ const results = async (req, res) => {
 };
 
 /**
- * 💬 Submit student feedback
+ * 💬 Submit student feedback with ratings
  * POST /api/exam-execution/:attemptId/feedback
  */
 const submitFeedback = async (req, res) => {
   try {
     const { attemptId } = req.params;
-    const { rating, difficulty, nps, challenging, topicsToReview, comments, wantsFollowUp } = req.body;
+    const { 
+      rating, 
+      difficulty, 
+      nps, 
+      challenging, 
+      topicsToReview, 
+      comments, 
+      wantsFollowUp,
+      wouldRecommend,
+      timeSpent
+    } = req.body;
     
+    const studentId = req.user?.id || req.user?.uid;
+    
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    // Validate rating
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
+    }
+
+    // Get attempt details for additional context
+    const attemptDoc = await require('../config/firebase').db
+      .collection('student_exams')
+      .doc(attemptId)
+      .get();
+    
+    let examId = null;
+    let examTitle = null;
+    let percentage = 0;
+    
+    if (attemptDoc.exists) {
+      const attemptData = attemptDoc.data();
+      examId = attemptData.examId;
+      examTitle = attemptData.title || 'Language Examination';
+      percentage = attemptData.percentage || 0;
+    }
+
     const feedbackData = {
       attemptId,
-      rating,
-      difficulty,
-      nps,
-      challenging,
-      topicsToReview,
-      comments,
-      wantsFollowUp,
+      studentId,
+      examId,
+      examTitle,
+      percentage,
+      rating: Number(rating),
+      difficulty: difficulty || null,
+      nps: nps || null,
+      challenging: challenging || false,
+      topicsToReview: topicsToReview || [],
+      comments: comments || '',
+      wantsFollowUp: wantsFollowUp || false,
+      wouldRecommend: wouldRecommend || null,
+      timeSpent: timeSpent || null,
       submittedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
 
     // Save to feedback collection
@@ -136,7 +188,28 @@ const submitFeedback = async (req, res) => {
     const feedbackRef = db.collection('exam_feedback').doc();
     await feedbackRef.set(feedbackData);
 
-    return res.status(201).json({ success: true, data: { id: feedbackRef.id, ...feedbackData } });
+    // Also update the submission record with feedback reference
+    const submissionSnapshot = await db.collection('submissions')
+      .where('attempt_id', '==', attemptId)
+      .get();
+    
+    if (!submissionSnapshot.empty) {
+      const submissionDoc = submissionSnapshot.docs[0];
+      await submissionDoc.ref.update({
+        feedbackId: feedbackRef.id,
+        feedbackSubmitted: true,
+        feedbackRating: rating,
+        feedbackUpdatedAt: new Date().toISOString()
+      });
+    }
+
+    return res.status(201).json({ 
+      success: true, 
+      data: { 
+        id: feedbackRef.id, 
+        ...feedbackData 
+      } 
+    });
   } catch (error) {
     console.error('Submit feedback error:', error.message);
     return res.status(500).json({ success: false, message: error.message });
@@ -159,6 +232,34 @@ const getSubmissions = async (req, res) => {
   }
 };
 
+/**
+ * 📊 Get feedback for a specific attempt
+ * GET /api/exam-execution/:attemptId/feedback
+ */
+const getFeedback = async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const db = require('../config/firebase').db;
+    
+    const feedbackSnapshot = await db.collection('exam_feedback')
+      .where('attemptId', '==', attemptId)
+      .get();
+    
+    if (feedbackSnapshot.empty) {
+      return res.status(200).json({ success: true, data: null });
+    }
+    
+    const feedbackDoc = feedbackSnapshot.docs[0];
+    return res.status(200).json({ 
+      success: true, 
+      data: { id: feedbackDoc.id, ...feedbackDoc.data() } 
+    });
+  } catch (error) {
+    console.error('Get feedback error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   start,
   metadata,
@@ -169,4 +270,5 @@ module.exports = {
   results,
   submitFeedback,
   getSubmissions,
+  getFeedback,
 };

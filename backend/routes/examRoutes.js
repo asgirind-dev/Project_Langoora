@@ -10,7 +10,8 @@ const {
   updateExamDraft,
   updateExam,
   getAllExams,
-  getStudentExams,
+  getAllExamsDev, // NEW: Import dev function
+  getStudentExams, 
   deleteStudentExam,
   uploadAsset,
   deleteAsset
@@ -31,8 +32,30 @@ const upload = require('../middleware/uploadMiddleware');
 
 // ============================================================
 //  TUTOR / ADMIN ENDPOINTS (protected, literal paths first)
+//  PUBLIC ENDPOINTS (No authentication required)
 // ============================================================
 
+/**
+ * 📚 Get all published exams for students to browse
+ * GET /api/exams/available
+ */
+router.get('/available', getAllExams);
+
+/**
+ * 🛠️ DEV: Get ALL exams from Firestore (NO AUTH)
+ * GET /api/exams/dev/all
+ * ⚠️ FOR DEVELOPMENT ONLY - Remove in production!
+ */
+router.get('/dev/all', getAllExamsDev);
+
+// ============================================================
+//  TUTOR / ADMIN ENDPOINTS (protected)
+// ============================================================
+
+/**
+ * 🎵 📷 Upload exam asset
+ * POST /api/exams/upload-asset
+ */
 router.post('/upload-asset', protect, authorizeRoles('tutor', 'admin'), upload.single('file'), uploadAsset);
 
 /**
@@ -94,6 +117,8 @@ router.get('/:examId', protect, authorizeRoles('tutor', 'admin'), getExamById);
  * DELETE /api/exams/:examId
  */
 router.delete('/:examId', protect, authorizeRoles('tutor', 'admin'), deleteExam);
+//  STUDENT EXAM ATTEMPTS MANAGEMENT
+// ============================================================
 
 /**
  * Update exam status

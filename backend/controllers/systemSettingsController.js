@@ -1,6 +1,13 @@
 // backend/controllers/systemSettingsController.js
 const systemSettingsService = require('../services/systemSettingsService');
 
+// ✅ Helper function defined outside the class to avoid 'this' binding issues
+function isValidEmail(email) {
+  if (!email) return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
 class SystemSettingsController {
   // =============================================
   // 1. HOMEPAGE CMS - HERO BANNERS
@@ -11,6 +18,7 @@ class SystemSettingsController {
       const banners = await systemSettingsService.getHeroBanners();
       return res.status(200).json({ success: true, data: banners });
     } catch (error) {
+      console.error("Error in getBanners:", error);
       return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -24,6 +32,7 @@ class SystemSettingsController {
       const updatedBanners = await systemSettingsService.updateHeroBanners(banners);
       return res.status(200).json({ success: true, data: updatedBanners });
     } catch (error) {
+      console.error("Error in saveBanners:", error);
       return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -37,6 +46,7 @@ class SystemSettingsController {
       const policies = await systemSettingsService.getSecurityPolicies();
       return res.status(200).json({ success: true, data: policies });
     } catch (error) {
+      console.error("Error in getSecuritySettings:", error);
       return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -50,12 +60,13 @@ class SystemSettingsController {
         maintenanceMode,
         sessionTimeouts
       });
-      return res.status(200).json({ 
-        success: true, 
-        message: 'Security policies committed successfully.', 
-        data: updatedPolicies 
+      return res.status(200).json({
+        success: true,
+        message: 'Security policies committed successfully.',
+        data: updatedPolicies
       });
     } catch (error) {
+      console.error("Error in saveSecuritySettings:", error);
       return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -67,35 +78,37 @@ class SystemSettingsController {
   async getGlobalSettings(req, res) {
     try {
       const config = await systemSettingsService.getGlobalConfig();
-      return res.status(200).json({ 
-        success: true, 
-        data: config 
+      return res.status(200).json({
+        success: true,
+        data: config
       });
     } catch (error) {
       console.error("Error in getGlobalSettings:", error);
-      return res.status(500).json({ 
-        success: false, 
-        message: error.message 
+      return res.status(500).json({
+        success: false,
+        message: error.message
       });
     }
   }
 
   async saveGlobalSettings(req, res) {
     try {
+      console.log('📝 saveGlobalSettings called with body:', req.body);
+
       const {
         creditPrice,
         signupBonus,
         platformCommission,
         minPayoutThreshold,
         senderEmail,
-        senderName,  // ✅ Include senderName
+        senderName,
         showAnnouncement,
         announcementText,
         announcementColor
       } = req.body;
 
       // Validate credit price
-      if (creditPrice && (creditPrice < 10 || creditPrice > 1000)) {
+      if (creditPrice !== undefined && (creditPrice < 10 || creditPrice > 1000)) {
         return res.status(400).json({
           success: false,
           message: 'Credit price must be between LKR 10 and LKR 1000'
@@ -103,7 +116,7 @@ class SystemSettingsController {
       }
 
       // Validate signup bonus
-      if (signupBonus && (signupBonus < 0 || signupBonus > 100)) {
+      if (signupBonus !== undefined && (signupBonus < 0 || signupBonus > 100)) {
         return res.status(400).json({
           success: false,
           message: 'Signup bonus must be between 0 and 100 credits'
@@ -111,7 +124,7 @@ class SystemSettingsController {
       }
 
       // Validate platform commission
-      if (platformCommission && (platformCommission < 0 || platformCommission > 100)) {
+      if (platformCommission !== undefined && (platformCommission < 0 || platformCommission > 100)) {
         return res.status(400).json({
           success: false,
           message: 'Platform commission must be between 0% and 100%'
@@ -119,22 +132,22 @@ class SystemSettingsController {
       }
 
       // Validate min payout threshold
-      if (minPayoutThreshold && (minPayoutThreshold < 100 || minPayoutThreshold > 100000)) {
+      if (minPayoutThreshold !== undefined && (minPayoutThreshold < 100 || minPayoutThreshold > 100000)) {
         return res.status(400).json({
           success: false,
           message: 'Minimum payout threshold must be between LKR 100 and LKR 100,000'
         });
       }
 
-      // Validate sender email
-      if (senderEmail && !this.isValidEmail(senderEmail)) {
+      // ✅ FIX: Use the helper function instead of this.isValidEmail
+      if (senderEmail && !isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid email address format'
         });
       }
 
-      // ✅ Validate sender name
+      // Validate sender name
       if (senderName && senderName.length > 50) {
         return res.status(400).json({
           success: false,
@@ -149,11 +162,13 @@ class SystemSettingsController {
         platformCommission,
         minPayoutThreshold,
         senderEmail,
-        senderName,  // ✅ Pass senderName
+        senderName,
         showAnnouncement,
         announcementText,
         announcementColor
       });
+
+      console.log('✅ Global config saved successfully:', updatedConfig);
 
       return res.status(200).json({
         success: true,
@@ -161,19 +176,22 @@ class SystemSettingsController {
         data: updatedConfig
       });
     } catch (error) {
-      console.error("Error in saveGlobalSettings:", error);
+      console.error("❌ Error in saveGlobalSettings:", error);
+      console.error("Stack:", error.stack);
       return res.status(500).json({
         success: false,
-        message: error.message
+        message: error.message || 'Internal server error'
       });
     }
   }
 
   async sendTestEmail(req, res) {
     try {
+      console.log('📧 sendTestEmail called with body:', req.body);
+
       const { senderEmail, senderName } = req.body;
-      
-      // ✅ Validate sender email
+
+      // Validate sender email
       if (!senderEmail) {
         return res.status(400).json({
           success: false,
@@ -181,7 +199,8 @@ class SystemSettingsController {
         });
       }
 
-      if (!this.isValidEmail(senderEmail)) {
+      // ✅ FIX: Use the helper function instead of this.isValidEmail
+      if (!isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid sender email format'
@@ -190,26 +209,24 @@ class SystemSettingsController {
 
       // Send test email
       const result = await systemSettingsService.sendTestEmail(senderEmail, senderName);
-      
+
+      console.log('✅ Test email sent successfully:', result);
+
       return res.status(200).json({
         success: true,
         message: 'Test email sent successfully!',
         data: result
       });
     } catch (error) {
-      console.error("Error in sendTestEmail:", error);
+      console.error("❌ Error in sendTestEmail:", error);
+      console.error("Stack:", error.stack);
       return res.status(500).json({
         success: false,
-        message: error.message
+        message: error.message || 'Failed to send test email'
       });
     }
   }
-
-  // Helper function to validate email
-  isValidEmail(email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  }
 }
 
+// Export as singleton instance
 module.exports = new SystemSettingsController();
