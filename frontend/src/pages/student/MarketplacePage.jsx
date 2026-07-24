@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'; // 🟢 useEffect එකතු කරන ලදී
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, SlidersHorizontal, Clock, BookOpen, Calendar, X, Coins, Loader2 } from 'lucide-react'; // 🔄 Loader icon එකක් එකතු කරන ලදී
+import { Search, SlidersHorizontal, Clock, BookOpen, Calendar, X, Coins, Loader2 } from 'lucide-react';
 import axios from 'axios'; 
 
-// ❌ featuredExams import කිරීම අත්හැර ඇත. examCategories පමණක් mockData වලින් ලබා ගනී.
 import { examCategories } from '../../data/mockData';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -24,20 +23,20 @@ export default function MarketplacePage() {
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState('popular');
 
-  // 🟢 සැබෑ Database Exams දත්ත ලබා ගැනීමට සහ Loading state සඳහා:
+  // Database Exams දත්ත සහ Loading state
   const [exams, setExams] = useState([]); 
   const [loading, setLoading] = useState(true);
 
   const categories = ['All', ...examCategories.map(e => e.name)];
   const difficulties = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
 
-  // 🔌 3. Backend API එකෙන් Live Exams fetch කරගන්නා useEffect එක:
+  // 🔌 Backend API එකෙන් Live Exams fetch කරගන්නා useEffect එක:
   useEffect(() => {
     const fetchLiveExams = async () => {
       try {
         const response = await axios.get('http://localhost:5000/api/exams/all');
         if (response.data.success) {
-          setExams(response.data.exams); // 🎯 Database එකෙන් ආපු exams ටික state එකට දානවා
+          setExams(response.data.exams);
         }
       } catch (error) {
         console.error("Error fetching exams from database:", error);
@@ -48,7 +47,7 @@ export default function MarketplacePage() {
     fetchLiveExams();
   }, []);
 
-  // 🛒 Exam එකක් මිලදී ගැනීමට (Unlock කිරීමට) අදාළ function එක
+  // 🛒 Exam එකක් Unlock කිරීම සඳහා:
   const handleUnlockExam = async (examId, e) => {
     e.stopPropagation(); 
 
@@ -84,15 +83,23 @@ export default function MarketplacePage() {
     }
   };
 
-  // 🔄 4. Filter කරන තැන featuredExams වෙනුවට අලුත් exams state එක පාවිච්චි කිරීම:
-  const filtered = exams.filter(e => {
-    if (search && !e.title.toLowerCase().includes(search.toLowerCase()) && !e.category.toLowerCase().includes(search.toLowerCase())) return false;
-    if (activeCategory !== 'All' && e.category !== activeCategory) return false;
-    if (e.credits < creditRange[0] || e.credits > creditRange[1]) return false; 
-    if (e.rating < minRating) return false;
-    if (difficulty !== 'All' && e.difficulty !== difficulty) return false;
-    return true;
-  });
+  // 🔄 Filter + Sorting එකතු කරන ලද කොටස:
+  const filtered = exams
+    .filter((e) => {
+      if (search && !e.title.toLowerCase().includes(search.toLowerCase()) && !e.category.toLowerCase().includes(search.toLowerCase())) return false;
+      if (activeCategory !== 'All' && e.category !== activeCategory) return false;
+      if (e.credits < creditRange[0] || e.credits > creditRange[1]) return false;
+      if (e.rating < minRating) return false;
+      if (difficulty !== 'All' && e.difficulty !== difficulty) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'rating') return b.rating - a.rating;
+      if (sortBy === 'credits-low') return a.credits - b.credits;
+      if (sortBy === 'credits-high') return b.credits - a.credits;
+      if (sortBy === 'popular') return (b.reviews || 0) - (a.reviews || 0);
+      return 0;
+    });
 
   const clearFilters = () => {
     setSearch('');
@@ -212,11 +219,10 @@ export default function MarketplacePage() {
           <option value="rating" className="bg-[#0f1629]">Highest Rated</option>
           <option value="credits-low" className="bg-[#0f1629]">Credits: Low to High</option> 
           <option value="credits-high" className="bg-[#0f1629]">Credits: High to Low</option>
-          <option value="newest" className="bg-[#0f1629]">Newest First</option>
         </select>
       </div>
 
-      {/* 🟢 Loading State handling */}
+      {/* Loading State */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 gap-3">
           <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
