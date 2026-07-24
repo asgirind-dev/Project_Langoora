@@ -1,35 +1,42 @@
 const { db } = require('../config/firebase');
 
 // ==========================================
-// HELPER 1: Get total credits pool from categories & levels
+// HELPER 1: Fast Parallel Credits Pool Calculation
 // ==========================================
 const getTotalCreditsPool = async () => {
-  let total = 0;
   try {
     const catsSnapshot = await db.collection('exam_categories').get();
     
-    for (const catDoc of catsSnapshot.docs) {
+    // 🚀 Parallel execution for sub-collections reading
+    const poolPromises = catsSnapshot.docs.map(async (catDoc) => {
       const catId = catDoc.id;
       const catData = catDoc.data();
       
-      if (catData.status === 'deleted') continue;
+      if (catData.status === 'deleted') return 0;
       
       const levelsSnapshot = await db.collection(`exam_categories/${catId}/levels`).get();
-      
+      let subTotal = 0;
+
       if (!levelsSnapshot.empty) {
         levelsSnapshot.forEach(levelDoc => {
           const levelData = levelDoc.data();
-          if (levelData.status === 'deleted' || levelData.is_active === 0) return;
-          total += parseInt(levelData.credits) || 0;
+          if (levelData.status !== 'deleted' && levelData.is_active !== 0) {
+            subTotal += parseInt(levelData.credits) || 0;
+          }
         });
       } else {
-        total += parseInt(catData.credits) || 0;
+        subTotal += parseInt(catData.credits) || 0;
       }
-    }
+      return subTotal;
+    });
+
+    const results = await Promise.all(poolPromises);
+    return results.reduce((sum, val) => sum + val, 0);
+
   } catch (error) {
     console.error("Error calculating credits pool:", error);
+    return 0;
   }
-  return total;
 };
 
 // ==========================================
@@ -44,9 +51,6 @@ const fetchActiveUsersCount = async () => {
       
     return snapshot.size;
   } catch (error) {
-    console.error("Error getting active students and tutors:", error);
-    
-    // Fallback filter
     try {
       const fallbackSnapshot = await db.collection('users').where('status', '==', 'active').get();
       const filtered = fallbackSnapshot.docs.filter(doc => {
@@ -61,7 +65,7 @@ const fetchActiveUsersCount = async () => {
 };
 
 // ==========================================
-// 1. GET DASHBOARD STATS (WITH ACCURATE QUICK STATS)
+// 1. GET DASHBOARD STATS (SUPER FAST)
 // ==========================================
 exports.getFinanceStats = async (req, res) => {
   try {
@@ -81,38 +85,35 @@ exports.getFinanceStats = async (req, res) => {
     const startPrev = new Date(prevYear, prevMonth, 1);
     const endPrev = new Date(prevYear, prevMonth + 1, 1);
 
-    try {
-      const txSnapshot = await db.collection('transactions').get();
-      totalTxCount = txSnapshot.size; // DB එකේ තියෙන මුළු Transactions ගණන (7/8)
+    // 🚀 Parallel Execution for Independent Database Queries
+    const [txSnapshot, activeCredits, activeUsers] = await Promise.all([
+      db.collection('transactions').get(),
+      getTotalCreditsPool(),
+      fetchActiveUsersCount()
+    ]);
 
-      txSnapshot.forEach(doc => {
-        const data = doc.data();
+    totalTxCount = txSnapshot.size;
+
+    txSnapshot.forEach(doc => {
+      const data = doc.data();
+      
+      if (data.created_at !== undefined && data.created_at !== null) {
+        const status = String(data.status || '').toLowerCase().trim();
         
-        if (data.created_at !== undefined && data.created_at !== null) {
-          const status = String(data.status || '').toLowerCase().trim();
-          
-          // 🎯 Success/Completed transactions පමණක් Revenue එකට එකතු කරයි
-          if (status === 'success' || status === 'completed') {
-            const amt = Number(data.amount_paid !== undefined ? data.amount_paid : (data.amount || 0));
-            totalRevenue += amt;
-            successfulTxCount += 1;
+        if (status === 'success' || status === 'completed') {
+          const amt = Number(data.amount_paid !== undefined ? data.amount_paid : (data.amount || 0));
+          totalRevenue += amt;
+          successfulTxCount += 1;
 
-            const date = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
-            if (!isNaN(date.getTime())) {
-              if (date >= startCurrent) currentMonthRevenue += amt;
-              else if (date >= startPrev && date < endPrev) prevMonthRevenue += amt;
-            }
+          const date = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
+          if (!isNaN(date.getTime())) {
+            if (date >= startCurrent) currentMonthRevenue += amt;
+            else if (date >= startPrev && date < endPrev) prevMonthRevenue += amt;
           }
         }
-      });
-    } catch (error) {
-      console.warn("Transactions stats error:", error.message);
-    }
+      }
+    });
 
-    const activeCredits = await getTotalCreditsPool();
-    const activeUsers = await fetchActiveUsersCount();
-
-    // 🎯 Avg Transaction calculate කිරීම (Total Revenue / Success Tx Count)
     const avgTransaction = successfulTxCount > 0 ? Math.round(totalRevenue / successfulTxCount) : 0;
 
     let growth = 0;
@@ -121,16 +122,15 @@ exports.getFinanceStats = async (req, res) => {
     } else if (currentMonthRevenue > 0) {
       growth = 100; 
     }
-    growth = Math.round(growth);
 
     res.status(200).json({
       totalRevenue: totalRevenue,
       activeCredits: activeCredits,
       activeUsers: activeUsers,
-      growth: growth,
-      totalTxCount: totalTxCount,           // 🎯 Total transactions count from DB
-      successfulTxCount: successfulTxCount, // 🎯 Successful count
-      avgTransaction: avgTransaction        // 🎯 Accurate average
+      growth: Math.round(growth),
+      totalTxCount: totalTxCount,
+      successfulTxCount: successfulTxCount,
+      avgTransaction: avgTransaction
     });
 
   } catch (error) {
@@ -138,6 +138,7 @@ exports.getFinanceStats = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 // ==========================================
 // 2. GET RECENT TRANSACTIONS (LIMIT 5)
 // ==========================================
@@ -145,10 +146,7 @@ exports.getRecentTransactions = async (req, res) => {
   try {
     const snapshot = await db.collection('transactions').get();
 
-    const filteredDocs = snapshot.docs.filter(doc => {
-      const data = doc.data();
-      return data.created_at !== undefined && data.created_at !== null;
-    });
+    const filteredDocs = snapshot.docs.filter(doc => doc.data().created_at);
 
     const transactionsPromises = filteredDocs.map(async (doc) => {
       const data = doc.data();
@@ -181,7 +179,7 @@ exports.getRecentTransactions = async (req, res) => {
         const dateObj = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
         if (!isNaN(dateObj.getTime())) {
           rawDateObj = dateObj;
-          formattedDate = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          formattedDate = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
       }
 
@@ -228,13 +226,7 @@ exports.getRevenueChartData = async (req, res) => {
       });
     }
 
-    let txSnapshot;
-    try {
-      txSnapshot = await db.collection('transactions').get();
-    } catch (error) {
-      const emptyChart = months.map(({ month }) => ({ month, revenue: 0, credits: 0 }));
-      return res.status(200).json(emptyChart);
-    }
+    const txSnapshot = await db.collection('transactions').get();
 
     const chartData = months.map(({ month, start, end }) => {
       let revenue = 0;
@@ -265,14 +257,13 @@ exports.getRevenueChartData = async (req, res) => {
 };
 
 // ==========================================
-// 4. GET ACTIVE USERS (CONTROLLER ROUTE)
+// 4. GET ACTIVE USERS
 // ==========================================
 exports.getActiveUsers = async (req, res) => {
   try {
     const activeUsers = await fetchActiveUsersCount();
     res.status(200).json({ activeUsers });
   } catch (error) {
-    console.error("Error fetching active users:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -284,14 +275,10 @@ exports.getAllTransactions = async (req, res) => {
   try {
     const snapshot = await db.collection('transactions').get();
 
-    const filteredDocs = snapshot.docs.filter(doc => {
-      const data = doc.data();
-      return data.created_at !== undefined && data.created_at !== null;
-    });
+    const filteredDocs = snapshot.docs.filter(doc => doc.data().created_at);
 
     const transactionsPromises = filteredDocs.map(async (doc) => {
       const data = doc.data();
-      
       let userName = data.student_name || '';
       let userEmail = data.student_email || '';
 
@@ -321,7 +308,6 @@ exports.getAllTransactions = async (req, res) => {
         const s = String(data.status).toLowerCase();
         if (s === 'completed' || s === 'success') statusFormatted = 'Success';
         else if (s === 'failed' || s === 'declined') statusFormatted = 'Failed';
-        else statusFormatted = 'Pending';
       }
 
       let formattedTimestamp = 'N/A';
@@ -358,7 +344,7 @@ exports.getAllTransactions = async (req, res) => {
     res.status(200).json(finalTransactions);
 
   } catch (error) {
-    console.error("Error fetching ledger audit transactions:", error);
+    console.error("Error fetching transactions:", error);
     res.status(500).json({ error: error.message });
   }
 };

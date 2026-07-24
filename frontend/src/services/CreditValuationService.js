@@ -1,71 +1,79 @@
-const { db } = require('../config/firebase');
+import axios from 'axios';
+
+// Backend Credit Valuation API Base URL
+const API_URL = 'http://localhost:5000/api/credit-values';
+
+const getAuthConfig = () => ({
+  headers: { 
+    Authorization: `Bearer ${localStorage.getItem('token')}`,
+    'Content-Type': 'application/json' 
+  }
+});
 
 class CreditValuationService {
-  async getAllCategories() {
+  // 1. Get all exam categories & sub-levels
+  async getCategories() {
     try {
-      const snapshot = await db.collection('exam_categories').get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const response = await axios.get(`${API_URL}/categories`, getAuthConfig());
+      return response.data;
     } catch (error) {
-      throw new Error(`Error fetching categories: ${error.message}`);
+      console.error("Error fetching credit categories:", error);
+      throw error;
     }
   }
 
-  async updateCategoryCreditsDirect(id, data) {
+  // 2. Update credits for a specific level inside a category
+  async updateLevelCredits(categoryId, levelId, credits) {
     try {
-      const docRef = db.collection('exam_categories').doc(id);
-      await docRef.update({
-        credits: data.credits,
-        updatedAt: new Date().toISOString()
-      });
-      return { id, ...data };
+      const response = await axios.put(
+        `${API_URL}/categories/${categoryId}/levels/${levelId}/credits`, 
+        { credits }, 
+        getAuthConfig()
+      );
+      return response.data;
     } catch (error) {
-      throw new Error(`Error updating category credits: ${error.message}`);
+      console.error("Error updating level credits:", error);
+      throw error;
     }
   }
 
-  async updateCategoryCredits(categoryId, levelId, data) {
+  // 3. Update credits for a simple category (without sub-levels)
+  async updateCategoryCredits(categoryId, credits) {
     try {
-      const levelRef = db.collection(`exam_categories/${categoryId}/levels`).doc(levelId);
-      await levelRef.update({
-        credits: data.credits,
-        updatedAt: new Date().toISOString()
-      });
-      return { categoryId, levelId, ...data };
+      const response = await axios.put(
+        `${API_URL}/categories/${categoryId}/credits`, 
+        { credits }, 
+        getAuthConfig()
+      );
+      return response.data;
     } catch (error) {
-      throw new Error(`Error updating level credits: ${error.message}`);
+      console.error("Error updating category credits:", error);
+      throw error;
     }
   }
 
+  // 4. Get history of credit rate changes
   async getCreditHistory() {
     try {
-      const snapshot = await db.collection('exam_categories').get();
-      let allHistory = [];
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.creditHistory && Array.isArray(data.creditHistory)) {
-          allHistory = allHistory.concat(data.creditHistory);
-        }
-      });
-      return allHistory;
+      const response = await axios.get(`${API_URL}/credit-history`, getAuthConfig());
+      return response.data;
     } catch (error) {
-      throw new Error(`Error fetching credit history: ${error.message}`);
+      console.error("Error fetching credit history:", error);
+      throw error;
     }
   }
 
+  // 5. Clear history logs
   async clearCreditHistory() {
     try {
-      const snapshot = await db.collection('exam_categories').get();
-      const batch = db.batch();
-      snapshot.docs.forEach(doc => {
-        const docRef = db.collection('exam_categories').doc(doc.id);
-        batch.update(docRef, { creditHistory: [] });
-      });
-      await batch.commit();
-      return { success: true };
+      const response = await axios.delete(`${API_URL}/credit-history`, getAuthConfig());
+      return response.data;
     } catch (error) {
-      throw new Error(`Error clearing credit history: ${error.message}`);
+      console.error("Error clearing history:", error);
+      throw error;
     }
   }
 }
 
-module.exports = new CreditValuationService();
+// ✅ ES Module Export for Frontend (Vite)
+export default new CreditValuationService();
