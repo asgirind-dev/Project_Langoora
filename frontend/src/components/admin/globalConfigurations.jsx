@@ -2,12 +2,49 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   DollarSign, TrendingUp, Mail, AlertTriangle, RefreshCw,
-  CheckCircle, XCircle
+  CheckCircle, XCircle, Info, ShieldAlert, CheckCircle2, Sparkles
 } from 'lucide-react';
 import GlassCard from '../ui/GlassCard';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import { fetchGlobalConfig, saveGlobalConfig, sendTestEmail } from '../../services/globalConfigService';
+
+// Static style map for the announcement banner controls. Kept as literal
+// class strings (never template-interpolated) so Tailwind's build-time
+// scanner always picks them up — interpolating `${color}` directly into
+// class names silently breaks in production once unused classes are purged.
+const ANNOUNCEMENT_COLORS = [
+  {
+    value: 'amber', label: 'Warning', tag: 'Notice', icon: AlertTriangle,
+    swatch: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
+    bar: 'bg-amber-500/10 border-amber-500/25 text-amber-400',
+    badge: 'border-amber-500/30 text-amber-300',
+  },
+  {
+    value: 'blue', label: 'Info', tag: 'Info', icon: Info,
+    swatch: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+    bar: 'bg-blue-500/10 border-blue-500/25 text-blue-400',
+    badge: 'border-blue-500/30 text-blue-300',
+  },
+  {
+    value: 'red', label: 'Critical', tag: 'Urgent', icon: ShieldAlert,
+    swatch: 'bg-red-500/10 border-red-500/30 text-red-400',
+    bar: 'bg-red-500/10 border-red-500/25 text-red-400',
+    badge: 'border-red-500/30 text-red-300',
+  },
+  {
+    value: 'green', label: 'Success', tag: 'Update', icon: CheckCircle2,
+    swatch: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
+    bar: 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400',
+    badge: 'border-emerald-500/30 text-emerald-300',
+  },
+  {
+    value: 'purple', label: 'Event', tag: 'Event', icon: Sparkles,
+    swatch: 'bg-purple-500/10 border-purple-500/30 text-purple-400',
+    bar: 'bg-purple-500/10 border-purple-500/25 text-purple-400',
+    badge: 'border-purple-500/30 text-purple-300',
+  },
+];
 
 const GlobalConfigurations = forwardRef((props, ref) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -322,49 +359,106 @@ const GlobalConfigurations = forwardRef((props, ref) => {
         </div>
 
         {!isLoading && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={globalConfig.showAnnouncement || false}
-                  onChange={(e) => updateGlobalConfig('showAnnouncement', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600 peer-checked:after:bg-white"></div>
-              </label>
-              <span className="text-sm text-white">Display Announcement Banner</span>
+          <div className="space-y-5">
+            {/* Toggle */}
+            <div className="flex items-center justify-between gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+              <div className="flex items-center gap-4">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={globalConfig.showAnnouncement || false}
+                    onChange={(e) => updateGlobalConfig('showAnnouncement', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600 peer-checked:after:bg-white"></div>
+                </label>
+                <div>
+                  <p className="text-sm text-white font-medium">Display Announcement Banner</p>
+                  <p className="text-[11px] text-gray-500">Shown to every visitor, directly under the navigation bar</p>
+                </div>
+              </div>
+              <Badge color={globalConfig.showAnnouncement ? 'green' : 'red'}>
+                {globalConfig.showAnnouncement ? 'Live' : 'Hidden'}
+              </Badge>
             </div>
 
+            {/* Message */}
             <div className="space-y-2">
-              <label className="text-xs text-gray-400 font-medium block">Announcement Message</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400 font-medium block">Announcement Message</label>
+                <span className="text-[10px] text-gray-500 font-mono">
+                  {(globalConfig.announcementText || '').length}/150
+                </span>
+              </div>
               <textarea
                 rows={2}
+                maxLength={150}
                 value={globalConfig.announcementText || ''}
                 onChange={(e) => updateGlobalConfig('announcementText', e.target.value)}
                 placeholder="e.g., Next Sunday system update from 2.00 AM to 4.00 AM"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm resize-none focus:outline-none focus:border-blue-500/50"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm resize-none focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.05] transition-colors"
               />
+              <p className="text-[10px] text-gray-500">Keep it short — one clear sentence reads best in the bar.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs text-gray-400 font-medium block">Banner Color</label>
-                <select
-                  value={globalConfig.announcementColor || 'amber'}
-                  onChange={(e) => updateGlobalConfig('announcementColor', e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
-                >
-                  <option value="amber">Amber (Warning)</option>
-                  <option value="blue">Blue (Info)</option>
-                  <option value="red">Red (Critical)</option>
-                  <option value="green">Green (Success)</option>
-                  <option value="purple">Purple (Event)</option>
-                </select>
+            {/* Color / style picker */}
+            <div className="space-y-2">
+              <label className="text-xs text-gray-400 font-medium block">Banner Style</label>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {ANNOUNCEMENT_COLORS.map((opt) => {
+                  const isActive = (globalConfig.announcementColor || 'amber') === opt.value;
+                  const OptIcon = opt.icon;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => updateGlobalConfig('announcementColor', opt.value)}
+                      className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition-all ${
+                        isActive
+                          ? `${opt.swatch} ring-1 ring-white/20`
+                          : 'bg-white/[0.02] border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'
+                      }`}
+                    >
+                      <OptIcon size={16} />
+                      <span className="text-[10px] font-medium">{opt.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="flex items-end">
-                <div className={`p-3 rounded-xl w-full text-center text-xs font-medium border border-${globalConfig.announcementColor || 'amber'}-500/20 bg-${globalConfig.announcementColor || 'amber'}-500/10 text-${globalConfig.announcementColor || 'amber'}-400`}>
-                  Preview: {globalConfig.announcementText || 'Announcement will appear here'}
+            </div>
+
+            {/* Live preview, mirrors the real public banner */}
+            <div className="space-y-2">
+              <label className="text-xs text-gray-400 font-medium block">Live Preview</label>
+              <div className="rounded-xl overflow-hidden border border-white/10">
+                <div className="px-4 py-2 bg-white/[0.04] border-b border-white/5 text-[10px] text-gray-500 font-mono tracking-wide">
+                  NAVBAR
+                </div>
+                {(() => {
+                  const active = ANNOUNCEMENT_COLORS.find(
+                    (c) => c.value === (globalConfig.announcementColor || 'amber')
+                  ) || ANNOUNCEMENT_COLORS[0];
+                  const ActiveIcon = active.icon;
+                  return globalConfig.showAnnouncement ? (
+                    <div className={`flex items-center gap-3 px-4 py-2.5 border-b ${active.bar}`}>
+                      <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-white/10 flex-shrink-0">
+                        <ActiveIcon size={13} />
+                      </div>
+                      <span className="text-sm font-medium truncate flex-1 text-white/90">
+                        {globalConfig.announcementText || 'Your announcement message will appear here'}
+                      </span>
+                      <span className={`hidden sm:inline text-[9px] px-2 py-0.5 rounded-full border font-bold tracking-wider uppercase flex-shrink-0 ${active.badge}`}>
+                        {active.tag}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="px-4 py-3 text-center text-[11px] text-gray-600 bg-white/[0.02]">
+                      Banner is turned off — enable it above to preview
+                    </div>
+                  );
+                })()}
+                <div className="px-4 py-6 text-center text-[10px] text-gray-600 bg-white/[0.01]">
+                  Page content
                 </div>
               </div>
             </div>

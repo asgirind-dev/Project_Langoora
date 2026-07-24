@@ -1,40 +1,82 @@
+// frontend/src/services/financeService.js
 import axios from 'axios';
 
+const API_URL = 'http://localhost:5000/api';
 
-const API_URL = 'http://localhost:5000/api/finance';
-
-const getAuthConfig = () => ({
-  headers: { 
-    Authorization: `Bearer ${localStorage.getItem('token')}`,
-    'Content-Type': 'application/json' 
-  }
-});
+const getAuthConfig = () => {
+  const token = localStorage.getItem('token');
+  return {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  };
+};
 
 class FinanceService {
   async getDashboardStats() {
-    const response = await axios.get(`${API_URL}/stats`, getAuthConfig());
-    return response.data;
+    try {
+      const response = await axios.get(
+        `${API_URL}/finance/stats`,
+        getAuthConfig()
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      return null;
+    }
   }
 
   async getRecentTransactions() {
-    const response = await axios.get(`${API_URL}/transactions`, getAuthConfig());
-    return response.data;
+    try {
+      const response = await axios.get(
+        `${API_URL}/finance/transactions`,
+        getAuthConfig()
+      );
+      return response.data || [];
+    } catch (error) {
+      console.error('Error fetching recent transactions:', error);
+      return [];
+    }
   }
 
-  // 🎯 Added method for Transaction Ledger
   async getAllTransactions() {
-    const response = await axios.get(`${API_URL}/all-transactions`, getAuthConfig());
-    return response.data;
+    try {
+      const response = await axios.get(
+        `${API_URL}/finance/all-transactions`,
+        getAuthConfig()
+      );
+      return response.data || [];
+    } catch (error) {
+      console.error('Error fetching all transactions:', error);
+      return [];
+    }
   }
 
   async getRevenueChartData() {
-    const response = await axios.get(`${API_URL}/revenue-chart`, getAuthConfig());
-    return response.data;
+    try {
+      const response = await axios.get(
+        `${API_URL}/finance/revenue-chart`,
+        getAuthConfig()
+      );
+      return response.data || [];
+    } catch (error) {
+      console.error('Error fetching chart data:', error);
+      return [];
+    }
   }
 
   async getActiveUsers() {
-    const response = await axios.get(`${API_URL}/active-users`, getAuthConfig());
-    return response.data;
+    try {
+      const response = await axios.get(
+        `${API_URL}/finance/active-users`,
+        getAuthConfig()
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching active users:', error);
+      return { count: 0 };
+    }
   }
 }
 

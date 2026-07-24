@@ -1,6 +1,8 @@
+// frontend/src/layouts/FinanceAdminLayout.jsx
 import { Outlet, Navigate } from 'react-router-dom';
 import { DollarSign, BookOpen, PieChart, Layers, Coins } from 'lucide-react';
 import DashboardSidebar from '../components/layout/DashboardSidebar';
+import FinanceNotifications from '../components/finance/FinanceNotifications';
 import { useAuth } from '../context/AuthContext'; 
 
 const financeNavItems = [
@@ -19,7 +21,7 @@ const financeNavItems = [
     label: 'Exam Credit Rates', 
     path: 'exam-credits', 
     icon: Coins, 
-    requiredPrivilege: 'manage_subscriptions' // හෝ වෙනත් privilege එකක් තිබේ නම්
+    requiredPrivilege: 'manage_subscriptions'
   },
   { 
     label: 'Tutor Payouts', 
@@ -53,6 +55,12 @@ export default function FinanceAdminLayout() {
       
       <main className="flex-1 ml-64 min-h-screen overflow-x-hidden">
         <div className="p-8">
+          {/* 🔔 Notification Bell - Top Right Corner */}
+          <div className="flex justify-end mb-4">
+            <FinanceNotifications />
+          </div>
+          
+          {/* Page Content */}
           <Outlet />
         </div>
       </main>
