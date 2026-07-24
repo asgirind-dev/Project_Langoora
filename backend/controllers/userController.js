@@ -150,10 +150,54 @@ const deleteUserNode = async (req, res) => {
   }
 };
 
+/**
+ * 6. 👤 GET LOGGED IN STUDENT PROFILE (For Checkout Auto-fill)
+ */
+const getStudentProfile = async (req, res) => {
+  try {
+    const studentId = req.user?.uid || req.user?.id;
+
+    // 🔍 1. ලොග් වෙලා ඉන්න යූසර්ගේ ID එක backend එකට එන්නේ මොකක්ද කියලා බලන්න
+    console.log("=== DEBUG: REQUESTED STUDENT ID ===", studentId);
+
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const userDoc = await db.collection('users').doc(studentId).get();
+
+    // 🔍 2. Firestore එකේ ඒ ID එකෙන් document එකක් තියෙනවද කියලා බලන්න
+    console.log(`=== DEBUG: DOES DOC EXIST FOR ${studentId}? ===`, userDoc.exists);
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+
+    const userData = userDoc.data();
+    
+    // 🔍 3. Firestore එකෙන් ඇත්තටම ඇදලා ගන්නා මුළු ඩේටා ටික terminal එකේ පෙන්වන්න
+    console.log("=== DEBUG: FIRESTORE USER DATA ===", userData);
+
+    return res.status(200).json({
+      success: true,
+      name: userData.name || 'Verified Student',
+      email: userData.email,
+      bankName: userData.bankName || null,
+      accountNo: userData.accountNo || null,
+      accountHolder: userData.accountHolder || userData.name || 'Verified Student'
+    });
+
+  } catch (error) {
+    console.error('Error fetching student profile:', error.message);
+    return res.status(500).json({ success: false, message: 'Server error fetching profile registry.' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   provisionStaffNode,
   toggleUserLifecycle,
   updatePrivileges,
-  deleteUserNode 
+  deleteUserNode,
+  getStudentProfile
 };

@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // 🟢 useEffect එකතු කරන ලදී
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, SlidersHorizontal, Clock, BookOpen, Star, Calendar, X, Coins } from 'lucide-react'; 
-import { featuredExams, examCategories } from '../../data/mockData';
+import { Search, SlidersHorizontal, Clock, BookOpen, Calendar, X, Coins, Loader2 } from 'lucide-react'; // 🔄 Loader icon එකක් එකතු කරන ලදී
+import axios from 'axios'; 
+
+// ❌ featuredExams import කිරීම අත්හැර ඇත. examCategories පමණක් mockData වලින් ලබා ගනී.
+import { examCategories } from '../../data/mockData';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -21,10 +24,68 @@ export default function MarketplacePage() {
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState('popular');
 
+  // 🟢 සැබෑ Database Exams දත්ත ලබා ගැනීමට සහ Loading state සඳහා:
+  const [exams, setExams] = useState([]); 
+  const [loading, setLoading] = useState(true);
+
   const categories = ['All', ...examCategories.map(e => e.name)];
   const difficulties = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
 
-  const filtered = featuredExams.filter(e => {
+  // 🔌 3. Backend API එකෙන් Live Exams fetch කරගන්නා useEffect එක:
+  useEffect(() => {
+    const fetchLiveExams = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/exams/all');
+        if (response.data.success) {
+          setExams(response.data.exams); // 🎯 Database එකෙන් ආපු exams ටික state එකට දානවා
+        }
+      } catch (error) {
+        console.error("Error fetching exams from database:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLiveExams();
+  }, []);
+
+  // 🛒 Exam එකක් මිලදී ගැනීමට (Unlock කිරීමට) අදාළ function එක
+  const handleUnlockExam = async (examId, e) => {
+    e.stopPropagation(); 
+
+    const confirmUnlock = window.confirm("Are you sure you want to unlock this exam using your credits?");
+    if (!confirmUnlock) return;
+
+    try {
+      const token = localStorage.getItem('token'); 
+
+      if (!token) {
+        alert("Please login first to unlock exams!");
+        navigate('/login');
+        return;
+      }
+
+      const response = await axios.post(
+        'http://localhost:5000/api/exams/purchase',
+        { exam_id: examId },
+        {
+          headers: {
+            Authorization: `Bearer ${token}` 
+          }
+        }
+      );
+
+      if (response.data.success) {
+        alert("Exam unlocked successfully! 🎉");
+        navigate('/student/exams'); 
+      }
+    } catch (error) {
+      console.error("Unlock exam error:", error);
+      alert(error.response?.data?.message || "Failed to unlock the exam. Please try again.");
+    }
+  };
+
+  // 🔄 4. Filter කරන තැන featuredExams වෙනුවට අලුත් exams state එක පාවිච්චි කිරීම:
+  const filtered = exams.filter(e => {
     if (search && !e.title.toLowerCase().includes(search.toLowerCase()) && !e.category.toLowerCase().includes(search.toLowerCase())) return false;
     if (activeCategory !== 'All' && e.category !== activeCategory) return false;
     if (e.credits < creditRange[0] || e.credits > creditRange[1]) return false; 
@@ -99,7 +160,6 @@ export default function MarketplacePage() {
                 className="w-full accent-blue-500" />
             </div>
             <div>
-              {/* 🟢 LKR වෙනුවට Max Credits range slider එක */}
               <label className="text-sm font-medium text-gray-300 mb-2 block">Max Credits: {creditRange[1]} Credits</label>
               <input type="range" min={0} max={100} step={5} value={creditRange[1]} onChange={e => setCreditRange([0, Number(e.target.value)])}
                 className="w-full accent-blue-500" />
@@ -156,48 +216,62 @@ export default function MarketplacePage() {
         </select>
       </div>
 
-      {/* Exam Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-        {filtered.map((exam, i) => (
-          <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
-            <GlassCard hover className="overflow-hidden cursor-pointer" onClick={() => navigate(`/exam/${exam.id}/preview`)}>
-              <div className="relative h-36 sm:h-44 overflow-hidden">
-                <img src={exam.thumbnail} alt={exam.title} className="w-full h-full object-cover transition-transform duration-300 hover:scale-105" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                <div className="absolute top-3 left-3 flex gap-2">
-                  <Badge color="blue">{exam.category}</Badge>
-                  {exam.tag && <Badge color="amber">{exam.tag}</Badge>}
-                </div>
-                <div className="absolute bottom-3 left-3">
-                  <Badge color={exam.difficulty === 'Advanced' || exam.difficulty === 'Expert' ? 'red' : 'yellow'}>{exam.difficulty}</Badge>
-                </div>
-              </div>
-              <div className="p-4">
-                <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">{exam.title}</h3>
-                <div className="flex items-center gap-2 mb-3">
-                  <img src={exam.tutorAvatar} alt={exam.tutor} className="w-6 h-6 rounded-full object-cover" />
-                  <span className="text-xs text-gray-400">{exam.tutor}</span>
-                </div>
-                <StarRating rating={exam.rating} count={exam.reviews} size={13} />
-                <div className="flex items-center gap-3 text-xs text-gray-400 mt-2 mb-4">
-                  <span className="flex items-center gap-1"><Clock size={11} />{exam.duration}</span>
-                  <span className="flex items-center gap-1"><BookOpen size={11} />{exam.questions} Q</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Coins size={16} className="text-amber-400" />
-                    <span className="text-lg sm:text-xl font-bold text-amber-400">{exam.credits}</span>
-                    <span className="text-xs text-gray-400">Credits</span>
+      {/* 🟢 Loading State handling */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-3">
+          <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+          <p className="text-gray-400 text-sm">Fetching live exams from database...</p>
+        </div>
+      ) : (
+        /* Exam Grid */
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+          {filtered.map((exam, i) => (
+            <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
+              <GlassCard hover className="overflow-hidden cursor-pointer" onClick={() => navigate(`/exam/${exam.id}/preview`)}>
+                <div className="relative h-36 sm:h-44 overflow-hidden">
+                  <img src={exam.thumbnail} alt={exam.title} className="w-full h-full object-cover transition-transform duration-300 hover:scale-105" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                  <div className="absolute top-3 left-3 flex gap-2">
+                    <Badge color="blue">{exam.category}</Badge>
+                    {exam.tag && <Badge color="amber">{exam.tag}</Badge>}
                   </div>
-                  <Button variant="primary" size="sm">Unlock</Button>
+                  <div className="absolute bottom-3 left-3">
+                    <Badge color={exam.difficulty === 'Advanced' || exam.difficulty === 'Expert' ? 'red' : 'yellow'}>{exam.difficulty}</Badge>
+                  </div>
                 </div>
-              </div>
-            </GlassCard>
-          </motion.div>
-        ))}
-      </div>
+                <div className="p-4">
+                  <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">{exam.title}</h3>
+                  <div className="flex items-center gap-2 mb-3">
+                    <img src={exam.tutorAvatar} alt={exam.tutor} className="w-6 h-6 rounded-full object-cover" />
+                    <span className="text-xs text-gray-400">{exam.tutor}</span>
+                  </div>
+                  <StarRating rating={exam.rating} count={exam.reviews} size={13} />
+                  <div className="flex items-center gap-3 text-xs text-gray-400 mt-2 mb-4">
+                    <span className="flex items-center gap-1"><Clock size={11} />{exam.duration}</span>
+                    <span className="flex items-center gap-1"><BookOpen size={11} />{exam.questions} Q</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Coins size={16} className="text-amber-400" />
+                      <span className="text-lg sm:text-xl font-bold text-amber-400">{exam.credits}</span>
+                      <span className="text-xs text-gray-400">Credits</span>
+                    </div>
+                    <Button 
+                      variant="primary" 
+                      size="sm"
+                      onClick={(e) => handleUnlockExam(exam.id, e)}
+                    >
+                      Unlock
+                    </Button>
+                  </div>
+                </div>
+              </GlassCard>
+            </motion.div>
+          ))}
+        </div>
+      )}
 
-      {filtered.length === 0 && (
+      {!loading && filtered.length === 0 && (
         <div className="text-center py-16">
           <BookOpen size={48} className="text-gray-600 mx-auto mb-4" />
           <p className="text-gray-400 text-lg">No exams found</p>

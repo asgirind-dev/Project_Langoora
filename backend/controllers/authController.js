@@ -1,13 +1,13 @@
 const { db, auth } = require('../config/firebase'); 
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 // Service Layer Link integration
 const authService = require('../services/authService');
 const tutorValidationService = require('../services/tutorValidationService'); 
 
 // ==========================================
-// 1. REGISTER LOGIC
+// 1. REGISTER LOGIC (පාස්වර්ඩ් එක Firestore එකට යැවීම ඉවත් කර ඇත)
 // ==========================================
 exports.registerUser = async (req, res) => {
   const { email, password, role, userData } = req.body;
@@ -58,6 +58,7 @@ exports.registerUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // ✅ Firebase Auth එකේ විතරක් පරිශීලකයාව නිර්මාණය කරයි (පාස්වර්ඩ් එක මෙතැනදී ආරක්ෂිතව Auth එකට යයි)
     const userRecord = await auth.createUser({
       email: formattedEmail,
       password: password,
@@ -68,8 +69,10 @@ exports.registerUser = async (req, res) => {
       uid: userRecord.uid,
       email: formattedEmail,
       password: hashedPassword, 
+      // 🛡️ password/hashedPassword field එක සම්පූර්ණයෙන්ම ඉවත් කරන ලදී!
       role: finalRole, 
       status: finalRole === 'tutor' ? 'pending' : 'active',
+      credits: finalRole === 'student' ? 300 : 0, // 🪙 Students ලට default credits 300 ක් ලබාදේ
       joined: new Date().toISOString().split('T')[0],
       name: userData.name.trim(),
       phone: userData.phone.trim(),
@@ -121,85 +124,50 @@ exports.registerUser = async (req, res) => {
 };
 
 // ==========================================
-// 2. UNIFIED LOGIN GATEWAY LOGIC
+// 2. UNIFIED LOGIN GATEWAY LOGIC (Firebase ID Token මත පමණක් ක්‍රියා කරයි)
 // ==========================================
 exports.loginUser = async (req, res) => {
-  const { email, password, idToken } = req.body;
+  const { idToken } = req.body; // 👈 Frontend එකෙන් එවන Firebase Firebase-Auth ID Token එක
 
   try {
-    if (idToken) {
-      const decodedToken = await auth.verifyIdToken(idToken);
-      const uid = decodedToken.uid;
-      const emailFromToken = decodedToken.email;
-      const nameFromToken = decodedToken.name || 'User';
+    if (!idToken) {
+      return res.status(400).json({ message: 'Authentication requires a valid Firebase Identity Token.' });
+    }
 
-      let userDoc = await db.collection('users').doc(uid).get();
+    // 🔒 Firebase Auth හරහා Token එක Verify කර UID එක ලබා ගැනීම
+    const decodedToken = await auth.verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+    const emailFromToken = decodedToken.email;
+    const nameFromToken = decodedToken.name || 'User';
 
-      if (!userDoc.exists) {
-        return res.status(200).json({
-          status: 'profile_incomplete',
-          uid: uid,
-          email: emailFromToken,
-          name: nameFromToken
-        });
-      }
+    let userDoc = await db.collection('users').doc(uid).get();
 
-      const userData = userDoc.data();
-      if (userData.status === 'suspended') {
-        return res.status(403).json({ message: 'Your account has been suspended!' });
-      }
-
-      const appToken = jwt.sign(
-        { id: uid, role: userData.role },
-        process.env.JWT_SECRET || 'fallback_secret_key',
-        { expiresIn: '1d' }
-      );
-
-      return res.status(200).json({ 
-        token: appToken, 
-        user: { id: uid, uid: uid, ...userData } 
+    // Firestore එකේ තවම ප්‍රොෆයිල් එක හැදිලා නැත්නම් (Google Login වගේ වෙලාවකදී)
+    if (!userDoc.exists) {
+      return res.status(200).json({
+        status: 'profile_incomplete',
+        uid: uid,
+        email: emailFromToken,
+        name: nameFromToken
       });
     }
 
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Please provide valid credentials or an identity idToken.' });
-    }
-
-    const userSnapshot = await db.collection('users').where('email', '==', email.toLowerCase().trim()).get();
-    if (userSnapshot.empty) {
-      return res.status(404).json({ message: 'User not found!' });
-    }
-
-    let userData = null;
-    let userId = null;
-    userSnapshot.forEach(doc => {
-      userData = doc.data();
-      userId = doc.id;
-    });
-
+    const userData = userDoc.data();
     if (userData.status === 'suspended') {
       return res.status(403).json({ message: 'Your account has been suspended!' });
     }
 
-    if (userData.password && (userData.password.startsWith('$2a$') || userData.password.startsWith('$2b$'))) {
-      const isMatch = await bcrypt.compare(password, userData.password);
-      if (!isMatch) return res.status(400).json({ message: 'Invalid credentials!' });
+    // ඇප් එක ඇතුළේ පාවිච්චි කරන්න අපේම JWT එකක් Sign කිරීම
+    const appToken = jwt.sign(
+      { id: uid, role: userData.role },
+      process.env.JWT_SECRET || 'fallback_secret_key',
+      { expiresIn: '1d' }
+    );
 
-      const appToken = jwt.sign(
-        { id: userId, role: userData.role },
-        process.env.JWT_SECRET || 'fallback_secret_key',
-        { expiresIn: '1d' }
-      );
-
-      delete userData.password; 
-      
-      return res.status(200).json({ 
-        token: appToken, 
-        user: { id: userId, uid: userId, ...userData } 
-      });
-    }
-
-    return res.status(400).json({ message: 'Invalid identity target authentication method.' });
+    return res.status(200).json({ 
+      token: appToken, 
+      user: { id: uid, uid: uid, ...userData } 
+    });
 
   } catch (error) {
     console.error('Login Failure:', error);
@@ -238,6 +206,7 @@ exports.completeGoogleRegistration = async (req, res) => {
       dob: dob,
       role: role || 'student',
       status: 'active',
+      credits: role === 'student' ? 300 : 0,
       joined: new Date().toISOString().split('T')[0], 
       privileges: [],
       createdAt: new Date().toISOString()

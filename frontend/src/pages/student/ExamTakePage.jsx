@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, AlertTriangle, ChevronLeft, ChevronRight, Flag, CheckCircle, Mic, SkipForward, Send, LayoutGrid, X } from 'lucide-react';
+import { Clock, AlertTriangle, ChevronLeft, ChevronRight, Flag, CheckCircle, Mic, SkipForward, Send, LayoutGrid, X, Loader2 } from 'lucide-react';
+import axios from 'axios'; // 🔌 Axios import කරන ලදී
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 
@@ -23,7 +24,7 @@ const mockQuestions = Array.from({ length: 20 }, (_, i) => ({
 const sections = ['All', 'Grammar', 'Vocabulary', 'Listening', 'Reading'];
 
 export default function ExamTakePage() {
-  const { id } = useParams();
+  const { id } = useParams(); // 🆔 මේක තමයි purchased_exams document ID එක (Purchase ID)
   const navigate = useNavigate();
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -34,12 +35,17 @@ export default function ExamTakePage() {
   const [tabWarning, setTabWarning] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // 🔄 Loading state
   const intervalRef = useRef(null);
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
       setTimeLeft(t => {
-        if (t <= 0) { clearInterval(intervalRef.current); setSubmitModal(true); return 0; }
+        if (t <= 0) { 
+          clearInterval(intervalRef.current); 
+          handleSubmit(); // ⏰ වෙලාව ඉවර වුනොත් Auto Submit වෙනවා
+          return 0; 
+        }
         return t - 1;
       });
     }, 1000);
@@ -65,12 +71,44 @@ export default function ExamTakePage() {
   const answered = Object.keys(answers).length;
   const filteredQs = paletteSection === 'All' ? mockQuestions : mockQuestions.filter(q => q.section === paletteSection);
 
-  const timePercent = (timeLeft / (105 * 60)) * 100;
   const timeColor = timeLeft < 300 ? 'text-red-400' : timeLeft < 900 ? 'text-yellow-400' : 'text-emerald-400';
 
-  const handleSubmit = () => {
+  // 🔌 5. Submit handle කරන සැබෑ API Connection එක:
+  const handleSubmit = async () => {
+    setSubmitModal(false);
+    setIsSubmitting(true);
     clearInterval(intervalRef.current);
-    navigate(`/exam/${id}/results`);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert("Session expired. Please login again.");
+        navigate('/login');
+        return;
+      }
+
+      // Backend API එකට POST Request එක යැවීම
+      const response = await axios.post(
+        `http://localhost:5000/api/exams/submit/${id}`, 
+        { answers }, 
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.data.success) {
+        alert(`Exam submitted successfully! Your Score: ${response.data.score}% 🎉`);
+        // ලකුණු පෙන්වන Results Page එකට යවනවා (score එකත් එක්ක)
+        navigate(`/exam/${id}/results`, { state: { score: response.data.score } });
+      }
+    } catch (error) {
+      console.error("Error submitting exam:", error);
+      alert(error.response?.data?.message || "Failed to submit exam. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -94,11 +132,11 @@ export default function ExamTakePage() {
             <button onClick={() => setPaletteOpen(true)} className="lg:hidden p-2 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10">
               <LayoutGrid size={16} className="text-gray-300" />
             </button>
-            <Button variant="danger" size="sm" onClick={() => setSubmitModal(true)} className="hidden sm:flex">
-              <Send size={14} /> Submit
+            <Button variant="danger" size="sm" onClick={() => setSubmitModal(true)} className="hidden sm:flex" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Submit
             </Button>
-            <Button variant="danger" size="sm" onClick={() => setSubmitModal(true)} className="sm:hidden">
-              <Send size={14} />
+            <Button variant="danger" size="sm" onClick={() => setSubmitModal(true)} className="sm:hidden" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             </Button>
           </div>
         </div>
@@ -110,6 +148,14 @@ export default function ExamTakePage() {
           />
         </div>
       </div>
+
+      {/* Loading Overlay */}
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+          <p className="text-gray-300 text-sm">Evaluating answers and saving score...</p>
+        </div>
+      )}
 
       <div className="flex pt-[68px] min-h-screen">
         {/* Main Question Area */}

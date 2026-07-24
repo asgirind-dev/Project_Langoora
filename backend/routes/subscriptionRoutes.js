@@ -1,17 +1,32 @@
 const express = require('express');
 const router = express.Router();
-const subController = require('../controllers/subscriptionController');
+const subscriptionController = require('../controllers/subscriptionController');
+const { protect } = require('../middleware/authMiddleware'); 
 
-// Plans Endpoints
-router.get('/plans', subController.getPlans);
-router.post('/plans', subController.createPlan);
-router.put('/plans/:id', subController.updatePlan);
-router.delete('/plans/:id', subController.deletePlan);
+// ==========================================
+// 1. SUBSCRIPTION PLANS ENDPOINTS
+// ==========================================
+router.get('/plans', subscriptionController.getPlans);
+router.post('/plans', subscriptionController.createPlan);
+router.put('/plans/:id', subscriptionController.updatePlan);
+router.delete('/plans/:id', subscriptionController.deletePlan);
 
-// Exam Categories Endpoints
-router.get('/categories', subController.getCategories);
-router.post('/categories', subController.createCategory);
-router.put('/categories/:id', subController.updateCategory);
-router.delete('/categories/:id', subController.deleteCategory);
+// ==========================================
+// 2. 💳 SECURE CHECKOUT & CHARGE ENDPOINT
+// ==========================================
+// 💳 PayHere එකට අවශ්‍ය Data Generate කරලා දෙන තැන (Controller එක ඇතුළේ ලියලා තියෙන්නේ)
+router.post('/charge', subscriptionController.upgradeSubscription);
+
+// 🔄 PayHere සර්වර් එකෙන් සැබෑ ලෙසම සල්ලි කැපුනම කෝල් කරන Webhook Listener එක
+// ⚠️ මේකට 'protect' දාන්න එපා! මොකද මේක කෝල් කරන්නේ යූසර් නෙවෙයි, PayHere සර්වර් එකෙන්.
+router.post('/payhere-notify', subscriptionController.handlePayhereNotification);
+
+// ==========================================
+// 3. EXAM CATEGORIES ENDPOINTS
+// ==========================================
+router.get('/categories', subscriptionController.getCategories);
+router.post('/categories', subscriptionController.createCategory);
+router.put('/categories/:id', subscriptionController.updateCategory);
+router.delete('/categories/:id', subscriptionController.deleteCategory);
 
 module.exports = router;

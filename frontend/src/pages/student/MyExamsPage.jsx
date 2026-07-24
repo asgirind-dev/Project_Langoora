@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BookOpen, Play, BarChart2, Clock, CheckCircle, XCircle, Trash2, Plus, CalendarPlus, Check, User } from 'lucide-react';
@@ -7,79 +7,53 @@ import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 
-// 📚 Langoora System-Aligned Mock Data Cluster (With Tutors)
-// 📚 Langoora System-Aligned Mock Data Cluster (With Real-Themed Visuals)
-const initialExams = [
-  { 
-    id: '1', 
-    title: 'JLPT N5 Full Mock Exam - Paper 01', 
-    tutor: 'Dinushi Perera', 
-    category: 'JLPT', 
-    level: 'N5', 
-    duration: '105 min', 
-    questions: 108, 
-    lastScore: 78, 
-    attempts: 2, 
-    status: 'in-progress', 
-    thumbnail: 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400' // Mt. Fuji & Sakura Theme
-  },
-  { 
-    id: '2', 
-    title: 'EPS-TOPIK Standard Full Simulation 2026', 
-    tutor: 'Ashan Fernando', 
-    category: 'EPS-TOPIK', 
-    level: 'Standard', 
-    duration: '70 min', 
-    questions: 80, 
-    lastScore: 62, 
-    attempts: 1, 
-    status: 'completed', 
-    thumbnail: 'https://images.pexels.com/photos/2389171/pexels-photo-2389171.jpeg?w=400' // Traditional Korean Palace / Seoul Theme
-  },
-  { 
-    id: '3', 
-    title: 'JLPT N4 Grammar & Vocabulary Mastery Test', 
-    tutor: 'Rohan Ranasinghe', 
-    category: 'JLPT', 
-    level: 'N4', 
-    duration: '90 min', 
-    questions: 75, 
-    lastScore: null, 
-    attempts: 0, 
-    status: 'not-started', 
-    thumbnail: 'https://images.pexels.com/photos/1440476/pexels-photo-1440476.jpeg?w=400' // Japanese Architecture / Torii Gate Theme
-  },
-  { 
-    id: '4', 
-    title: 'JLPT N5 Listening Rehearsal Module', 
-    tutor: 'Shilpa Pieris', 
-    category: 'JLPT', 
-    level: 'N5', 
-    duration: '45 min', 
-    questions: 40, 
-    lastScore: 88, 
-    attempts: 3, 
-    status: 'completed', 
-    thumbnail: 'https://images.pexels.com/photos/1822605/pexels-photo-1822605.jpeg?w=400' // Tokyo Streets Neon / Modern Japan Theme
-  },
-];
-
 const statusColors = { 'completed': 'green', 'in-progress': 'yellow', 'not-started': 'gray' };
 const statusLabels = { 'completed': 'Completed', 'in-progress': 'In Progress', 'not-started': 'Not Started' };
 
 export default function MyExamsPage() {
   const navigate = useNavigate();
-  const [exams, setExams] = useState(initialExams); 
+  
+  // 🔄 Mock data වෙනුවට හිස් array එකක් default ලෙස තබන්න
+  const [exams, setExams] = useState([]); 
+  const [loading, setLoading] = useState(true); // API එකෙන් දත්ත එනකල් loading state එකක්
   const [filter, setFilter] = useState('all'); 
 
   // --- Modal Control States ---
-  const [isModalOpen, setIsModalOpen] = useState(false);
+ const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedExamId, setSelectedExamId] = useState(null);
 
   // --- Planner Integration States ---
   const [schedulingExamId, setSchedulingExamId] = useState(null); 
   const [selectedDate, setSelectedDate] = useState('');
   const [successExamId, setSuccessExamId] = useState(null); 
+
+  // ==========================================
+  // 🔌 BACKEND API එකෙන් BUY කරපු EXAMS FETCH කිරීම
+  // ==========================================
+  useEffect(() => {
+    const fetchMyExams = async () => {
+      try {
+        const token = localStorage.getItem('token'); // Auth Token එක ගන්නවා
+        
+        const response = await axios.get('http://localhost:5000/api/exams/my-exams', {
+          headers: {
+            'Authorization': `Bearer ${token}` // Logged-in student කවුද කියලා backend එකට යවනවා
+          }
+        });
+
+        if (response.data.success) {
+          // Backend එකෙන් එන format එකට අනුව state එක update කිරීම
+          setExams(response.data.exams);
+        }
+      } catch (error) {
+        console.error("Error fetching purchased exams:", error);
+      } finally {
+        setLoading(false); // Loading එක ඉවරයි
+      }
+    };
+
+    fetchMyExams();
+  }, []);
 
   const openDeleteConfirm = (id) => {
     setSelectedExamId(id);
@@ -88,12 +62,14 @@ export default function MyExamsPage() {
 
   const handleConfirmDelete = async () => {
     try {
-      await axios.delete(`http://localhost:5000/api/student-exams/${selectedExamId}`);
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:5000/api/exams/my-exams/${selectedExamId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+});
       setExams(exams.filter(exam => exam.id !== selectedExamId));
       setIsModalOpen(false); 
     } catch (error) {
-      console.error("Backend Error, but deleting from UI for testing:", error);
-      setExams(exams.filter(exam => exam.id !== selectedExamId));
+      console.error("Backend Error deleting exam:", error);
       setIsModalOpen(false);
     }
   };
@@ -160,12 +136,18 @@ export default function MyExamsPage() {
         ))}
       </div>
 
-      {/* EXAMS GRID */}
-      {filtered.length === 0 ? (
+      {/* LOADING STATE */}
+      {loading ? (
+        <div className="text-center py-16 text-gray-400">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          Loading your purchased exams...
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-500 border border-dashed border-white/10 rounded-2xl">
           No active exam assets mapped in this node branch.
         </div>
       ) : (
+        /* EXAMS GRID */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filtered.map((exam, i) => (
             <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
@@ -173,9 +155,7 @@ export default function MyExamsPage() {
                 <div className="flex h-full min-h-[165px]">
                   <img src={exam.thumbnail} alt={exam.title} className="w-32 object-cover flex-shrink-0 group-hover:scale-105 transition-transform duration-500" />
                   
-                 
                   <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
-                    
                     <div className="space-y-2">
                       {/* Top Row: Title & Badge Container */}
                       <div className="flex items-start justify-between gap-4">
@@ -187,7 +167,6 @@ export default function MyExamsPage() {
                         </div>
                       </div>
 
-                      
                       <div className="flex items-center gap-1.5 text-xs text-blue-400/90 font-medium">
                         <User size={13} className="text-blue-400/70" />
                         <span>Published by: <span className="text-gray-200 font-semibold">{exam.tutor || 'Alternative Tutor'}</span></span>
@@ -195,9 +174,9 @@ export default function MyExamsPage() {
 
                       {/* Meta Info Row */}
                       <div className="flex items-center gap-3 text-xs text-gray-400 bg-white/[0.02] py-1 px-2 rounded-lg w-max border border-white/5 font-medium">
-                        <span className="flex items-center gap-1 font-mono"><Clock size={11} />{exam.duration}</span>
+                        <span className="flex items-center gap-1 font-mono"><Clock size={11} />{exam.duration} min</span>
                         <span className="h-2 w-[1px] bg-white/10" />
-                        <span className="flex items-center gap-1 font-mono"><BookOpen size={11} />{exam.questions} Q</span>
+                        
                         <span className="h-2 w-[1px] bg-white/10" />
                         <span>{exam.attempts} attempts</span>
                       </div>
@@ -259,10 +238,7 @@ export default function MyExamsPage() {
                           </button>
                         )}
                       </div>
-
-                     
                     </div>
-
                   </div>
                 </div>
               </GlassCard>

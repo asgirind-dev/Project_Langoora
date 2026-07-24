@@ -42,7 +42,6 @@ import TutorProfilePage from "../pages/tutor/TutorProfilePage";
 import TutorAnalyticsPage from "../pages/tutor/TutorAnalyticsPage";
 import TutorReviewsPage from "../pages/tutor/TutorReviewsPage";
 
-
 // Academic Validator Pages
 import AcademicValidatorDashboard from "../pages/validator/AcademicValidatorDashboard";
 import TutorVerificationPage from "../pages/validator/TutorVerificationPage";
@@ -61,6 +60,8 @@ import PerformancePage from "../pages/student/PerformancePage";
 import StudentProfilePage from '../pages/student/StudentProfilePage';
 import SettingsPage from '../pages/student/SettingsPage';
 import StudyPlannerPage from '../pages/student/StudyPlannerPage';
+import PaymentSuccess from '../pages/student/PaymentSuccess';
+
 // Finance Admin Layout & Pages
 import FinanceDashboard from "../pages/finance_admin/FinanceDashboard";
 import SubscriptionManager from "../pages/finance_admin/SubscriptionManager";
@@ -111,17 +112,30 @@ export default function AppRoutes() {
           />
 
           {/* 3. Student Segment Workspace */}
-          <Route path="/student" element={<ProtectedRoute allowedRoles={['student']}><StudentLayout /></ProtectedRoute>}>
-            <Route index element={<StudentDashboard />} />
-            <Route path="exams" element={<MyExamsPage />} />
-            <Route path="planner" element={<StudyPlannerPage />} />
-            <Route path="performance" element={<PerformancePage />} />
-            <Route path="subscription" element={<SubscriptionPage />} />
-            <Route path="marketplace" element={<MarketplacePage />} />
-            <Route path="profile" element={<StudentProfilePage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/student" replace />} />
-          </Route>
+          {/* 3. Student Segment Workspace */}
+{/* 💡 Sidebar/Navbar තියෙන සාමාන්‍ය Dashboard Pages */}
+<Route path="/student" element={<ProtectedRoute allowedRoles={['student']}><StudentLayout /></ProtectedRoute>}>
+  <Route index element={<StudentDashboard />} />
+  <Route path="exams" element={<MyExamsPage />} />
+  <Route path="planner" element={<StudyPlannerPage />} />
+  <Route path="performance" element={<PerformancePage />} />
+  <Route path="subscription" element={<SubscriptionPage />} />
+  <Route path="marketplace" element={<MarketplacePage />} />
+  <Route path="profile" element={<StudentProfilePage />} />
+  <Route path="settings" element={<SettingsPage />} />
+  <Route path="*" element={<Navigate to="/student" replace />} />
+  <Route path="/student/exam-results/:id" element={<ExamResultsPage />} />
+</Route>
+
+{/* 💡 ඩාෂ්බෝඩ් Layout එකෙන් පිටත ස්වාධීනව වැඩ කරන Secure Success Route එක (Flicker එක සදහටම ඉවරයි!) */}
+<Route
+  path="/student/payment-success"
+  element={
+    <ProtectedRoute allowedRoles={['student']}>
+      <PaymentSuccess />
+    </ProtectedRoute>
+  }
+/>
 
           {/* 4. Tutor Segment Workspace */}
           <Route path="/tutor" element={<ProtectedRoute allowedRoles={['tutor']}><TutorLayout /></ProtectedRoute>}>

@@ -4,21 +4,44 @@ const userController = require('../controllers/userController');
 const { protect, authorizeRoles } = require('../middleware/authMiddleware');
 const { db, admin } = require('../config/firebase');
 
+// 🔒 සියලුම Routes සඳහා Auth Middleware එක ක්‍රියාත්මක කිරීම
 router.use(protect);
 
-// 🔄 CRUD: Read 
+// ==========================================
+// 👤 STUDENT / USER PROFILE ENDPOINTS
+// ==========================================
+
+// 🔄 CRUD: Read (Updated with Fallback Collection Lookup)
 router.get('/profile', async (req, res) => {
   try {
     const { uid } = req.query;
     if (!uid) return res.status(400).json({ success: false, message: "User ID (uid) is required" });
-    const doc = await db.collection('students').doc(uid).get();
-    if (!doc.exists) return res.status(200).json({ success: true, data: {} });
-    res.status(200).json({ success: true, data: doc.data() });
+    
+    // 1. මුලින්ම ප්‍රධාන 'users' collection එකේ බලනවා
+    let doc = await db.collection('users').doc(uid).get();
+    
+    // 2. 'users' එකේ නැත්නම් විතරක් 'students' එකේ බලනවා
+    if (!doc.exists) {
+      doc = await db.collection('students').doc(uid).get();
+    }
+    
+    // 3. දෙකේම නැත්නම් හිස් object එකක් දෙනවා
+    if (!doc.exists) {
+      return res.status(200).json({ success: true, data: {} });
+    }
+    
+    // 4. ඩේටා තියෙනවා නම් id එකත් එක්කම Frontend එකට යවනවා
+    res.status(200).json({ success: true, data: { id: doc.id, ...doc.data() } });
   } catch (error) {
     console.error("Backend Fetch Profile Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// 👈 💳 NEW: FRONTEND CHECKOUT AUTOFILL ENDPOINT
+// Frontend එකේ Checkout Modal එක ඇතුළේ බැංකු විස්තර dynamic ඇදලා ගන්න කතා කරන්නේ මේකටයි.
+// (router.use(protect) උඩින් දාලා තියෙන නිසා මේකත් auto-protect වෙනවා මචන්)
+router.get('/checkout-profile', userController.getStudentProfile);
 
 router.put('/profile/update', async (req, res) => {
   try {
@@ -35,6 +58,9 @@ router.put('/profile/update', async (req, res) => {
   }
 });
 
+// ==========================================
+// ⚙️ USER SETTINGS ENDPOINTS
+// ==========================================
 router.put('/settings/language', async (req, res) => {
   try {
     const { uid, language } = req.body;
@@ -59,7 +85,9 @@ router.put('/settings/password', async (req, res) => {
   }
 });
 
-// Admin Privileged Block Enforcements
+// ==========================================
+// 🛡️ ADMIN PRIVILEGED BLOCK ENFORCEMENTS
+// ==========================================
 router.use(authorizeRoles('admin'));
 
 router.get('/', userController.getAllUsers);
