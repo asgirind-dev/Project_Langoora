@@ -54,13 +54,25 @@ class SystemSettingsController {
 
   async saveSecuritySettings(req, res) {
     try {
-      const { enableAntiCheat, maxViolationWarnings, maintenanceMode, sessionTimeouts } = req.body;
+      // ✅ Include maintenanceEstimatedTime and maintenanceMessage
+      const { 
+        enableAntiCheat, 
+        maxViolationWarnings, 
+        maintenanceMode, 
+        maintenanceEstimatedTime,  // ✅ Add this
+        maintenanceMessage,        // ✅ Add this
+        sessionTimeouts 
+      } = req.body;
+      
       const updatedPolicies = await systemSettingsService.updateSecurityPolicies({
         enableAntiCheat,
         maxViolationWarnings,
         maintenanceMode,
+        maintenanceEstimatedTime,   // ✅ Add this
+        maintenanceMessage,         // ✅ Add this
         sessionTimeouts
       });
+      
       return res.status(200).json({
         success: true,
         message: 'Security policies committed successfully.',

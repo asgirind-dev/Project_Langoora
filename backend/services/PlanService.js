@@ -71,6 +71,7 @@ class PlanService {
       }
       const currentData = doc.data();
       const updatePayload = { updatedAt: new Date().toISOString() };
+      
       if (planData.sortOrder !== undefined) {
         updatePayload.sortOrder = planData.sortOrder;
       }
@@ -92,13 +93,36 @@ class PlanService {
       if (planData.active !== undefined) {
         updatePayload.active = planData.active === true || planData.active === 'true';
       }
-      if (planData.status !== undefined && planData.status !== currentData.status) {
+      
+      // ✅ FIX: If plan is rejected and being updated, set status to 'pending' for re-approval
+      if (currentData.status === 'rejected') {
+        updatePayload.status = 'pending';
+        updatePayload.reviewNotes = '';
+        updatePayload.reviewedAt = null;
+        
+        // Notify admin that plan has been resubmitted
+        await notificationService.sendToRole(['admin', 'super_admin'], {
+          type: 'plan_resubmitted',
+          title: '🔄 Plan Resubmitted for Review',
+          message: `Plan "${planData.name || currentData.name}" has been updated and resubmitted for approval.`,
+          actionUrl: '/admin/revenue?tab=approvals',
+          planId: id,
+          planName: planData.name || currentData.name
+        });
+      }
+      
+      // If status is explicitly provided in update, use it (but only if not rejected)
+      if (planData.status !== undefined && planData.status !== currentData.status && currentData.status !== 'rejected') {
         updatePayload.status = planData.status;
       }
+      
       const needsReapproval = (planData.status !== undefined && 
                                planData.status !== currentData.status && 
-                               currentData.status === 'approved');
+                               currentData.status === 'approved' && 
+                               currentData.status !== 'rejected');
+      
       await docRef.update(updatePayload);
+      
       if (needsReapproval) {
         await notificationService.sendToRole(['admin', 'super_admin'], {
           type: 'plan_updated',
@@ -109,6 +133,7 @@ class PlanService {
           planName: currentData.name
         });
       }
+      
       const updated = await docRef.get();
       return { id, ...updated.data() };
     } catch (error) {

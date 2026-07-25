@@ -34,12 +34,20 @@ const creditValuationRoutes = require('./routes/creditValuationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes'); // 👈 Correct import
 
+// ✅ Import maintenance middleware
+const { maintenanceMiddleware } = require('./middleware/maintenanceMiddleware');
+
 const app = express();
 
 // Middlewares
 app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// ✅ Apply maintenance middleware FIRST (before routes)
+// This will check maintenance status for ALL requests
+// But skip paths that don't need it (like auth)
+app.use(maintenanceMiddleware);
 
 // Routing Middleware 
 app.use('/api/exams', examRoutes); 
