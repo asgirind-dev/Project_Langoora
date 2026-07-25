@@ -80,6 +80,12 @@ function TutorAvatar({ tutor, name, size = 36 }) {
   );
 }
 
+// Helper to strip HTML tags safely
+const cleanTitle = (htmlString) => {
+  if (!htmlString) return '';
+  return htmlString.replace(/<[^>]*>?/gm, '');
+};
+
 // ─── Main Page Component ───────────────────────────────────────────────────
 export default function MyExamsPage() {
   const navigate = useNavigate();
@@ -95,7 +101,6 @@ export default function MyExamsPage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [successExamId, setSuccessExamId] = useState(null);
 
-  // Dynamic Categories & Levels Extractor (Handles multiple potential backend naming conventions)
   const categories = [...new Set(exams.map(e => e.category_id || e.category || e.category_name).filter(Boolean))];
   const levels = [...new Set(exams.map(e => e.level_id || e.level || e.level_name).filter(Boolean))];
 
@@ -110,7 +115,6 @@ export default function MyExamsPage() {
         const examList = res.data.exams || res.data.data || [];
         setExams(examList);
 
-        // Fetch tutor profiles dynamically
         const tutorIds = [...new Set(examList.map(e => e.tutor_id).filter(Boolean))];
         if (tutorIds.length > 0) {
           const tutorEntries = await Promise.all(
@@ -150,7 +154,6 @@ export default function MyExamsPage() {
       setExams(prev => prev.filter(exam => (exam.exam_id || exam.id) !== selectedExamId));
     } catch (error) {
       console.error("Delete error:", error);
-      // Fallback UI deletion
       setExams(prev => prev.filter(exam => (exam.exam_id || exam.id) !== selectedExamId));
     } finally {
       setIsModalOpen(false);
@@ -169,7 +172,7 @@ export default function MyExamsPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          title: `Complete ${exam.title}`,
+          title: `Complete ${cleanTitle(exam.title)}`,
           description: `Tutor: ${exam.tutor_name || 'Expert'} · Expected duration: ${exam.duration_minutes || exam.duration || 60} min.`,
           scheduled_date: selectedDate
         })
@@ -340,7 +343,6 @@ export default function MyExamsPage() {
             const tutorName = tutor?.name || exam.tutor_name || 'Expert Tutor';
             const targetExamId = exam.exam_id || exam.id;
 
-            // Duration & Question Fallback Calculations
             const duration = exam.duration_minutes || exam.duration || exam.time || "N/A";
             const totalQuestions = exam.total_questions || exam.questions_count || exam.totalQuestions || exam.questions?.length || 0;
             const isCompleted = (exam.attempts_count || 0) > 0 || exam.status === 'completed' || exam.is_completed;
@@ -352,7 +354,7 @@ export default function MyExamsPage() {
                     <div className={`relative ${viewMode === 'list' ? 'w-48 flex-shrink-0' : 'w-32 flex-shrink-0'} overflow-hidden`}>
                       <img
                         src={exam.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400'}
-                        alt={exam.title}
+                        alt={cleanTitle(exam.title)}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
@@ -377,9 +379,9 @@ export default function MyExamsPage() {
                           </div>
                         </div>
 
-                        {/* Title */}
+                        {/* Title (Clean HTML Tags) */}
                         <h3 className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words">
-                          {exam.title}
+                          {cleanTitle(exam.title)}
                         </h3>
 
                         {/* Description */}

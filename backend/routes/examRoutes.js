@@ -58,6 +58,7 @@ router.post('/purchase', protect, purchaseExam);
  */
 router.get('/my-exams', protect, getStudentExams);
 router.get('/student-exams', protect, getStudentExams);
+router.get('/purchased', protect, getStudentExams);
 
 /**
  * 🗑️ Remove purchased exam from dashboard

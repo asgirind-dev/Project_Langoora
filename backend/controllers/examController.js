@@ -212,7 +212,6 @@ const purchaseExam = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized user." });
     }
 
-    // 🎯 Ensure targetExamId is NEVER undefined to avoid Firestore query crash
     const targetExamId = exam_id || level_id || req.body.id;
 
     if (!targetExamId) {
@@ -222,7 +221,7 @@ const purchaseExam = async (req, res) => {
       });
     }
 
-    // Check existing purchase
+    // 1. Check existing purchase
     const existingPurchase = await db.collection('purchased_exams')
       .where('student_id', '==', studentId)
       .where('exam_id', '==', targetExamId)
@@ -237,12 +236,19 @@ const purchaseExam = async (req, res) => {
 
     let examData = null;
 
-    // 1. Try to fetch from exam_categories/levels
-    if (category_id && level_id) {
+    // 🎯 SMART FETCH LOGIC:
+    // A. Try directly fetching from 'exams' collection
+    const examDoc = await db.collection('exams').doc(targetExamId).get();
+    if (examDoc.exists) {
+      examData = examDoc.data();
+    }
+
+    // B. If not found, try nested category/levels
+    if (!examData && category_id && level_id) {
       const levelDoc = await db.collection('exam_categories')
-        .doc(category_id.toLowerCase())
+        .doc(String(category_id).toLowerCase())
         .collection('levels')
-        .doc(level_id.toLowerCase())
+        .doc(String(level_id).toLowerCase())
         .get();
 
       if (levelDoc.exists) {
@@ -250,21 +256,24 @@ const purchaseExam = async (req, res) => {
       }
     }
 
-    // 2. Try to fetch directly from exams collection
-    if (!examData && targetExamId) {
-      const examDoc = await db.collection('exams').doc(targetExamId).get();
-      if (examDoc.exists) {
-        examData = examDoc.data();
+    // C. Fallback: Search all levels sub-collections if still not found
+    if (!examData) {
+      const groupSnap = await db.collectionGroup('levels').where('id', '==', targetExamId).get();
+      if (!groupSnap.empty) {
+        examData = groupSnap.docs[0].data();
       }
     }
 
-    // 🎯 Determine required credits accurately (Priority: Request > credits > price > credit_cost)
-    let requiredCredits = 0;
-    if (requestCredits !== undefined && Number(requestCredits) > 0) {
-      requiredCredits = Number(requestCredits);
-    } else if (examData) {
-      requiredCredits = Number(examData.credits || examData.price || examData.credit_cost || 0);
+    // 🎯 Validation: Check if Exam Data is found
+    if (!examData) {
+      return res.status(404).json({ 
+        success: false, 
+        message: `Exam '${targetExamId}' not found in database!` 
+      });
     }
+
+    // Calculate Credits accurately from DB
+    const requiredCredits = Number(examData.credits ?? examData.price ?? examData.credit_cost ?? requestCredits ?? 0);
 
     const userRef = db.collection('users').doc(studentId);
     const transactionId = `TRX-${Date.now()}`;
@@ -277,7 +286,6 @@ const purchaseExam = async (req, res) => {
 
       const freshUserData = freshUserDoc.data();
       
-      // Get current credits/wallet_balance from user document
       const currentCredits = Number(
         freshUserData.credits !== undefined 
           ? freshUserData.credits 
@@ -296,7 +304,6 @@ const purchaseExam = async (req, res) => {
       if (freshUserData.wallet_balance !== undefined) updateData.wallet_balance = newBalance;
       if (freshUserData.walletBalance !== undefined) updateData.walletBalance = newBalance;
       
-      // Fallback if none existed
       if (freshUserData.credits === undefined && freshUserData.wallet_balance === undefined) {
         updateData.credits = newBalance;
         updateData.wallet_balance = newBalance;
@@ -318,7 +325,7 @@ const purchaseExam = async (req, res) => {
       transaction.set(transactionRef, {
         order_id: transactionId,
         student_id: studentId,
-        plan_name: `Exam Purchase: ${examData?.level_name || examData?.levelName || examData?.title || targetExamId}`,
+        plan_name: `Exam Purchase: ${examData?.title || examData?.level_name || targetExamId}`,
         credits: requiredCredits,
         amount: requiredCredits,
         payment_method: 'Wallet Credits',
@@ -349,24 +356,61 @@ const purchaseExam = async (req, res) => {
 // =========================================================================
 const getAllExams = async (req, res) => {
   try {
+    // 1. Published / Active Exams ලබා ගැනීම
     const snapshot = await db.collection('exams')
       .where('status', 'in', ['active', 'published'])
       .get();
 
+    // 2. Exam Categories සහ Subcollections (levels) query කර Credits Map එකක් හදාගැනීම
+    const categoriesSnapshot = await db.collection('exam_categories').get();
+    const levelCreditsMap = {};
+
+    for (const categoryDoc of categoriesSnapshot.docs) {
+      const categoryId = categoryDoc.id; // e.g., 'jlpt', 'eps---topik'
+      
+      const levelsSnapshot = await db
+        .collection('exam_categories')
+        .doc(categoryId)
+        .collection('levels')
+        .get();
+
+      levelsSnapshot.forEach((levelDoc) => {
+        const levelData = levelDoc.data();
+        const levelId = levelDoc.id; // e.g., 'jlpt_n4', 'jlpt_n5'
+        
+        // Document එකෙන් credits ලබා ගැනීම
+        const creditValue = Number(levelData.credits ?? levelData.price ?? levelData.credit_cost ?? 0);
+        
+        // key 2 කින්ම Map එකට එකතු කරයි (e.g. 'jlpt_jlpt_n5' සහ 'jlpt_n5')
+        levelCreditsMap[`${categoryId}_${levelId}`] = creditValue;
+        levelCreditsMap[levelId] = creditValue;
+      });
+    }
+
+    // 3. Exams Process කිරීම සහ Credits Join කිරීම
     const examsList = [];
 
     snapshot.forEach(doc => {
       const data = doc.data();
+      const catId = data.category_id || data.category || '';
+      const levelId = data.level_id || data.level || '';
+
+      // subcollection වලින් ආපු dynamic level credits සෙවීම
+      const matchedCredits = 
+        levelCreditsMap[`${catId}_${levelId}`] ?? 
+        levelCreditsMap[levelId] ?? 
+        Number(data.credits ?? 0);
+
       examsList.push({
         id: doc.id,
         title: data.title || 'Untitled Exam',
-        category: data.category_id || data.category || 'JLPT',
-        level: data.level_id || data.level || 'N/A',
+        category: catId || 'JLPT',
+        level: levelId || 'N/A',
         tutor: data.tutor_name || 'Expert Tutor',
         tutorAvatar: data.tutor_avatar || 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?w=40',
         duration: data.duration_minutes ? `${data.duration_minutes} min` : (data.time ? `${data.time} min` : 'N/A'),
         questions: Array.isArray(data.questions) ? data.questions.length : (data.total_questions || 0),
-        credits: data.credits || 0,
+        credits: matchedCredits, // 🎯 Database join එකෙන් ආපු නිවැරදි credits අගය මෙතැනට වැටේ
         rating: data.rating || 5.0,
         reviews: data.reviews || 0,
         difficulty: data.difficulty || 'Intermediate',
