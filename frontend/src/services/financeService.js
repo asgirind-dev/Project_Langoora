@@ -78,6 +78,33 @@ class FinanceService {
       return { count: 0 };
     }
   }
+
+  // ============================================
+  // ⭐ NEW: Get all tutors with tokens from purchased_exams
+  // ============================================
+  async getTutorsTokens() {
+    try {
+      const response = await axios.get(`${API_URL}/tutors-tokens`, getAuthConfig());
+      console.log('📊 API Response (tutors-tokens):', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching tutors tokens:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // ⭐ NEW: Get single tutor tokens
+  // ============================================
+  async getTutorTokens(tutorId) {
+    try {
+      const response = await axios.get(`${API_URL}/tutor-tokens/${tutorId}`, getAuthConfig());
+      return response.data;
+    } catch (error) {
+      console.error(`❌ Error fetching tutor tokens for ${tutorId}:`, error);
+      throw error;
+    }
+  }
 }
 
 export default new FinanceService();

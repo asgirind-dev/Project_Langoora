@@ -10,12 +10,11 @@ const {
 const { db, admin } = require('../config/firebase');
 
 // ======================================================================
-// 🔓 PUBLIC ROUTE - Pre-authorization check (NO authentication required)
+// 🔓 1. PUBLIC ROUTES (Login වීම අවශ්‍ය නැත / Authentication NOT required)
 // ======================================================================
 
 /**
  * ✅ Check if an email is pre-authorized for staff registration
- * This route is PUBLIC so users can check before registering
  * GET /api/users/preauth-check?email=user@example.com
  */
 router.get('/preauth-check', async (req, res) => {
@@ -51,7 +50,6 @@ router.get('/preauth-check', async (req, res) => {
       const now = new Date();
       
       if (expiresAt && expiresAt < now) {
-        // Pre-authorization has expired
         return res.status(200).json({
           success: true,
           isPreAuthorized: false,
@@ -60,7 +58,6 @@ router.get('/preauth-check', async (req, res) => {
         });
       }
 
-      // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
       return res.status(200).json({
         success: true,
         isPreAuthorized: true,
@@ -73,7 +70,6 @@ router.get('/preauth-check', async (req, res) => {
       });
     }
 
-    // Not pre-authorized
     return res.status(200).json({
       success: true,
       isPreAuthorized: false
@@ -90,29 +86,39 @@ router.get('/preauth-check', async (req, res) => {
 });
 
 // ======================================================================
-// 🔒 ALL ROUTES BELOW ARE PROTECTED (require authentication)
+// 🔒 2. PROTECTED ROUTES (මෙතැනින් පහළ සියලුම Routes සඳහා Auth Token එකක් අවශ්‍ය වේ)
 // ======================================================================
-
-// All routes are protected by authentication
 router.use(protect);
 
-// ======================================================================
-// STUDENT PROFILE ROUTES (No admin permissions required)
-// ======================================================================
+// ----------------------------------------------------------------------
+// 👤 STUDENT / USER PROFILE ENDPOINTS
+// ----------------------------------------------------------------------
 
 // 🔄 Get student profile
 router.get('/profile', async (req, res) => {
   try {
     const { uid } = req.query;
     if (!uid) return res.status(400).json({ success: false, message: "User ID (uid) is required" });
-    const doc = await db.collection('students').doc(uid).get();
-    if (!doc.exists) return res.status(200).json({ success: true, data: {} });
-    res.status(200).json({ success: true, data: doc.data() });
+    
+    let doc = await db.collection('users').doc(uid).get();
+    
+    if (!doc.exists) {
+      doc = await db.collection('students').doc(uid).get();
+    }
+    
+    if (!doc.exists) {
+      return res.status(200).json({ success: true, data: {} });
+    }
+    
+    res.status(200).json({ success: true, data: { id: doc.id, ...doc.data() } });
   } catch (error) {
     console.error("Backend Fetch Profile Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// 💳 Checkout Autofill Endpoint
+router.get('/checkout-profile', userController.getStudentProfile);
 
 // 🔄 Update student profile
 router.put('/profile/update', async (req, res) => {
@@ -129,6 +135,10 @@ router.put('/profile/update', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// ----------------------------------------------------------------------
+// ⚙️ USER SETTINGS ENDPOINTS
+// ----------------------------------------------------------------------
 
 // 🔄 Update language settings
 router.put('/settings/language', async (req, res) => {
@@ -157,58 +167,48 @@ router.put('/settings/password', async (req, res) => {
 });
 
 // ======================================================================
-// ADMIN ROUTES – require specific permissions
+// 🛡️ 3. ADMIN PRIVILEGED ROUTES (Admin හට පමණක් සීමා වේ)
 // ======================================================================
+router.use(authorizeRoles('admin'));
 
 // ---- User Management ----
-// GET all users (requires 'manage_users' permission)
 router.get(
   '/',
   requirePermission('manage_users'),
   userController.getAllUsers
 );
 
-// Provision a new staff member (requires 'manage_users')
 router.post(
   '/provision',
   requirePermission('manage_users'),
   userController.provisionStaffNode
 );
 
-// Update user privileges (requires 'manage_users')
 router.put(
   '/:uid/privileges',
   requirePermission('manage_users'),
   userController.updatePrivileges
 );
 
-// Toggle user lifecycle (suspend/activate) – requires 'manage_users'
 router.put(
   '/:uid/lifecycle',
   requirePermission('manage_users'),
   userController.toggleUserLifecycle
 );
 
-// Delete a user – requires 'manage_users'
 router.delete(
   '/:uid',
   requirePermission('manage_users'),
   userController.deleteUserNode
 );
 
-// ======================================================================
-// ROLE MANAGEMENT – only for users with 'manage_roles' permission
-// We also require level < 2 (Super Admin) to enforce hierarchy
-// ======================================================================
-
-// Get all roles (view)
+// ---- Role Management ----
 router.get(
   '/roles',
   requirePermission('manage_roles'),
   userController.getRoles
 );
 
-// Create a new role (Super Admin only)
 router.post(
   '/roles',
   requirePermission('manage_roles'),
@@ -216,7 +216,6 @@ router.post(
   userController.createRole
 );
 
-// Update a role (Super Admin only)
 router.put(
   '/roles/:roleId',
   requirePermission('manage_roles'),
@@ -224,7 +223,6 @@ router.put(
   userController.updateRole
 );
 
-// Delete a role (Super Admin only)
 router.delete(
   '/roles/:roleId',
   requirePermission('manage_roles'),
@@ -232,11 +230,7 @@ router.delete(
   userController.deleteRole
 );
 
-// ======================================================================
-// BULK PRE-AUTHORIZATION CHECK (Admin only)
-// ======================================================================
-
-// ✅ Check multiple emails for pre-authorization (admin only)
+// ---- Bulk Pre-authorization Check ----
 router.post(
   '/preauth-bulk-check',
   requirePermission('manage_users'),
@@ -259,7 +253,6 @@ router.post(
         
         if (preAuthDoc.exists) {
           const data = preAuthDoc.data();
-          // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
           results.push({
             email: formattedEmail,
             isPreAuthorized: true,

@@ -116,6 +116,61 @@ export const deleteExam = async (examId) => {
 };
 
 /**
+ * ♻️ Recycle Bin: Get all soft-deleted exams
+ */
+export const getRecycleBinExams = async () => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.get(
+      `${API_URL}/recycle-bin`,
+      config
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || {
+      message: 'Failed to fetch recycle bin exams.'
+    };
+  }
+};
+
+/**
+ * ♻️ Recycle Bin: Restore a soft-deleted exam
+ */
+export const restoreExam = async (examId) => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.put(
+      `${API_URL}/${examId}/restore`,
+      {},
+      config
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || {
+      message: 'Failed to restore exam.'
+    };
+  }
+};
+
+/**
+ * 🗑️ Recycle Bin: Permanently delete an exam
+ */
+export const permanentDeleteExam = async (examId) => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.delete(
+      `${API_URL}/${examId}/permanent`,
+      config
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || {
+      message: 'Failed to permanently delete exam.'
+    };
+  }
+};
+
+/**
  * 📝 5. Update Exam Status
  */
 export const updateExamStatus = async (examId, status) => {

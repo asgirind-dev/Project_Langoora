@@ -1,3 +1,5 @@
+// server.js
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path'); 
@@ -8,6 +10,10 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 // Configs
 require('./config/firebase'); 
 
+// Firebase Admin Setup
+const { getFirestore } = require('firebase-admin/firestore');
+const db = getFirestore(); 
+
 // Routes Imports
 const examRoutes = require('./routes/examRoutes');
 const authRoutes = require('./routes/authRoutes');
@@ -16,38 +22,52 @@ const studyPlannerRoutes = require('./routes/studyPlannerRoutes');
 const tutorProfileRoutes = require('./routes/TutorProfilePageRoutes'); 
 const studentProfileRoutes = require('./routes/StudentProfilePageRoutes');
 const tutorValidationRoutes = require('./routes/tutorValidationRoutes'); 
+const performanceRoutes = require('./routes/performanceRoutes'); 
 const languageRoutes = require('./routes/languageRoutes');
 const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 const financeRoutes = require('./routes/financeRoutes'); 
 const examExecutionRoutes = require('./routes/examExecutionRoutes');
+const payoutRoutes = require('./routes/payoutRoutes');
 const emailLogRoutes = require('./routes/emailLogRoutes');
 const planRoutes = require('./routes/planRoutes');
 const creditValuationRoutes = require('./routes/creditValuationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes'); // 👈 Correct import
+
+// ✅ Import maintenance middleware
+const { maintenanceMiddleware } = require('./middleware/maintenanceMiddleware');
 
 const app = express();
 
 // Middlewares
-app.use(cors());
+app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// ✅ Apply maintenance middleware FIRST (before routes)
+// This will check maintenance status for ALL requests
+// But skip paths that don't need it (like auth)
+app.use(maintenanceMiddleware);
 
 // Routing Middleware 
 app.use('/api/exams', examRoutes); 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes); 
+app.use('/api/subscription-management', subscriptionRoutes); 
 app.use('/api/tutors', tutorProfileRoutes); 
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
 app.use('/api/validator/tutors', tutorValidationRoutes);
+app.use('/api/performance', performanceRoutes);
 app.use('/api/languages', languageRoutes);
 app.use('/api/system-settings', systemSettingsRoutes);
-app.use('/api/finance', financeRoutes);
+app.use('/api/finance', financeRoutes); 
 app.use('/api/exam-execution', examExecutionRoutes);
 app.use('/api/email-logs', emailLogRoutes);
 app.use('/api/subscription-plans', planRoutes);
 app.use('/api/credit-values', creditValuationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/finance', payoutRoutes);
 
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
