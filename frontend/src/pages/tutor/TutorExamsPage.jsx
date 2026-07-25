@@ -7,6 +7,20 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import { getTutorExams, deleteExam, updateExamStatus } from '../../services/examService';
 
+// Helper function to strip HTML tags completely (Best for card titles)
+const stripHtml = (html) => {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+};
+
+// Helper function to safely render HTML (Alternative approach)
+const renderHtml = (html) => {
+  if (!html) return '';
+  return html;
+};
+
 export default function TutorExamsPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState('all');
@@ -128,7 +142,7 @@ export default function TutorExamsPage() {
           <div className="bg-[#0a0f1e] border border-white/10 rounded-2xl p-6 max-w-md w-full">
             <h3 className="text-lg font-bold text-white mb-2">Delete Exam?</h3>
             <p className="text-gray-400 text-sm mb-6">
-              Are you sure you want to delete "{deleteConfirm.title}"? It will be moved to the
+              Are you sure you want to delete "{stripHtml(deleteConfirm.title)}"? It will be moved to the
               Recycle Bin, where you can restore it or permanently delete it later.
             </p>
             <div className="flex gap-3 justify-end">
@@ -157,7 +171,7 @@ export default function TutorExamsPage() {
                 <div className="relative h-40 flex-shrink-0">
                   <img 
                     src={exam.thumbnail || 'https://images.pexels.com/photos/5427671/pexels-photo-5427671.jpeg?w=200'} 
-                    alt={exam.title} 
+                    alt={stripHtml(exam.title) || 'Exam'} 
                     className="w-full h-full object-cover" 
                     onError={(e) => {
                       e.target.src = 'https://images.pexels.com/photos/5427671/pexels-photo-5427671.jpeg?w=200';
@@ -173,7 +187,19 @@ export default function TutorExamsPage() {
                   </div>
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="font-semibold text-white mb-2 line-clamp-2">{exam.title}</h3>
+                  {/* OPTION 1: Strip HTML completely (Best for card titles - CLEAN TEXT) */}
+                  <h3 className="font-semibold text-white mb-2 line-clamp-2">
+                    {stripHtml(exam.title)}
+                  </h3>
+                  
+                  {/* OPTION 2: Render HTML safely (Alternative - use if you want formatting) */}
+                  {/*
+                  <h3 
+                    className="font-semibold text-white mb-2 line-clamp-2"
+                    dangerouslySetInnerHTML={{ __html: exam.title }}
+                  />
+                  */}
+                  
                   <div className="grid grid-cols-3 gap-2 mb-3 text-center">
                     <div className="p-2 bg-white/3 rounded-xl">
                       <div className="text-lg font-bold text-white">{exam.students || 0}</div>

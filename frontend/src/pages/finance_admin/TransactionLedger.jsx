@@ -1,4 +1,3 @@
-// frontend/src/pages/finance_admin/TransactionLedger.jsx
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -8,7 +7,6 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import GlassCard from '../../components/ui/GlassCard';
-import axios from 'axios';
 import FinanceService from '../../services/financeService';
 
 export default function TransactionLedger() {
@@ -23,64 +21,32 @@ export default function TransactionLedger() {
   const [copied, setCopied] = useState(false);
 
   // ============================================
-  // ⭐ FETCH TRANSACTIONS FROM FIRESTORE
+  // ⭐ FETCH TRANSACTIONS
   // ============================================
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      try {
-        setLoading(true);
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        
-        const response = await axios.get(`${API_URL}/api/finance/transactions`);
-        console.log('📊 Transactions Response:', response.data);
-        
-        if (response.data && Array.isArray(response.data)) {
-          // Transform data to match UI format
-          const transformedLogs = response.data.map(tx => ({
-            ref: tx.id || tx.transactionId || `TXN-${Date.now()}`,
-            student: tx.student_name || tx.userName || tx.user || 'Unknown Student',
-            tier: tx.plan || tx.subscriptionType || 'Standard Plan',
-            amount: tx.amount || 0,
-            gateway: tx.gateway || tx.paymentMethod || 'Stripe',
-            status: tx.status || 'Pending',
-            timestamp: tx.created_at || tx.createdAt || new Date().toISOString(),
-            email: tx.email || tx.student_email || '',
-            plan: tx.plan || tx.subscriptionType || 'Standard Plan',
-            credits: tx.credits || 0,
-            transactionId: tx.id,
-            paymentMethod: tx.paymentMethod || tx.gateway || 'Stripe'
-          }));
-          
-          setLogs(transformedLogs);
-        } else {
-          console.log('⚠️ No transactions found');
-          setLogs([]);
-        }
-      } catch (error) {
-        console.error('❌ Error fetching transactions:', error);
-        setLogs([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchTransactions();
-  }, []);
-
-  // Summary Stats
-  const totalTransactions = logs.length;
-  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? log.amount : 0), 0);
-  const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
-  const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : 0;
-  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
-  // 🎯 Fetch Real Database Transactions
   const fetchLedgerData = async () => {
     setLoading(true);
     try {
       const data = await FinanceService.getAllTransactions();
-      setLogs(Array.isArray(data) ? data : []);
+      const rawData = Array.isArray(data) ? data : [];
+      
+      const transformedLogs = rawData.map(tx => ({
+        ref: tx.id || tx.transactionId || tx.ref || `TXN-${Date.now()}`,
+        student: tx.student_name || tx.userName || tx.student || tx.user || 'Unknown Student',
+        tier: tx.plan || tx.subscriptionType || 'Standard Plan',
+        amount: Number(tx.amount || 0),
+        gateway: tx.gateway || tx.paymentMethod || 'Stripe',
+        status: tx.status || 'Pending',
+        timestamp: tx.created_at || tx.createdAt || tx.timestamp || new Date().toISOString(),
+        email: tx.email || tx.student_email || '',
+        plan: tx.plan || tx.subscriptionType || 'Standard Plan',
+        credits: tx.credits || 0,
+        transactionId: tx.id
+      }));
+
+      setLogs(transformedLogs);
     } catch (error) {
       console.error("Failed to load transaction audit logs:", error);
+      setLogs([]);
     } finally {
       setLoading(false);
     }
@@ -90,20 +56,16 @@ export default function TransactionLedger() {
     fetchLedgerData();
   }, []);
 
-  // Summary Stats Calculations from Real Data
+  // Summary Stats Calculations
   const totalTransactions = logs.length;
-  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' ? Number(log.amount || 0) : 0), 0);
-  const successCount = logs.filter(l => l.status === 'Success').length;
+  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? Number(log.amount || 0) : 0), 0);
+  const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
   const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : '0.0';
-  const failedCount = logs.filter(l => l.status === 'Failed').length;
+  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
 
   // Search & Filters
   const filteredLogs = logs.filter(log => {
     const matchSearch = (log.student || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
-    const matchGateway = filterGateway === 'all' || (log.gateway || '').toLowerCase() === filterGateway.toLowerCase();
                         (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                         (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
@@ -121,7 +83,6 @@ export default function TransactionLedger() {
         label: 'Success'
       },
       'Completed': { 
-        color: '#10b981', 
         bg: 'bg-emerald-500/10', 
         border: 'border-emerald-500/20',
         text: 'text-emerald-400',
@@ -136,7 +97,6 @@ export default function TransactionLedger() {
         label: 'Failed'
       },
       'Declined': { 
-        color: '#ef4444', 
         bg: 'bg-red-500/10', 
         border: 'border-red-500/20',
         text: 'text-red-400',
@@ -160,7 +120,6 @@ export default function TransactionLedger() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Format date
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     try {
@@ -174,7 +133,10 @@ export default function TransactionLedger() {
       });
     } catch {
       return dateStr;
-  // 🎯 PDF Export Handler (Finance Dashboard Style)
+    }
+  };
+
+  // PDF Export Handler
   const handleExportPDF = () => {
     if (filteredLogs.length === 0) return alert("No transaction records available to export.");
 
@@ -183,11 +145,9 @@ export default function TransactionLedger() {
       const doc = new jsPDF();
       const timestamp = new Date().toLocaleString();
 
-      // Dark Blue Header Banner
       doc.setFillColor(15, 22, 41);
       doc.rect(0, 0, 210, 42, 'F');
 
-      // Title & Subtitle
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
@@ -201,8 +161,7 @@ export default function TransactionLedger() {
       doc.setFontSize(8);
       doc.text(`Generated: ${timestamp}`, 140, 28);
 
-      // Audit Highlights Box
-      const successfulTxs = filteredLogs.filter(t => t.status === 'Success');
+      const successfulTxs = filteredLogs.filter(t => t.status === 'Success' || t.status === 'Completed');
       const filteredRev = successfulTxs.reduce((sum, log) => sum + Number(log.amount || 0), 0);
 
       doc.setFillColor(241, 245, 249);
@@ -215,7 +174,6 @@ export default function TransactionLedger() {
       doc.text(`Successful Sales: ${successfulTxs.length}`, 80, 56);
       doc.text(`Total Revenue: LKR ${filteredRev.toLocaleString()}`, 140, 56);
 
-      // Table Rows Preparation
       const tableRows = filteredLogs.map(l => [
         l.ref || 'N/A',
         l.student || 'Unknown',
@@ -224,7 +182,7 @@ export default function TransactionLedger() {
         `+${l.credits || 0} c`,
         l.gateway || 'Card',
         l.status || 'Pending',
-        l.timestamp || 'N/A'
+        formatDate(l.timestamp)
       ]);
 
       autoTable(doc, {
@@ -251,23 +209,9 @@ export default function TransactionLedger() {
           5: { cellWidth: 20 },
           6: { cellWidth: 18 },
           7: { cellWidth: 20 }
-        },
-        didParseCell: function(data) {
-          if (data.section === 'body' && data.column.index === 6) {
-            if (data.cell.raw === 'Success') {
-              data.cell.styles.textColor = [16, 185, 129];
-              data.cell.styles.fontStyle = 'bold';
-            } else if (data.cell.raw === 'Failed') {
-              data.cell.styles.textColor = [239, 68, 68];
-              data.cell.styles.fontStyle = 'bold';
-            } else {
-              data.cell.styles.textColor = [245, 158, 11];
-            }
-          }
         }
       });
 
-      // Footer
       doc.setFontSize(8);
       doc.setTextColor(156, 163, 175);
       doc.text('Confidential Document - Internal Finance Administration Langoora Platform', 14, 285);
@@ -283,10 +227,7 @@ export default function TransactionLedger() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-        <p className="text-gray-400">Loading transactions...</p>
-      <div className="flex flex-col items-center justify-center py-28 gap-3">
+      <div className="flex flex-col items-center justify-center py-28 gap-3 min-h-[400px]">
         <RefreshCw className="animate-spin text-blue-500" size={36} />
         <p className="text-gray-400 text-sm">Fetching real-time transaction ledger...</p>
       </div>
@@ -356,7 +297,7 @@ export default function TransactionLedger() {
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               type="text"
-              placeholder="Search by student, reference or email..."
+              placeholder="Search student, ref or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-11 pr-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white placeholder:text-gray-500 focus:border-blue-500/50 focus:outline-none transition-all duration-300 w-72"
@@ -369,14 +310,9 @@ export default function TransactionLedger() {
               onChange={(e) => setFilterStatus(e.target.value)}
               className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
             >
-              <option value="all" className="bg-[#0a1628] text-white hover:bg-blue-500/20">All Status</option>
-              <option value="success" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Success</option>
-              <option value="completed" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Completed</option>
-              <option value="failed" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Failed</option>
-              <option value="declined" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Declined</option>
-              <option value="pending" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Pending</option>
               <option value="all">All Status</option>
               <option value="success">Success</option>
+              <option value="completed">Completed</option>
               <option value="failed">Failed</option>
               <option value="pending">Pending</option>
             </select>
@@ -405,7 +341,6 @@ export default function TransactionLedger() {
             Print
           </motion.button>
 
-          {/* 🎯 Updated Export PDF Button */}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -609,7 +544,6 @@ export default function TransactionLedger() {
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Amount</p>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">LKR {selectedLog.amount?.toLocaleString() || 0}</p>
                     <p className="text-xl font-bold text-emerald-400 mt-1">LKR {Number(selectedLog.amount || 0).toLocaleString()}</p>
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
@@ -620,15 +554,9 @@ export default function TransactionLedger() {
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Status</p>
                     <div className="mt-1">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${getStatusConfig(selectedLog.status).bg} border ${getStatusConfig(selectedLog.status).border} rounded-lg`}>
-                        {selectedLog.status === 'Success' && <CheckCircle size={14} className="text-emerald-400" />}
-                        {selectedLog.status === 'Completed' && <CheckCircle size={14} className="text-emerald-400" />}
-                        {selectedLog.status === 'Failed' && <XCircle size={14} className="text-red-400" />}
-                        {selectedLog.status === 'Declined' && <XCircle size={14} className="text-red-400" />}
-                        {selectedLog.status === 'Pending' && <Clock size={14} className="text-amber-400" />}
-                        <span className={`text-sm font-bold ${getStatusConfig(selectedLog.status).text}`}>{selectedLog.status || 'Pending'}</span>
+                        {getStatusConfig(selectedLog.status).label}
                       </span>
                     </div>
-                    <p className="text-base font-semibold text-emerald-400 mt-1">{selectedLog.status}</p>
                   </div>
                 </div>
 

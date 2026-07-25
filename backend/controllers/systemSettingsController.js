@@ -458,6 +458,7 @@ class SystemSettingsController {
       });
     }
   }
+}
 
 // Export as singleton instance
 module.exports = new SystemSettingsController();
