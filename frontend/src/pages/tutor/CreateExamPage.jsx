@@ -12,6 +12,8 @@ import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
+import QuestionEditorToolbar from '../../components/exam/QuestionEditorToolbar';
+import RichTextField from '../../components/exam/RichTextField';
 
 const STEPS = ['Exam Details', 'Sections', 'Questions', 'Preview & Publish'];
 
@@ -21,8 +23,43 @@ const STEPS = ['Exam Details', 'Sections', 'Questions', 'Preview & Publish'];
 // effect below for how this interval is used.
 const AUTO_SAVE_INTERVAL_MS = 120000;
 
+// Helper to strip HTML tags for display in sidebar/list items
+const stripHtml = (html) => {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+};
+
 export default function CreateExamPage() {
   const navigate = useNavigate();
+
+  // ------------------------------------------------------------
+  // 🌐 GLOBAL TOOLBAR TARGET TRACKING
+  // activeFieldRef always points at the DOM node of whichever text
+  // input/textarea was last focused, anywhere across Steps 1–4.
+  // The floating QuestionEditorToolbar reads/writes this node
+  // directly, so every field's existing onChange keeps working
+  // unmodified. activeFieldLabel is purely cosmetic (shown in the
+  // toolbar so the tutor can see which field they're formatting).
+  // ------------------------------------------------------------
+  const activeFieldRef = useRef(null);
+  const [activeFieldLabel, setActiveFieldLabel] = useState(null);
+
+  const handleFormFocusCapture = (e) => {
+    const el = e.target;
+    if (!el || !el.tagName) return;
+    const type = (el.type || '').toLowerCase();
+    const isTextLike =
+      el.isContentEditable ||
+      el.tagName === 'TEXTAREA' ||
+      (el.tagName === 'INPUT' && ['text', 'search', 'email', 'url', 'tel', ''].includes(type));
+    if (isTextLike) {
+      activeFieldRef.current = el;
+      setActiveFieldLabel(el.getAttribute('data-field-label') || el.getAttribute('placeholder') || el.getAttribute('aria-label') || 'Text field');
+    }
+  };
+
   const [step, setStep] = useState(0);
   
   const [activeSchema, setActiveSchema] = useState([]);
@@ -1029,11 +1066,16 @@ const addStandardQuestion = (sectionName) => {
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
-            <Input 
-              label="Problem Title" 
-              placeholder="e.g. Problem 1" 
-              value={activeItem.problem_title} 
-              onChange={e => updateItemField(activeItem.id, 'problem_title', e.target.value)} 
+            <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+              Problem Title
+            </label>
+            <RichTextField
+              value={activeItem.problem_title || ''}
+              onChange={(html) => updateItemField(activeItem.id, 'problem_title', html)}
+              placeholder="e.g. Problem 1"
+              fieldLabel="Problem Title"
+              minHeightClass="min-h-[40px]"
+              className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:border-blue-500/50"
             />
           </div>
           <div className="col-span-1">
@@ -1047,12 +1089,13 @@ const addStandardQuestion = (sectionName) => {
           <label className="text-xs font-bold uppercase tracking-wider text-gray-400">
             Problem Instruction / Explanation
           </label>
-          <textarea 
-            rows={2} 
-            placeholder="Type core instructions for this problem block..." 
-            value={activeItem.explanation} 
-            onChange={e => updateItemField(activeItem.id, 'explanation', e.target.value)} 
-            className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none resize-none" 
+          <RichTextField
+            value={activeItem.explanation || ''}
+            onChange={(html) => updateItemField(activeItem.id, 'explanation', html)}
+            placeholder="Type core instructions or the reading passage for this problem block..."
+            fieldLabel="Passage / Problem Instruction"
+            minHeightClass="min-h-[56px]"
+            className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:border-blue-500/50"
           />
         </div>
 
@@ -1085,23 +1128,25 @@ const addStandardQuestion = (sectionName) => {
             
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Example Question Text</label>
-              <input 
-                type="text" 
-                placeholder="e.g. Example Question Context..." 
-                value={activeItem.example_question || ''} 
-                onChange={e => updateItemField(activeItem.id, 'example_question', e.target.value)} 
-                className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none" 
+              <RichTextField
+                value={activeItem.example_question || ''}
+                onChange={(html) => updateItemField(activeItem.id, 'example_question', html)}
+                placeholder="e.g. Example Question Context..."
+                fieldLabel="Example Question Text"
+                minHeightClass="min-h-[40px]"
+                className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs placeholder-gray-600 focus:outline-none"
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Example Explanation</label>
-              <textarea 
-                rows={2} 
-                placeholder="Explain the example answer..." 
-                value={activeItem.example_explanation || ''} 
-                onChange={e => updateItemField(activeItem.id, 'example_explanation', e.target.value)} 
-                className="bg-slate-950/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none resize-none" 
+              <RichTextField
+                value={activeItem.example_explanation || ''}
+                onChange={(html) => updateItemField(activeItem.id, 'example_explanation', html)}
+                placeholder="Explain the example answer..."
+                fieldLabel="Example Explanation"
+                minHeightClass="min-h-[56px]"
+                className="bg-slate-950/50 border border-white/10 rounded-xl px-3 py-2 text-white text-xs placeholder-gray-600 focus:outline-none"
               />
             </div>
 
@@ -1138,12 +1183,13 @@ const addStandardQuestion = (sectionName) => {
                     >
                       {String.fromCharCode(65 + oIdx)}
                     </button>
-                    <input 
-                      type="text" 
-                      placeholder={`Option ${String.fromCharCode(65 + oIdx)}`} 
-                      value={opt} 
-                      onChange={e => updateItemOption(activeItem.id, oIdx, e.target.value)} 
-                      className="flex-1 bg-slate-950/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white placeholder-gray-700 focus:outline-none" 
+                    <RichTextField
+                      value={opt}
+                      onChange={(html) => updateItemOption(activeItem.id, oIdx, html)}
+                      placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
+                      fieldLabel={`Example Option ${String.fromCharCode(65 + oIdx)}`}
+                      minHeightClass="min-h-[32px]"
+                      className="flex-1 bg-slate-950/50 border border-white/10 rounded-lg px-2 py-1 text-white text-xs placeholder-gray-700 focus:outline-none"
                     />
                   </div>
                 ))}
@@ -1162,7 +1208,7 @@ const addStandardQuestion = (sectionName) => {
                 const questionNumber = globalIndex + 1;
                 return (
                   <div key={q.id} className="flex items-center justify-between text-[10px] text-slate-300 px-2 py-1 bg-slate-950/40 rounded-lg">
-                    <span>Q{questionNumber}: {q.text || 'Empty'}</span>
+                    <span>Q{questionNumber}: {stripHtml(q.text) || 'Empty'}</span>
                     <button onClick={() => setActiveQuestionId(q.id)} className="text-blue-400 hover:text-blue-300 text-[9px]">Edit</button>
                   </div>
                 );
@@ -1224,12 +1270,13 @@ const addStandardQuestion = (sectionName) => {
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Question Text</label>
-          <textarea 
-            rows={2} 
-            placeholder={`Type your ${activeItem.type === 'listening' ? 'listening' : activeItem.type === 'reading' ? 'reading' : ''} question...`} 
-            value={activeItem.text || ''} 
-            onChange={e => updateItemField(activeItem.id, 'text', e.target.value)} 
-            className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 resize-none"
+          <RichTextField
+            value={activeItem.text || ''}
+            onChange={(html) => updateItemField(activeItem.id, 'text', html)}
+            placeholder={`Type your ${activeItem.type === 'listening' ? 'listening' : activeItem.type === 'reading' ? 'reading' : ''} question...`}
+            fieldLabel="Question Text"
+            minHeightClass="min-h-[56px]"
+            className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-blue-500/50"
           />
         </div>
 
@@ -1322,12 +1369,13 @@ const addStandardQuestion = (sectionName) => {
                 >
                   {String.fromCharCode(65 + oIdx)}
                 </button>
-                <input 
-                  type="text" 
-                  placeholder={`Option ${String.fromCharCode(65 + oIdx)}`} 
-                  value={opt} 
-                  onChange={e => updateItemOption(activeItem.id, oIdx, e.target.value)} 
-                  className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none" 
+                <RichTextField
+                  value={opt}
+                  onChange={(html) => updateItemOption(activeItem.id, oIdx, html)}
+                  placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
+                  fieldLabel={`Option ${String.fromCharCode(65 + oIdx)}`}
+                  minHeightClass="min-h-[36px]"
+                  className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none"
                 />
               </div>
             ))}
@@ -1336,12 +1384,13 @@ const addStandardQuestion = (sectionName) => {
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Explanation</label>
-          <textarea 
-            rows={2} 
-            placeholder="Explain the correct answer..." 
-            value={activeItem.explanation || ''} 
-            onChange={e => updateItemField(activeItem.id, 'explanation', e.target.value)} 
-            className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none resize-none" 
+          <RichTextField
+            value={activeItem.explanation || ''}
+            onChange={(html) => updateItemField(activeItem.id, 'explanation', html)}
+            placeholder="Explain the correct answer..."
+            fieldLabel="Explanation"
+            minHeightClass="min-h-[56px]"
+            className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none"
           />
         </div>
       </div>
@@ -1410,7 +1459,7 @@ const renderSectionSidebar = (sec) => {
             >
               <div className="flex items-center gap-1.5 truncate">
                 <FileText size={12} className="text-blue-400 flex-shrink-0" />
-                <span className="truncate">{problem.problem_title || 'Problem'}</span>
+                <span className="truncate">{stripHtml(problem.problem_title) || 'Problem'}</span>
               </div>
               <span className="text-[8px] px-1.5 bg-slate-700/50 rounded-full text-slate-400 flex-shrink-0">
                 {childQuestions.length}
@@ -1438,7 +1487,7 @@ const renderSectionSidebar = (sec) => {
                     >
                       <span className="truncate flex items-center gap-1">
                         {isListeningQ && <Mic size={10} className="text-blue-400" />}
-                        Q{questionNumber}: {q.text || 'Empty'}
+                        Q{questionNumber}: {stripHtml(q.text) || 'Empty'}
                       </span>
                       {q.image_url && (
                         <span className="text-[8px] px-1 bg-purple-500/20 text-purple-300 rounded">🖼️</span>
@@ -1479,7 +1528,7 @@ const renderSectionSidebar = (sec) => {
                 <HelpCircle size={12} className="text-slate-500 flex-shrink-0" />
               )}
               <span className="truncate">
-                Q{questionNumber}: {q.text || 'Empty'}
+                Q{questionNumber}: {stripHtml(q.text) || 'Empty'}
               </span>
             </div>
             {q.image_url && (
@@ -1553,25 +1602,91 @@ const renderSectionSidebar = (sec) => {
   // Lets the tutor inspect every Problem + Question (with any attached
   // image/audio) across ALL sections — Vocabulary, Grammar, Listening,
   // Reading — before publishing. Read-only; does not touch the DB.
+  // ------------------------------------------------------------
+  // 🖨️ Renders a single question's preview block: rich-text question
+  // body, image/audio, all 4 options with the correct one highlighted
+  // green (tutor answer key), and the explanation box underneath.
+  // Shared by both problem-linked and standalone questions below.
+  // ------------------------------------------------------------
+  const renderPreviewQuestion = (q, number) => (
+    <div className="p-3 bg-slate-950/40 border border-white/5 rounded-xl space-y-2.5">
+      <div className="flex items-start gap-1.5 text-[12px] text-gray-200">
+        <span className="font-mono text-emerald-400 flex-shrink-0">Q{number}.</span>
+        {q.text ? (
+          <span
+            className="leading-relaxed [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300"
+            dangerouslySetInnerHTML={{ __html: q.text }}
+          />
+        ) : (
+          <span className="italic text-gray-600">Empty question</span>
+        )}
+      </div>
+
+      {q.image_url && (
+        <img src={q.image_url} alt="Question" className="max-h-40 rounded-lg border border-white/10" />
+      )}
+      {q.audio_url && <audio src={q.audio_url} controls className="w-full h-8" />}
+
+      {Array.isArray(q.options) && q.options.some(o => o) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+          {q.options.map((opt, oIdx) => {
+            const isCorrect = q.correct === oIdx;
+            return (
+              <div
+                key={oIdx}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] ${
+                  isCorrect
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                    : 'bg-white/[0.02] border-white/5 text-gray-400'
+                }`}
+              >
+                <span className={`w-5 h-5 flex items-center justify-center rounded-md text-[10px] font-bold flex-shrink-0 ${
+                  isCorrect ? 'bg-emerald-500 text-white' : 'bg-white/5 text-gray-500 border border-white/10'
+                }`}>
+                  {String.fromCharCode(65 + oIdx)}
+                </span>
+                <span className="truncate" dangerouslySetInnerHTML={{ __html: opt || '<span class="italic text-gray-600">Empty</span>' }} />
+                {isCorrect && <CheckCircle size={12} className="text-emerald-400 ml-auto flex-shrink-0" />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {q.explanation && (
+        <div className="bg-blue-500/5 border border-blue-500/15 rounded-lg p-2.5 text-[11px] text-blue-200">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-blue-400 mb-1">Explanation (Tutor Only)</p>
+          <span dangerouslySetInnerHTML={{ __html: q.explanation }} />
+        </div>
+      )}
+    </div>
+  );
+
   const renderViewExamModal = () => {
     if (!isViewExamOpen) return null;
 
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-        <div className="bg-[#0a0f1e] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+        <div className="bg-[#0a0f1e] border border-white/10 rounded-3xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Eye size={18} className="text-blue-400" /> Exam Preview
+                <Eye size={18} className="text-blue-400" /> Full Exam Preview
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">{meta.title || 'Untitled Exam'}</p>
             </div>
-            <button onClick={() => setIsViewExamOpen(false)} className="text-slate-400 hover:text-white transition-colors">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
+                <CheckCircle size={12} /> Answer Key Visible
+              </span>
+              <button onClick={() => setIsViewExamOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           <div className="overflow-y-auto flex-1 p-6 space-y-6">
+            {/* Exam Header Details */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="p-3 bg-slate-950/40 border border-white/5 rounded-xl">
                 <p className="text-[10px] text-gray-500 uppercase font-bold">Category</p>
@@ -1591,6 +1706,14 @@ const renderSectionSidebar = (sec) => {
               </div>
             </div>
 
+            {meta.description && (
+              <div className="p-4 bg-slate-950/30 border border-white/5 rounded-2xl">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Exam Description</p>
+                <div className="text-xs text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: meta.description }} />
+              </div>
+            )}
+
+            {/* Sections */}
             {sections.map(sec => {
               const secProblems = questions.filter(q => q.section === sec.name && q.is_problem);
               const standaloneQuestions = questions.filter(q => q.section === sec.name && !q.is_problem && !q.parent_problem_id);
@@ -1607,7 +1730,8 @@ const renderSectionSidebar = (sec) => {
                   </div>
 
                   {sectionIsListening && sec.audio_url && (
-                    <div className="px-4 py-3 border-t border-white/5">
+                    <div className="px-4 py-3 border-t border-white/5 flex items-center gap-2">
+                      <Mic size={13} className="text-blue-400 flex-shrink-0" />
                       <audio src={sec.audio_url} controls className="w-full h-8" />
                     </div>
                   )}
@@ -1617,48 +1741,67 @@ const renderSectionSidebar = (sec) => {
                       <p className="text-xs text-gray-500 italic">No questions added yet in this section.</p>
                     )}
 
+                    {/* Problems / Passages */}
                     {secProblems.map(problem => {
                       const childQuestions = getQuestionsForProblem(problem.id);
                       return (
-                        <div key={problem.id} className="p-3 bg-slate-950/40 border border-white/5 rounded-xl space-y-2">
+                        <div key={problem.id} className="p-3 bg-slate-950/40 border border-white/5 rounded-xl space-y-2.5">
                           <div className="flex items-center gap-2">
                             <FileText size={13} className="text-blue-400" />
-                            <p className="text-xs font-bold text-white">{problem.problem_title}</p>
+                            <p className="text-xs font-bold text-white">{stripHtml(problem.problem_title)}</p>
                           </div>
-                          {problem.explanation && <p className="text-[11px] text-gray-400">{problem.explanation}</p>}
+
+                          {problem.explanation && (
+                            <div
+                              className="text-[11px] text-gray-300 leading-relaxed [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300"
+                              dangerouslySetInnerHTML={{ __html: problem.explanation }}
+                            />
+                          )}
+
                           {problem.problem_image_url && (
                             <img src={problem.problem_image_url} alt="Problem" className="max-h-40 rounded-lg border border-white/10" />
                           )}
+
                           {problem.example_question && (
-                            <div className="text-[11px] text-slate-300 bg-slate-900/60 p-2 rounded-lg">
-                              <span className="text-purple-400 font-bold">Example: </span>{problem.example_question}
+                            <div className="text-[11px] text-slate-300 bg-slate-900/60 p-2.5 rounded-lg space-y-1.5">
+                              <span className="text-purple-400 font-bold">Example: </span>
+                              <span dangerouslySetInnerHTML={{ __html: problem.example_question }} />
+                              {problem.example_image_url && (
+                                <img src={problem.example_image_url} alt="Example" className="max-h-32 rounded-lg border border-white/10 mt-1.5" />
+                              )}
+                              {Array.isArray(problem.options) && problem.options.some(o => o) && (
+                                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                                  {problem.options.map((opt, oIdx) => {
+                                    const isCorrect = problem.example_correct_option === oIdx;
+                                    return (
+                                      <div key={oIdx} className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] ${isCorrect ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : 'text-gray-400'}`}>
+                                        <span className={`w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold ${isCorrect ? 'bg-emerald-500 text-white' : 'bg-white/5 text-gray-500'}`}>
+                                          {String.fromCharCode(65 + oIdx)}
+                                        </span>
+                                        <span dangerouslySetInnerHTML={{ __html: opt || '—' }} />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {problem.example_explanation && (
+                                <p className="text-[10px] text-blue-300 pt-1 border-t border-white/5 mt-1.5" dangerouslySetInnerHTML={{ __html: problem.example_explanation }} />
+                              )}
                             </div>
                           )}
-                          <div className="space-y-1.5 pl-3 border-l border-white/10">
+
+                          <div className="space-y-2 pl-3 border-l-2 border-white/10">
                             {childQuestions.map((q, idx) => (
-                              <div key={q.id} className="text-[11px] text-gray-300">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono text-emerald-400">Q{idx + 1}.</span>
-                                  <span>{q.text || <span className="italic text-gray-600">Empty question</span>}</span>
-                                </div>
-                                {q.image_url && <img src={q.image_url} alt="Question" className="max-h-24 mt-1 rounded-lg border border-white/10" />}
-                                {q.audio_url && <audio src={q.audio_url} controls className="w-full h-7 mt-1" />}
-                              </div>
+                              <div key={q.id}>{renderPreviewQuestion(q, idx + 1)}</div>
                             ))}
                           </div>
                         </div>
                       );
                     })}
 
+                    {/* Standalone questions */}
                     {standaloneQuestions.map((q, idx) => (
-                      <div key={q.id} className="p-3 bg-slate-950/40 border border-white/5 rounded-xl text-[11px] text-gray-300">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-emerald-400">Q{idx + 1}.</span>
-                          <span>{q.text || <span className="italic text-gray-600">Empty question</span>}</span>
-                        </div>
-                        {q.image_url && <img src={q.image_url} alt="Question" className="max-h-24 mt-1 rounded-lg border border-white/10" />}
-                        {q.audio_url && <audio src={q.audio_url} controls className="w-full h-7 mt-1" />}
-                      </div>
+                      <div key={q.id}>{renderPreviewQuestion(q, idx + 1)}</div>
                     ))}
                   </div>
                 </div>
@@ -1684,7 +1827,7 @@ const renderSectionSidebar = (sec) => {
   // ============================================================
 
   return (
-    <div className="space-y-6 max-w-6xl text-white relative">
+    <div className="space-y-6 max-w-6xl text-white relative" onFocusCapture={handleFormFocusCapture}>
       {renderViewExamModal()}
       <AnimatePresence>
         {toast.show && (
@@ -1776,6 +1919,16 @@ const renderSectionSidebar = (sec) => {
         </div>
       </GlassCard>
 
+      {/* ============================================================
+          🌐 GLOBAL FLOATING TOOLBAR
+          Sticky directly under the stepper, persistent across ALL
+          steps (Exam Details → Sections → Questions → Preview).
+          Formats/inserts into whichever text field was last focused.
+      ============================================================ */}
+      <div className="sticky top-0 z-40 -mx-1 px-1 pt-1 pb-1 bg-gradient-to-b from-[#060b13] via-[#060b13]/95 to-transparent">
+        <QuestionEditorToolbar activeFieldRef={activeFieldRef} activeFieldLabel={activeFieldLabel} />
+      </div>
+
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} transition={{ duration: 0.15 }}>
           
@@ -1798,12 +1951,19 @@ const renderSectionSidebar = (sec) => {
                 </div>
               )}
               
-              <Input 
-                label="Exam Title" 
-                placeholder="e.g., EPS-TOPIK Full Mock Test - 2024" 
-                value={meta.title} 
-                onChange={e => setMeta(p => ({ ...p, title: e.target.value }))} 
-              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Exam Title <span className="text-rose-400">*</span>
+                </label>
+                <RichTextField
+                  value={meta.title}
+                  onChange={(html) => setMeta(p => ({ ...p, title: html }))}
+                  placeholder="e.g., EPS-TOPIK Full Mock Test - 2024"
+                  fieldLabel="Exam Title"
+                  minHeightClass="min-h-[48px]"
+                  className="bg-slate-950/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-blue-500/50"
+                />
+              </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="flex flex-col gap-1.5">
@@ -1894,12 +2054,13 @@ const renderSectionSidebar = (sec) => {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Description (Optional)</label>
-                <textarea 
-                  rows={3} 
+                <RichTextField
+                  value={meta.description}
+                  onChange={(html) => setMeta(p => ({ ...p, description: html }))}
                   placeholder="Describe the exam structure and what students will be tested on..."
-                  value={meta.description} 
-                  onChange={e => setMeta(p => ({ ...p, description: e.target.value }))}
-                  className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500/50 resize-none" 
+                  fieldLabel="Exam Description"
+                  minHeightClass="min-h-[84px]"
+                  className="bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:border-blue-500/50"
                 />
               </div>
 
@@ -1960,10 +2121,13 @@ const renderSectionSidebar = (sec) => {
                     <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 block">Section Name</label>
-                        <Input 
-                          placeholder="e.g., Vocabulary" 
-                          value={s.name} 
-                          onChange={e => updateSection(s.id, 'name', e.target.value)}
+                        <RichTextField
+                          value={s.name}
+                          onChange={(html) => updateSection(s.id, 'name', html)}
+                          placeholder="e.g., Vocabulary"
+                          fieldLabel="Section Name"
+                          minHeightClass="min-h-[36px]"
+                          className="bg-slate-950/50 border border-white/10 rounded-xl px-3 py-1.5 text-white text-sm focus:border-blue-500/50"
                           disabled={isEpstopik}
                         />
                       </div>
@@ -2070,7 +2234,7 @@ const renderSectionSidebar = (sec) => {
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {[
-                    { label: 'Exam Title', value: meta.title || 'Untitled' },
+                    { label: 'Exam Title', value: stripHtml(meta.title) || 'Untitled' },
                     { label: 'Category', value: meta.category_id ? meta.category_id.toUpperCase().replace(/_/g, '-') : 'Not selected' },
                     { label: 'Duration', value: `${meta.duration_minutes} mins` },
                     { label: 'Level', value: isEpstopik ? 'N/A' : (meta.level_id ? meta.level_id.toUpperCase() : 'Not selected') },
