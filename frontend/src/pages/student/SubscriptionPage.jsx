@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Crown, CheckCircle, RefreshCw, Rocket, Sparkles } from 'lucide-react';
+import { Crown, CheckCircle, RefreshCw, Rocket, Sparkles, Zap, Shield, Star } from 'lucide-react';
 import axios from 'axios';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import Modal from '../../components/ui/Modal';
+import SubscriptionCheckoutModal from './SubscriptionCheckoutModal';
+
+// Icon Map for dynamic plans
+const iconMap = {
+  rocket: Rocket,
+  zap: Zap,
+  shield: Shield,
+  star: Star,
+  crown: Crown
+};
 
 // Normalize features array if coming in different formats
 const normalizeFeatures = (features) => {
@@ -14,7 +23,7 @@ const normalizeFeatures = (features) => {
     return features
       .map(item => {
         if (typeof item === 'string') return item;
-        if (typeof item === 'object') {
+        if (typeof item === 'object' && item !== null) {
           return item.name || item.label || item.title || Object.keys(item)[0] || '';
         }
         return String(item);
@@ -27,32 +36,68 @@ const normalizeFeatures = (features) => {
 export default function SubscriptionPage() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
-  const [modal, setModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [studentDetails, setStudentDetails] = useState(null);
 
   useEffect(() => {
-    const fetchPlans = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        // 🎯 Fixed correct API Endpoint
-        const res = await axios.get('http://localhost:5000/api/subscription-plans');
-        setPlans(res.data || []);
+        const token = localStorage.getItem('token'); 
+        const config = {
+          headers: { Authorization: `Bearer ${token}` }
+        };
+
+        // 1️⃣. SUBSCRIPTION PLANS FETCH
+        try {
+          const plansRes = await axios.get('http://localhost:5000/api/subscription-management/plans');
+          setPlans(plansRes.data || []);
+        } catch (planError) {
+          console.error("❌ ERROR FETCHING PLANS, TRYING FALLBACK:", planError.message);
+          const fallbackRes = await axios.get('http://localhost:5000/api/subscription-plans');
+          setPlans(fallbackRes.data || []);
+        }
+
+        // 2️⃣. STUDENT PROFILE FETCH
+        try {
+          const profileRes = await axios.get('http://localhost:5000/api/users/checkout-profile', config);
+          const responseData = profileRes.data?.data || profileRes.data?.user || profileRes.data;
+
+          if (responseData) {
+            setStudentDetails({
+              bankName: responseData.bankName || responseData.bank_name || null,
+              accountNo: responseData.accountNo || responseData.account_no || null,
+              accountHolder: responseData.accountHolder || responseData.account_holder || responseData.name || 'Student'
+            });
+          }
+        } catch (profileError) {
+          console.error("❌ ERROR FETCHING PROFILE:", profileError.response ? profileError.response.data : profileError.message);
+          setStudentDetails({ bankName: null, accountNo: null, accountHolder: 'Student' });
+        }
+
       } catch (e) { 
-        console.error("Error fetching plans:", e); 
+        console.error("❌ GENERAL FETCH ERROR:", e); 
       } finally { 
         setLoading(false); 
       }
     };
-    fetchPlans();
+    
+    fetchData();
   }, []);
 
-  const handleUpgrade = (plan) => {
-    setSelected(plan);
-    setModal(true);
+  const handleUpgradeClick = (plan) => {
+    setSelectedPlan({
+      id: plan.id || plan._id,
+      name: plan.name,
+      price: `LKR ${Number(plan.price || 0).toLocaleString()}`,
+      credits: plan.credits || 100
+    });
+    setShowCheckout(true);
   };
 
   return (
-    <div className="space-y-8 font-sans">
+    <div className="space-y-8 p-6 font-sans">
       {/* Page Header */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-3xl font-bold text-white mb-1">Subscription Plans</h1>
@@ -79,11 +124,12 @@ export default function SubscriptionPage() {
           <RefreshCw className="animate-spin text-blue-500" size={32} />
         </div>
       ) : (
-        /* Plans Grid - 3 Columns with Exact Admin Card Template */
+        /* Plans Grid - 3 Columns */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {plans
             .filter(plan => plan.active !== false)
             .map((plan, i) => {
+              const IconComponent = iconMap[plan.icon] || Zap;
               const features = normalizeFeatures(plan.features);
               const isPopular = plan.popular;
 
@@ -110,9 +156,9 @@ export default function SubscriptionPage() {
                       ? 'border-purple-500/30 shadow-xl shadow-purple-500/5' 
                       : 'border-white/5 hover:border-white/10'
                   }`}>
-                    {/* Rocket Icon */}
+                    {/* Plan Icon */}
                     <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-center mb-3">
-                      <Rocket size={18} className="text-purple-400" />
+                      <IconComponent size={18} className="text-purple-400" />
                     </div>
 
                     {/* Plan Name */}
@@ -144,16 +190,13 @@ export default function SubscriptionPage() {
 
                     {/* Action Button */}
                     <div className="mt-auto pt-4 border-t border-white/5">
-                      <button
-                        onClick={() => handleUpgrade(plan)}
-                        className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow-lg active:scale-95 ${
-                          isPopular 
-                            ? 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 shadow-purple-500/20' 
-                            : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-blue-500/20'
-                        }`}
+                      <Button
+                        variant={isPopular ? 'primary' : 'secondary'}
+                        fullWidth
+                        onClick={() => handleUpgradeClick(plan)}
                       >
                         Upgrade to {plan.name}
-                      </button>
+                      </Button>
                     </div>
                   </GlassCard>
                 </motion.div>
@@ -162,23 +205,18 @@ export default function SubscriptionPage() {
         </div>
       )}
 
-      {/* Upgrade Confirmation Modal */}
-      <Modal isOpen={modal} onClose={() => setModal(false)} title={`Upgrade to ${selected?.name}`}>
-        {selected && (
-          <div className="space-y-5">
-            <p className="text-gray-300">
-              You're upgrading to the <span className="text-white font-semibold">{selected.name}</span> plan for <span className="text-emerald-400 font-bold">LKR {Number(selected.price || 0).toLocaleString()}</span>.
-            </p>
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-400 flex items-center gap-2">
-              <Sparkles size={16} />
-              <span>You will receive +{selected.credits} exam credits immediately upon payment.</span>
-            </div>
-            <Button variant="primary" fullWidth onClick={() => setModal(false)}>
-              Confirm & Proceed to Payment
-            </Button>
-          </div>
-        )}
-      </Modal>
+      {/* Checkout Modal */}
+      {showCheckout && studentDetails && (
+        <SubscriptionCheckoutModal 
+          plan={selectedPlan} 
+          userDetails={studentDetails} 
+          onClose={() => setShowCheckout(false)} 
+          onPaymentSuccess={() => {
+            setShowCheckout(false);
+            window.location.reload(); 
+          }} 
+        />
+      )}
     </div>
   );
 }

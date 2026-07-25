@@ -1,36 +1,65 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
 import { TrendingUp, Award, Target, BookOpen } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
-import CircularProgress from '../../components/ui/CircularProgress';
-import { studentPerformanceData, sectionScores } from '../../data/mockData';
-
-const radarData = [
-  { section: 'Grammar', score: 78, fullMark: 100 },
-  { section: 'Vocab', score: 85, fullMark: 100 },
-  { section: 'Listening', score: 70, fullMark: 100 },
-  { section: 'Reading', score: 88, fullMark: 100 },
-  { section: 'Writing', score: 65, fullMark: 100 },
-];
+import axios from 'axios'; // 💡 API Calls සඳහා
 
 export default function PerformancePage() {
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    summary: { bestScore: '0%', bestExamTitle: 'N/A', avgScore: '0%', completedCount: 0, targetScore: '85%' },
+    scoreHistory: [],
+    sectionScores: []
+  });
+
+  useEffect(() => {
+    const fetchPerformanceData = async () => {
+      try {
+        const token = localStorage.getItem('token'); // හෝ ඔයා Auth Context එකෙන් ගන්නා ක්‍රමය
+        const response = await axios.get('http://localhost:5000/api/performance/student-stats', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (response.data.success) {
+          setStats(response.data);
+        }
+      } catch (error) {
+        console.error("Error loading performance charts:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPerformanceData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-3xl font-bold text-white mb-1">Performance Analytics</h1>
-        <p className="text-gray-400">Track your exam progress and identify areas for improvement</p>
+        <p className="text-gray-400">Track your exam progress and identify areas for improvement in real-time</p>
       </motion.div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Best Score', value: '92%', icon: Award, color: 'text-amber-400', sub: 'JLPT N2 Vocab' },
-          { label: 'Average Score', value: '78%', icon: TrendingUp, color: 'text-blue-400', sub: 'All sections' },
-          { label: 'Exams Completed', value: '24', icon: BookOpen, color: 'text-emerald-400', sub: 'This month' },
-          { label: 'Target Score', value: '85%', icon: Target, color: 'text-cyan-400', sub: 'JLPT N2 pass' },
+          { label: 'Best Score', value: stats.summary.bestScore, icon: Award, color: 'text-amber-400', sub: stats.summary.bestExamTitle },
+          { label: 'Average Score', value: stats.summary.avgScore, icon: TrendingUp, color: 'text-blue-400', sub: 'All completed exams' },
+          { label: 'Exams Completed', value: stats.summary.completedCount.toString(), icon: BookOpen, color: 'text-emerald-400', sub: 'Total finished' },
+          { label: 'Target Score', value: stats.summary.targetScore, icon: Target, color: 'text-cyan-400', sub: 'JLPT pass criteria' },
         ].map((s, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
             <GlassCard className="p-5">
@@ -44,10 +73,11 @@ export default function PerformancePage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Line Chart */}
         <GlassCard className="p-6">
           <h3 className="text-lg font-semibold text-white mb-5">Score History</h3>
           <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={studentPerformanceData}>
+            <AreaChart data={stats.scoreHistory}>
               <defs>
                 <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -64,10 +94,11 @@ export default function PerformancePage() {
           </ResponsiveContainer>
         </GlassCard>
 
+        {/* Radar Chart */}
         <GlassCard className="p-6">
           <h3 className="text-lg font-semibold text-white mb-5">Section Radar</h3>
           <ResponsiveContainer width="100%" height={250}>
-            <RadarChart data={radarData}>
+            <RadarChart data={stats.sectionScores}>
               <PolarGrid stroke="rgba(255,255,255,0.1)" />
               <PolarAngleAxis dataKey="section" tick={{ fill: '#9ca3af', fontSize: 12 }} />
               <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#6b7280', fontSize: 10 }} />
@@ -77,10 +108,11 @@ export default function PerformancePage() {
         </GlassCard>
       </div>
 
+      {/* Progress Bars (Section Breakdown) */}
       <GlassCard className="p-6">
         <h3 className="text-lg font-semibold text-white mb-5">Section Breakdown</h3>
         <div className="space-y-4">
-          {sectionScores.map((s, i) => (
+          {stats.sectionScores.map((s, i) => (
             <motion.div key={s.section} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-300">{s.section}</span>
@@ -91,7 +123,7 @@ export default function PerformancePage() {
                   </Badge>
                 </div>
               </div>
-              <div className="h-2.5 bg-white/8 rounded-full overflow-hidden">
+              <div className="h-2.5 bg-white/5 rounded-full overflow-hidden">
                 <motion.div
                   initial={{ width: 0 }} animate={{ width: `${s.score}%` }}
                   transition={{ duration: 1, delay: i * 0.1 }}
