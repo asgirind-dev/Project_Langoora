@@ -65,7 +65,7 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/exam-execution', examExecutionRoutes);
 app.use('/api/email-logs', emailLogRoutes);
 app.use('/api/subscription-plans', planRoutes);
-app.use('/api/exam-credits', creditValuationRoutes);
+app.use('/api/credit-values', creditValuationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/finance', payoutRoutes);
 
