@@ -1,5 +1,6 @@
 // backend/controllers/systemSettingsController.js
 const systemSettingsService = require('../services/systemSettingsService');
+const { db } = require('../config/firebase'); 
 
 // ✅ Helper function defined outside the class to avoid 'this' binding issues
 function isValidEmail(email) {
@@ -185,6 +186,225 @@ class SystemSettingsController {
     }
   }
 
+  // =============================================
+  // 4. EXCHANGE RATE & PLATFORM COMMISSION ⭐
+  // =============================================
+
+  /**
+   * ⭐ Get Both Exchange Rate & Platform Commission
+   * GET /api/system-settings/rates
+   */
+  async getRates(req, res) {
+    try {
+      // ⭐ admin.firestore() වෙනුවට db use කරන්න
+      const docRef = db.collection('system_settings').doc('global_config');
+      const docSnap = await docRef.get();
+
+      if (!docSnap.exists) {
+        return res.status(404).json({
+          success: false,
+          message: 'System settings not found'
+        });
+      }
+
+      const data = docSnap.data();
+
+      res.status(200).json({
+        success: true,
+        data: {
+          exchangeRate: data.creditPrice || 5,
+          platformCommission: data.platformCommission || 10,
+          minPayoutThreshold: data.minPayoutThreshold || 5000,
+          signupBonus: data.signupBonus || 10,
+          currency: 'LKR'
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching rates:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get Exchange Rate (creditPrice) Only
+   * GET /api/system-settings/exchange-rate
+   */
+  async getExchangeRate(req, res) {
+    try {
+      const docRef = db.collection('system_settings').doc('global_config');
+      const docSnap = await docRef.get();
+
+      if (!docSnap.exists) {
+        return res.status(404).json({
+          success: false,
+          message: 'System settings not found'
+        });
+      }
+
+      const data = docSnap.data();
+      const creditPrice = data.creditPrice || 5;
+
+      res.status(200).json({
+        success: true,
+        data: {
+          exchangeRate: creditPrice,
+          currency: 'LKR'
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching exchange rate:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get Platform Commission Only
+   * GET /api/system-settings/platform-commission
+   */
+  async getPlatformCommission(req, res) {
+    try {
+      const docRef = db.collection('system_settings').doc('global_config');
+      const docSnap = await docRef.get();
+
+      if (!docSnap.exists) {
+        return res.status(404).json({
+          success: false,
+          message: 'System settings not found'
+        });
+      }
+
+      const data = docSnap.data();
+      const platformCommission = data.platformCommission || 10;
+
+      res.status(200).json({
+        success: true,
+        data: {
+          platformCommission: platformCommission
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching platform commission:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Update Exchange Rate (creditPrice)
+   * PUT /api/system-settings/exchange-rate
+   */
+  async updateExchangeRate(req, res) {
+    try {
+      const { creditPrice } = req.body;
+
+      if (creditPrice === undefined || creditPrice === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'creditPrice is required'
+        });
+      }
+
+      if (isNaN(creditPrice) || creditPrice < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'creditPrice must be a positive number'
+        });
+      }
+
+      const docRef = db.collection('system_settings').doc('global_config');
+
+      await docRef.update({
+        creditPrice: Number(creditPrice),
+        updatedAt: new Date().toISOString()
+      });
+
+      const updatedDoc = await docRef.get();
+      const data = updatedDoc.data();
+
+      res.status(200).json({
+        success: true,
+        message: 'Exchange rate updated successfully',
+        data: {
+          exchangeRate: data.creditPrice,
+          currency: 'LKR',
+          updatedAt: data.updatedAt
+        }
+      });
+    } catch (error) {
+      console.error('Error updating exchange rate:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Update Platform Commission
+   * PUT /api/system-settings/platform-commission
+   */
+  async updatePlatformCommission(req, res) {
+    try {
+      const { platformCommission } = req.body;
+
+      if (platformCommission === undefined || platformCommission === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'platformCommission is required'
+        });
+      }
+
+      if (isNaN(platformCommission) || platformCommission < 0 || platformCommission > 100) {
+        return res.status(400).json({
+          success: false,
+          message: 'platformCommission must be between 0 and 100'
+        });
+      }
+
+      const docRef = db.collection('system_settings').doc('global_config');
+
+      await docRef.update({
+        platformCommission: Number(platformCommission),
+        updatedAt: new Date().toISOString()
+      });
+
+      const updatedDoc = await docRef.get();
+      const data = updatedDoc.data();
+
+      res.status(200).json({
+        success: true,
+        message: 'Platform commission updated successfully',
+        data: {
+          platformCommission: data.platformCommission,
+          updatedAt: data.updatedAt
+        }
+      });
+    } catch (error) {
+      console.error('Error updating platform commission:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+
+  // =============================================
+  // 5. SEND TEST EMAIL
+  // =============================================
+
   async sendTestEmail(req, res) {
     try {
       console.log('📧 sendTestEmail called with body:', req.body);
@@ -226,7 +446,6 @@ class SystemSettingsController {
       });
     }
   }
-}
 
 // Export as singleton instance
 module.exports = new SystemSettingsController();

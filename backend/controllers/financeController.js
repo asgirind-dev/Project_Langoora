@@ -348,3 +348,85 @@ exports.getAllTransactions = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// ==========================================
+// 5. GET ALL TUTORS WITH TOKENS FROM PURCHASED_EXAMS ⭐ NEW
+// ==========================================
+exports.getAllTutorsWithTokens = async (req, res) => {
+  try {
+    // Get all completed purchased exams
+    const purchasedSnapshot = await db.collection('purchased_exams')
+      .where('status', '==', 'completed')
+      .get();
+    
+    const tutorMap = {};
+
+    purchasedSnapshot.forEach(doc => {
+      const data = doc.data();
+      const tutorId = data.tutor_id;
+      
+      if (!tutorId) return;
+      
+      if (!tutorMap[tutorId]) {
+        tutorMap[tutorId] = {
+          tutorId: tutorId,
+          tutorName: data.tutor_name || 'Unknown',
+          totalTokens: 0,
+          paperCount: 0,
+          studentIds: [],
+          examIds: []
+        };
+      }
+      
+      // credits_deducted එක tokens ලෙස එකතු කරන්න
+      tutorMap[tutorId].totalTokens += data.credits_deducted || 0;
+      tutorMap[tutorId].paperCount += 1;
+      
+      if (data.student_id && !tutorMap[tutorId].studentIds.includes(data.student_id)) {
+        tutorMap[tutorId].studentIds.push(data.student_id);
+      }
+      if (data.exam_id && !tutorMap[tutorId].examIds.includes(data.exam_id)) {
+        tutorMap[tutorId].examIds.push(data.exam_id);
+      }
+    });
+
+    // Get system settings
+    const settingsRef = db.collection('system_settings').doc('global_config');
+    const settingsDoc = await settingsRef.get();
+    const settings = settingsDoc.data() || {};
+    const exchangeRate = settings.creditPrice || 10;
+    const commission = settings.platformCommission || 20;
+
+    // Calculate for each tutor
+    const tutors = Object.values(tutorMap).map(tutor => {
+      const grossAmount = tutor.totalTokens * exchangeRate;
+      const commissionAmount = grossAmount * (commission / 100);
+      const netPayout = grossAmount - commissionAmount;
+
+      return {
+        ...tutor,
+        studentCount: tutor.studentIds.length,
+        examCount: tutor.examIds.length,
+        grossAmount,
+        commissionAmount,
+        netPayout,
+        exchangeRate,
+        commission,
+        tokensPerPaper: tutor.paperCount > 0 ? Math.round(tutor.totalTokens / tutor.paperCount) : 0
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: tutors
+    });
+
+  } catch (error) {
+    console.error('Error fetching tutors tokens:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};

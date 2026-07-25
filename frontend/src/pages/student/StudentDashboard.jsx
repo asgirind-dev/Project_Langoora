@@ -5,36 +5,38 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { 
-  TrendingUp, BookOpen, Clock, Flame, Crown, ArrowRight, Target, 
-  Award, Play, CalendarDays, CheckCircle2, Circle, Lock, Coins 
+  TrendingUp, BookOpen, Clock, Flame, ArrowRight, 
+  Play, CalendarDays, CheckCircle2, Circle, Lock, Coins 
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import CircularProgress from '../../components/ui/CircularProgress';
-import { studentPerformanceData, sectionScores, featuredExams } from '../../data/mockData';
-
-const recentExams = [
-  { id: 1, title: 'JLPT N2 Grammar Section', score: 78, total: 100, date: '2024-06-08', status: 'passed', time: '45 min' },
-  { id: 2, title: 'EPS-TOPIK Listening Mock', score: 62, total: 100, date: '2024-06-06', status: 'failed', time: '35 min' },
-  { id: 3, title: 'JLPT N2 Vocabulary', score: 85, total: 100, date: '2024-06-04', status: 'passed', time: '38 min' },
-];
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // 🚀 STUDY PLANNER WIDGET STATES
+  // STUDY PLANNER WIDGET STATES
   const [todayPlans, setTodayPlans] = useState([]);
   const [isPlannerLocked, setIsPlannerLocked] = useState(false);
   const [plannerLoading, setPlannerLoading] = useState(true);
 
+  // DYNAMIC RECENT EXAMS STATES
+  const [recentExams, setRecentExams] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(true);
+
+  // FIRESTORE LIVE DATA STATES
+  const [credits, setCredits] = useState(0);
+  const [stats, setStats] = useState({ examsTaken: 0, studyHours: '0h', avgScore: '0%', streak: 12 });
+  const [chartData, setChartData] = useState([]);
+  const [dynamicSectionScores, setDynamicSectionScores] = useState([]);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+
   const studentId = user?.uid || user?.id;
 
-  // ==========================================
-  // 🔄 FETCH TODAY'S BLUEPRINTS FOR MINI WIDGET
-  // ==========================================
+  // 1. FETCH TODAY'S BLUEPRINTS FROM API
   useEffect(() => {
     const fetchTodayPlans = async () => {
       if (!studentId) return;
@@ -48,8 +50,16 @@ export default function StudentDashboard() {
         if (response.status === 403 || result.isLocked) {
           setIsPlannerLocked(true);
         } else if (result.success) {
-          const todayStr = new Date().toISOString().split('T')[0];
-          const filtered = (result.plans || []).filter(p => p.scheduled_date === todayStr);
+          const today = new Date();
+          const offset = today.getTimezoneOffset();
+          const localToday = new Date(today.getTime() - (offset * 60 * 1000));
+          const todayStr = localToday.toISOString().split('T')[0];
+          
+          const filtered = (result.plans || []).filter(p => {
+            const planDate = p.scheduled_date ? p.scheduled_date.split('T')[0] : '';
+            return planDate === todayStr;
+          });
+          
           setTodayPlans(filtered);
           setIsPlannerLocked(false);
         }
@@ -63,9 +73,95 @@ export default function StudentDashboard() {
     fetchTodayPlans();
   }, [studentId]);
 
-  // ==========================================
-  // 📝 QUICK TOGGLE STATUS FROM WIDGET
-  // ==========================================
+  // 2. FETCH RECENT EXAMS DYNAMICALLY FROM API
+  useEffect(() => {
+    const fetchRecentExams = async () => {
+      if (!studentId) return;
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://localhost:5000/api/exams/recent', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await response.json();
+
+        if (result.success && result.exams) {
+          setRecentExams(result.exams);
+        } else {
+          setRecentExams([
+            { id: 1, title: 'JLPT N2 Grammar Section', score: 78, total: 100, date: '2024-06-08', status: 'passed', time: '45 min' },
+            { id: 2, title: 'EPS-TOPIK Listening Mock', score: 62, total: 100, date: '2024-06-06', status: 'failed', time: '35 min' }
+          ]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch dynamic recent exams:", error);
+        setRecentExams([
+          { id: 1, title: 'JLPT N2 Grammar Section (Backup)', score: 78, total: 100, date: '2024-06-08', status: 'passed', time: '45 min' },
+          { id: 2, title: 'EPS-TOPIK Listening Mock (Backup)', score: 62, total: 100, date: '2024-06-06', status: 'failed', time: '35 min' }
+        ]);
+      } finally {
+        setExamsLoading(false);
+      }
+    };
+
+    fetchRecentExams();
+  }, [studentId]);
+
+  // 3. FETCH USER METRICS & WALLET FROM FIRESTORE (⚠️ මෙන්න මෙතනට තමා අලුත් කෝඩ් එක ආවේ)
+  useEffect(() => {
+    if (!studentId) return; 
+
+    const fetchStudentFirestoreData = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        
+        // Backend එකට uid එක query param එකක් විදිහට පාස් කරනවා
+        const userResponse = await fetch(`http://localhost:5000/api/users/profile?uid=${studentId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const userData = await userResponse.json();
+        
+        console.log("Backend User Data Response:", userData);
+
+        // 💡 userData.user වෙනුවට userData.data එක check කරනවා
+        if (userData.success && userData.data) {
+          const user = userData.data; // 👈 මෙතනට data එක ගන්නවා
+          
+          const walletBalance = 
+            (user.subscription && user.subscription.wallet_balance) !== undefined ? user.subscription.wallet_balance :
+            user.wallet_balance !== undefined ? user.wallet_balance :
+            user.credits !== undefined ? user.credits : 
+            (user.subscription && user.subscription.credits) !== undefined ? user.subscription.credits : 0;
+
+          setCredits(walletBalance);
+          setStats(prev => ({ ...prev, streak: user.streak || 12 }));
+        }
+
+        const perfResponse = await fetch('http://localhost:5000/api/performance/student-stats', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const perfResult = await perfResponse.json();
+
+        if (perfResult.success) {
+          setStats(prev => ({
+            ...prev,
+            examsTaken: perfResult.summary.examsTaken || 0,
+            avgScore: `${perfResult.summary.avgScore || 0}%`,
+            studyHours: perfResult.summary.studyHours || '0h'
+          }));
+          setChartData(perfResult.chartData || []);
+          setDynamicSectionScores(perfResult.sectionScores || []);
+        }
+      } catch (error) {
+        console.error("Firestore dashboard sync failure:", error);
+      } finally {
+        setMetricsLoading(false);
+      }
+    };
+
+    fetchStudentFirestoreData();
+  }, [studentId]); 
+
+  // QUICK TOGGLE STATUS FROM PLANNER WIDGET
   const handleToggleWidgetStatus = async (planId, currentStatus) => {
     const nextStatus = currentStatus === 'completed' ? 'pending' : 'completed';
     try {
@@ -95,21 +191,27 @@ export default function StudentDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-white">Welcome back, {user?.name?.split(' ')[0] || 'Student'} 👋</h1>
-            <p className="text-gray-400 mt-1">You're on a <span className="text-amber-400 font-semibold">12-day streak!</span> Keep it up.</p>
+            <p className="text-gray-400 mt-1">You're on a <span className="text-amber-400 font-semibold">{stats.streak}-day streak!</span> Keep it up.</p>
           </div>
-          <Button variant="primary" onClick={() => navigate('/student/marketplace')}>
-            <Play size={16} /> Continue Practice
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl">
+              <Coins size={14} className="text-amber-400" />
+              <span className="text-sm font-bold text-amber-400">{credits} Credits</span>
+            </div>
+            <Button variant="primary" onClick={() => navigate('/student/marketplace')}>
+              <Play size={16} /> Continue Practice
+            </Button>
+          </div>
         </div>
       </motion.div>
 
-      {/* Stats Row */}
+      {/* Live Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Exams Taken', value: '24', icon: BookOpen, color: 'text-blue-400', bg: 'from-blue-500/20 to-blue-600/10', border: 'border-blue-500/20' },
-          { label: 'Study Hours', value: '142h', icon: Clock, color: 'text-cyan-400', bg: 'from-cyan-500/20 to-cyan-600/10', border: 'border-cyan-500/20' },
-          { label: 'Avg. Score', value: '78%', icon: TrendingUp, color: 'text-emerald-400', bg: 'from-emerald-500/20 to-emerald-600/10', border: 'border-emerald-500/20' },
-          { label: 'Day Streak', value: '12', icon: Flame, color: 'text-amber-400', bg: 'from-amber-500/20 to-amber-600/10', border: 'border-amber-500/20' },
+          { label: 'Exams Taken', value: stats.examsTaken, icon: BookOpen, color: 'text-blue-400', bg: 'from-blue-500/20 to-blue-600/10', border: 'border-blue-500/20' },
+          { label: 'Study Hours', value: stats.studyHours, icon: Clock, color: 'text-cyan-400', bg: 'from-cyan-500/20 to-cyan-600/10', border: 'border-cyan-500/20' },
+          { label: 'Avg. Score', value: stats.avgScore, icon: TrendingUp, color: 'text-emerald-400', bg: 'from-emerald-500/20 to-emerald-600/10', border: 'border-emerald-500/20' },
+          { label: 'Day Streak', value: stats.streak, icon: Flame, color: 'text-amber-400', bg: 'from-amber-500/20 to-amber-600/10', border: 'border-amber-500/20' },
         ].map((stat, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
             <GlassCard className={`p-5 bg-gradient-to-br ${stat.bg} border ${stat.border}`}>
@@ -136,7 +238,7 @@ export default function StudentDashboard() {
             <Badge color="green">+8% this month</Badge>
           </div>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={studentPerformanceData}>
+            <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -163,7 +265,7 @@ export default function StudentDashboard() {
           <p className="text-sm text-gray-400 mb-6 text-center">JLPT N2 · Next exam in 45 days</p>
           <CircularProgress value={74} size={150} strokeWidth={12} color="#3b82f6" sublabel="Ready" />
           <div className="mt-6 w-full space-y-3">
-            {sectionScores && sectionScores.slice(0, 3).map(s => (
+            {dynamicSectionScores && dynamicSectionScores.slice(0, 3).map(s => (
               <div key={s.section}>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-400">{s.section}</span>
@@ -181,35 +283,42 @@ export default function StudentDashboard() {
         </GlassCard>
       </div>
 
-      {/* Bottom Grid */}
+      {/* Bottom Grid (Recent Exams & Planner) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Exams */}
         <GlassCard className="lg:col-span-2 p-6">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-lg font-semibold text-white">Recent Exams</h3>
             <Button variant="ghost" size="sm" onClick={() => navigate('/student/exams')}>View All <ArrowRight size={14} /></Button>
           </div>
           <div className="space-y-3">
-            {recentExams && recentExams.map(exam => (
-              <div key={exam.id} className="flex items-center gap-4 p-3 bg-white/3 rounded-xl border border-white/5 hover:border-white/10 transition-all">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
-                  exam.status === 'passed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
-                }`}>
-                  {exam.score}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{exam.title}</p>
-                  <p className="text-xs text-gray-500">{exam.date} · {exam.time}</p>
-                </div>
-                <Badge color={exam.status === 'passed' ? 'green' : 'red'}>
-                  {exam.status}
-                </Badge>
+            {examsLoading ? (
+              <p className="text-xs text-gray-500 animate-pulse py-6 text-center">Fetching your latest exam metrics...</p>
+            ) : recentExams.length === 0 ? (
+              <div className="text-center py-8 text-xs text-gray-500">
+                📊 You haven't taken any exams yet. Start your first practice test!
               </div>
-            ))}
+            ) : (
+              recentExams.map(exam => (
+                <div key={exam.id} className="flex items-center gap-4 p-3 bg-white/3 rounded-xl border border-white/5 hover:border-white/10 transition-all">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
+                    exam.status === 'passed' || exam.score >= 50 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {exam.score}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-white truncate">{exam.title}</p>
+                    <p className="text-xs text-gray-500">{exam.date?.split('T')[0]} · {exam.time || 'N/A'}</p>
+                  </div>
+                  <Badge color={exam.status === 'passed' || exam.score >= 50 ? 'green' : 'red'}>
+                    {exam.status || (exam.score >= 50 ? 'passed' : 'failed')}
+                  </Badge>
+                </div>
+              ))
+            )}
           </div>
         </GlassCard>
 
-        {/* 📅 --- LIVE STUDY PLANNER DASHBOARD INTERACTIVE WIDGET --- */}
+        {/* STUDY PLANNER WIDGET */}
         <GlassCard className="p-6 border-white/5 relative flex flex-col justify-between overflow-hidden">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -221,7 +330,6 @@ export default function StudentDashboard() {
               </Button>
             </div>
 
-            {/* Premium Gated Security Layer UI */}
             {isPlannerLocked ? (
               <div className="py-8 text-center flex flex-col items-center justify-center h-full">
                 <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-400 mb-3 animate-pulse">
@@ -266,46 +374,10 @@ export default function StudentDashboard() {
           </div>
 
           <div className="mt-4 pt-3 border-t border-white/5 text-[10px] text-gray-500 font-medium flex items-center justify-between">
-            <span>Module status: Locked to timezone</span>
+            <span>Module status: Active (Local Timezone)</span>
             <span className="text-blue-500 font-bold uppercase tracking-wider">Live DB Sync</span>
           </div>
         </GlassCard>
-      </div>
-
-      {/* Recommended Exams */}
-      <div>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-white">Recommended For You</h3>
-          <Button variant="ghost" size="sm" onClick={() => navigate('/student/marketplace')}>Browse All <ArrowRight size={14} /></Button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {featuredExams && featuredExams.slice(0, 3).map((exam, i) => (
-            <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-              <GlassCard hover className="p-4" onClick={() => navigate(`/exam/${exam.id}/preview`)}>
-                <div className="flex gap-3">
-                  <img src={exam.thumbnail} alt={exam.title} className="w-16 h-16 rounded-xl object-cover flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white line-clamp-2 leading-snug mb-1">{exam.title}</p>
-                    <p className="text-xs text-gray-400">{exam.tutor}</p>
-                    
-                    {/* 🟢 --- DYNAMIC CREDIT INTERACTION ALIGNED WITH MARKETPLACE --- */}
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center gap-1">
-                        <Coins size={13} className="text-amber-400" />
-                        <span className="text-sm font-bold text-amber-400">
-                          {exam?.credits !== undefined && exam?.credits !== null ? exam.credits : '0'}
-                        </span>
-                        <span className="text-[10px] text-gray-400">Credits</span>
-                      </div>
-                      <Badge color="blue">{exam.level || exam.difficulty}</Badge>
-                    </div>
-
-                  </div>
-                </div>
-              </GlassCard>
-            </motion.div>
-          ))}
-        </div>
       </div>
     </div>
   );
