@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Backend Plan Endpoints API Base URL
-const API_URL = 'http://localhost:5000/api/plans';
+const API_URL = 'http://localhost:5000/api/subscription-plans';
 
 // Bearer Token Authorization Header
 const getAuthConfig = () => ({
