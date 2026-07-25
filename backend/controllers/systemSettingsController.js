@@ -140,7 +140,7 @@ class SystemSettingsController {
         });
       }
 
-      // ✅ FIX: Use the helper function instead of this.isValidEmail
+      // Validate Email
       if (senderEmail && !isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
@@ -196,7 +196,6 @@ class SystemSettingsController {
    */
   async getRates(req, res) {
     try {
-      // ⭐ admin.firestore() වෙනුවට db use කරන්න
       const docRef = db.collection('system_settings').doc('global_config');
       const docSnap = await docRef.get();
 
@@ -419,7 +418,6 @@ class SystemSettingsController {
         });
       }
 
-      // ✅ FIX: Use the helper function instead of this.isValidEmail
       if (!isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
@@ -446,6 +444,7 @@ class SystemSettingsController {
       });
     }
   }
+} // 👈 මෙතන තමයි Class එකේ Closing Curly Brace එක එකතු කළේ!
 
 // Export as singleton instance
 module.exports = new SystemSettingsController();

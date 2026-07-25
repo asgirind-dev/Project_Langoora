@@ -1,5 +1,9 @@
 const { db, storage } = require('../config/firebase');
 const cloudinary = require('cloudinary').v2;
+const path = require('path');
+
+// Dynamic requirement for services if defined in your structure
+// const examServices = require('../services/examServices'); 
 
 // =========================================================================
 // Cloudinary Configuration
@@ -58,8 +62,6 @@ const createExam = async (req, res) => {
         message: 'Exam structure deployed successfully!',
         examId: result.examId
       });
-
-      await batch.commit();
     }
 
     return res.status(500).json({
@@ -73,6 +75,8 @@ const createExam = async (req, res) => {
       message: 'Internal server failed to execute blueprint commit.',
       error: error.message
     });
+  } // 👈 FIXED: Missing bracket was added here
+};
 
 // =========================================================================
 // 2. Get Purchased Exams for Logged-In Student (UPDATED FOR UI FIX)
@@ -751,7 +755,7 @@ const uploadAsset = async (req, res) => {
         fileUrl: dataUriString,
         type: 'image'
       });
-    };
+    }
 
     return res.status(400).json({
       success: false,
