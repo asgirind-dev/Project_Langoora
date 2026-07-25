@@ -1,6 +1,10 @@
+// frontend/src/pages/validator/TutorVerificationPage.jsx
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, FileText, Eye, ShieldAlert, X, Check, AlertTriangle, CheckCircle, AlertCircle, Mail, GraduationCap } from "lucide-react";
+import { 
+  Clock, FileText, Eye, ShieldAlert, X, Check, AlertTriangle, 
+  CheckCircle, AlertCircle, Mail, GraduationCap, MessageSquare 
+} from "lucide-react";
 
 import GlassCard from "../../components/ui/GlassCard";
 import Badge from "../../components/ui/Badge";
@@ -9,22 +13,27 @@ import Button from "../../components/ui/Button";
 export default function TutorVerificationPage() {
   const [tutors, setTutors] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDoc, setSelectedDoc] = useState(null); 
+  const [selectedDoc, setSelectedDoc] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
 
-  // Custom UI Component States
+  // UI States
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-  const [confirmRejectModal, setConfirmRejectModal] = useState({ show: false, tutorId: null });
+  const [confirmRejectModal, setConfirmRejectModal] = useState({
+    show: false,
+    tutorId: null,
+    tutorName: '',
+    reason: ''
+  });
 
-  // Helper Function to Trigger UI Notification Toast
+  // Helper Function for Toast Notification
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => {
       setToast({ show: false, message: '', type: 'success' });
-    }, 3000);
+    }, 4000);
   };
 
-  // FETCH FROM EXPRESS CONTROLLER API
+  // FETCH PENDING TUTORS
   const fetchPendingTutors = async () => {
     setLoading(true);
     try {
@@ -37,7 +46,8 @@ export default function TutorVerificationPage() {
         setTutors(result.data || []);
       }
     } catch (error) {
-      console.error("Express credential registry node exception:", error);
+      console.error("Error fetching pending tutors:", error);
+      showNotification("Failed to fetch pending tutors", "error");
     } finally {
       setLoading(false);
     }
@@ -47,7 +57,7 @@ export default function TutorVerificationPage() {
     fetchPendingTutors();
   }, []);
 
-  // ACTION DISPATCH: APPROVE WORKING PATH
+  // HANDLE APPROVE
   const handleApprove = async (tutorId) => {
     setActionLoading(tutorId);
     try {
@@ -57,26 +67,46 @@ export default function TutorVerificationPage() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const result = await response.json();
+      
       if (result.success) {
         setTutors((prev) => prev.filter((t) => t.id !== tutorId));
-        showNotification("Instructor application approved successfully. Profile activated.", "success");
+        
+        // Show email status in notification
+        if (result.result?.emailSent) {
+          showNotification(
+            "✅ Tutor approved successfully! Confirmation email sent to the tutor.",
+            "success"
+          );
+        } else {
+          showNotification(
+            "⚠️ Tutor approved but email notification failed. Please check email configuration.",
+            "warning"
+          );
+        }
+      } else {
+        showNotification(result.message || "Failed to approve tutor", "error");
       }
     } catch (error) {
-      console.error("Approval flow synchronization crashed:", error);
-      showNotification("Failed to finalize instructor account validation changes.", "error");
+      console.error("Approval error:", error);
+      showNotification("Failed to approve tutor. Please try again.", "error");
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Triggers the Custom UI confirmation dialog setup instead of native blocks
-  const triggerRejectConfirmation = (tutorId) => {
-    setConfirmRejectModal({ show: true, tutorId });
+  // TRIGGER REJECT CONFIRMATION WITH REASON
+  const triggerRejectConfirmation = (tutorId, tutorName) => {
+    setConfirmRejectModal({
+      show: true,
+      tutorId,
+      tutorName,
+      reason: ''
+    });
   };
 
-  // Executed only after verification check passes from the custom UI prompt
+  // HANDLE CONFIRM REJECT
   const handleConfirmReject = async () => {
-    const tutorId = confirmRejectModal.tutorId;
+    const { tutorId, reason } = confirmRejectModal;
     if (!tutorId) return;
 
     setActionLoading(tutorId);
@@ -84,22 +114,42 @@ export default function TutorVerificationPage() {
       const token = localStorage.getItem('token');
       const response = await fetch(`http://localhost:5000/api/validator/tutors/reject/${tutorId}`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ rejectionReason: reason || null })
       });
       const result = await response.json();
+      
       if (result.success) {
         setTutors((prev) => prev.filter((t) => t.id !== tutorId));
-        setConfirmRejectModal({ show: false, tutorId: null });
-        showNotification("Instructor credentials rejected. Staging application dropped.", "error");
+        setConfirmRejectModal({ show: false, tutorId: null, tutorName: '', reason: '' });
+        
+        // Show email status in notification
+        if (result.result?.emailSent) {
+          showNotification(
+            "📋 Tutor rejected. Notification email sent to the tutor.",
+            "info"
+          );
+        } else {
+          showNotification(
+            "⚠️ Tutor rejected but email notification failed. Please check email configuration.",
+            "warning"
+          );
+        }
+      } else {
+        showNotification(result.message || "Failed to reject tutor", "error");
       }
     } catch (error) {
-      console.error("Rejection flow execution exception:", error);
-      showNotification("Failed to safely process application rejection metrics.", "error");
+      console.error("Rejection error:", error);
+      showNotification("Failed to reject tutor. Please try again.", "error");
     } finally {
       setActionLoading(null);
     }
   };
 
+  // Loading skeleton
   if (loading) {
     return (
       <div className="space-y-3 p-8 bg-[#060d1f] min-h-screen">
@@ -125,7 +175,7 @@ export default function TutorVerificationPage() {
   return (
     <div className="space-y-8 bg-[#060d1f] min-h-screen p-6 sm:p-8 relative selection:bg-blue-500/30">
       
-      {/* Dynamic Slide-in Toast Notification */}
+      {/* Toast Notification with Multiple Types */}
       <AnimatePresence>
         {toast.show && (
           <motion.div
@@ -136,16 +186,35 @@ export default function TutorVerificationPage() {
             className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl max-w-sm ${
               toast.type === 'success' 
                 ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-emerald-950/20' 
+                : toast.type === 'warning'
+                ? 'bg-amber-950/40 border-amber-500/30 text-amber-200 shadow-amber-950/20'
+                : toast.type === 'info'
+                ? 'bg-blue-950/40 border-blue-500/30 text-blue-200 shadow-blue-950/20'
                 : 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-rose-950/20'
             }`}
           >
             <div className={`p-1.5 rounded-xl border ${
-              toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20'
+              toast.type === 'success' 
+                ? 'bg-emerald-500/10 border-emerald-500/20' 
+                : toast.type === 'warning'
+                ? 'bg-amber-500/10 border-amber-500/20'
+                : toast.type === 'info'
+                ? 'bg-blue-500/10 border-blue-500/20'
+                : 'bg-rose-500/10 border-rose-500/20'
             }`}>
-              {toast.type === 'success' ? <CheckCircle size={18} className="text-emerald-400" /> : <AlertCircle size={18} className="text-rose-400" />}
+              {toast.type === 'success' 
+                ? <CheckCircle size={18} className="text-emerald-400" /> 
+                : toast.type === 'warning'
+                ? <AlertTriangle size={18} className="text-amber-400" />
+                : toast.type === 'info'
+                ? <AlertCircle size={18} className="text-blue-400" />
+                : <AlertCircle size={18} className="text-rose-400" />
+              }
             </div>
             <div className="flex-1">
-              <p className="text-xs font-bold uppercase tracking-wider opacity-60">System Notice</p>
+              <p className="text-xs font-bold uppercase tracking-wider opacity-60">
+                {toast.type === 'success' ? 'Success' : toast.type === 'warning' ? 'Warning' : toast.type === 'info' ? 'Notice' : 'Error'}
+              </p>
               <p className="text-sm font-medium mt-0.5 leading-tight">{toast.message}</p>
             </div>
             <button onClick={() => setToast(p => ({ ...p, show: false }))} className="text-gray-400 hover:text-white p-1">
@@ -155,7 +224,7 @@ export default function TutorVerificationPage() {
         )}
       </AnimatePresence>
 
-      {/* Custom Red Confirmation Modal */}
+      {/* Reject Confirmation Modal with Reason Input */}
       <AnimatePresence>
         {confirmRejectModal.show && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -163,7 +232,7 @@ export default function TutorVerificationPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm bg-[#0f1629] border border-rose-500/30 rounded-2xl p-6 shadow-2xl text-left"
+              className="w-full max-w-md bg-[#0f1629] border border-rose-500/30 rounded-2xl p-6 shadow-2xl"
             >
               <div className="flex items-center gap-3 text-rose-400 mb-4">
                 <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">
@@ -175,17 +244,36 @@ export default function TutorVerificationPage() {
                 </div>
               </div>
 
-              <p className="text-sm text-gray-300 mb-6 leading-relaxed">
-                Are you absolutely sure you want to permanently reject this tutor's credentials application? This profile tracking state will shift immediately.
+              <p className="text-sm text-gray-300 mb-4 leading-relaxed">
+                You are about to reject <span className="text-white font-medium">{confirmRejectModal.tutorName}</span>'s application. 
+                This action will send a rejection email to the tutor.
               </p>
 
-              <div className="flex justify-end gap-2">
+              {/* Rejection Reason Input */}
+              <div className="mb-4">
+                <label className="text-sm font-medium text-gray-300 flex items-center gap-2 mb-1.5">
+                  <MessageSquare size={14} className="text-rose-400" />
+                  Rejection Reason <span className="text-xs text-gray-500">(Optional but recommended)</span>
+                </label>
+                <textarea
+                  placeholder="e.g., Your qualifications do not meet our minimum requirements for JLPT N1 certification..."
+                  value={confirmRejectModal.reason}
+                  onChange={(e) => setConfirmRejectModal(prev => ({ ...prev, reason: e.target.value }))}
+                  rows={4}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-rose-500/50 text-sm transition-colors resize-none"
+                />
+                <p className="text-xs text-gray-500 mt-1.5">
+                  This reason will be included in the rejection email sent to the tutor.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
                 <Button 
                   type="button" 
                   variant="secondary" 
                   size="sm"
                   className="text-xs border border-white/5 bg-white/5 hover:bg-white/10"
-                  onClick={() => setConfirmRejectModal({ show: false, tutorId: null })}
+                  onClick={() => setConfirmRejectModal({ show: false, tutorId: null, tutorName: '', reason: '' })}
                 >
                   Cancel
                 </Button>
@@ -193,9 +281,15 @@ export default function TutorVerificationPage() {
                   type="button"
                   disabled={actionLoading !== null}
                   onClick={handleConfirmReject}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl shadow-lg transition-colors disabled:opacity-50"
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl shadow-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
-                  Confirm Reject
+                  {actionLoading === confirmRejectModal.tutorId ? (
+                    <>Processing...</>
+                  ) : (
+                    <>
+                      <X size={14} /> Confirm Rejection
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>
@@ -203,6 +297,7 @@ export default function TutorVerificationPage() {
         )}
       </AnimatePresence>
       
+      {/* Header */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center justify-between flex-col sm:flex-row gap-4">
           <div>
@@ -220,6 +315,7 @@ export default function TutorVerificationPage() {
         </div>
       </motion.div>
 
+      {/* Tutor List */}
       <div className="space-y-4">
         {tutors.length === 0 ? (
           <GlassCard className="p-8 text-center text-gray-500 text-sm border-dashed">
@@ -277,7 +373,7 @@ export default function TutorVerificationPage() {
                   variant="danger" 
                   size="sm" 
                   disabled={actionLoading !== null}
-                  onClick={() => triggerRejectConfirmation(t.id)}
+                  onClick={() => triggerRejectConfirmation(t.id, t.name)}
                   className="text-xs font-bold bg-rose-600/20 hover:bg-rose-600 border border-rose-500/30 text-rose-400 hover:text-white px-4 flex items-center gap-1"
                 >
                   <X size={12}/> Reject
@@ -288,7 +384,7 @@ export default function TutorVerificationPage() {
         )}
       </div>
 
-      {/* BASE64 MODAL PREVIEWER */}
+      {/* Document Preview Modal */}
       <AnimatePresence>
         {selectedDoc && (
           <motion.div 

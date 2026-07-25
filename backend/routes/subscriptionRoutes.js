@@ -1,23 +1,31 @@
 const express = require('express');
 const router = express.Router();
-const subController = require('../controllers/subscriptionController');
+const subscriptionController = require('../controllers/subscriptionController');
+const { protect, authorizeRoles } = require('../middleware/authMiddleware'); 
 
-// Plans Endpoints
-router.get('/plans', subController.getPlans);
-router.post('/plans', subController.createPlan);
-router.put('/plans/:id', subController.updatePlan);
-router.delete('/plans/:id', subController.deletePlan);
+// ==========================================
+// 🔄 PUBLIC / WEBHOOK ENDPOINT (NO AUTH)
+// ==========================================
+router.post('/payhere-notify', subscriptionController.handlePayhereNotification);
 
-// Exam Categories Endpoints
-router.get('/categories', subController.getCategories); // මින් ඉදිරියට කෙලින්ම අපේ දත්ත එනවා
-router.post('/categories', subController.createCategory);
-router.put('/categories/:id', subController.updateCategory);
-router.delete('/categories/:id', subController.deleteCategory);
+// ==========================================
+// 🔒 PROTECTED USER ENDPOINTS (ALL LOGGED-IN USERS)
+// ==========================================
+router.get('/plans', protect, subscriptionController.getPlans);
+router.get('/categories', protect, subscriptionController.getCategories);
+router.post('/charge', protect, subscriptionController.upgradeSubscription);
 
-// Exams Endpoints
-router.get('/exams', subController.getExams);
+// ==========================================
+// 🛡️ ADMIN ONLY ENDPOINTS
+// ==========================================
+router.use(protect, authorizeRoles('admin'));
 
-// Credit Fixer Endpoint
-router.put('/categories/credits/:id', subController.updateCategoryCredits);
+router.post('/plans', subscriptionController.createPlan);
+router.put('/plans/:id', subscriptionController.updatePlan);
+router.delete('/plans/:id', subscriptionController.deletePlan);
+
+router.post('/categories', subscriptionController.createCategory);
+router.put('/categories/:id', subscriptionController.updateCategory);
+router.delete('/categories/:id', subscriptionController.deleteCategory);
 
 module.exports = router;

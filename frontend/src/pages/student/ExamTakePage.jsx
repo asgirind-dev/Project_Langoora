@@ -1,21 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import axios from 'axios';
 import {
   Clock, AlertTriangle, ChevronLeft, ChevronRight,
   Flag, CheckCircle, Send, LayoutGrid, X,
   Volume2, Coffee, Lock, Loader2, AlertCircle,
   BookOpen, PenSquare, Headphones, Sparkles, Info,
-  ChevronUp, ChevronDown, ShieldAlert, PartyPopper,
+  ChevronUp, ChevronDown, ShieldAlert, PartyPopper, Mic, SkipForward
 } from 'lucide-react';
+
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
 import studentApi from '../../services/examExecutionService';
 
-// ❌ REMOVED hardcoded MAX_VIOLATIONS
-// const MAX_VIOLATIONS = 3;
 const BREAK_DURATION = 25; // 25 seconds break between sections
 
 function fmtClock(totalSeconds) {
@@ -59,7 +59,7 @@ function timeColorTokens(secondsLeft) {
   return { text: 'text-emerald-300', ring: BRAND.success, bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' };
 }
 
-// ─── Circular progress ring (used for header timer + break countdown) ───
+// ─── Circular progress ring ───
 function CircularTimer({ timeLeft, totalTime, size = 56, strokeWidth = 5, label }) {
   const tokens = timeColorTokens(timeLeft);
   const isCritical = timeLeft <= 30 && timeLeft > 0;
@@ -153,7 +153,8 @@ function SectionProgressBar({ parts, partIndex, qIndex }) {
 }
 
 export default function ExamTakePage() {
-  const { id: examId } = useParams();
+  const { id } = useParams();
+  const examId = id;
   const navigate = useNavigate();
 
   const [phase, setPhase] = useState('loading');
@@ -177,12 +178,11 @@ export default function ExamTakePage() {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioLoaded, setAudioLoaded] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitModal, setSubmitModal] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
 
-  // ✅ Dynamic max violations from backend
   const [maxViolations, setMaxViolations] = useState(3);
-  // ✅ Anti-cheat enabled status
   const [antiCheatEnabled, setAntiCheatEnabled] = useState(true);
 
   const phaseRef = useRef(phase);
@@ -192,10 +192,7 @@ export default function ExamTakePage() {
   const partsRef = useRef(parts);
   const partIndexRef = useRef(partIndex);
   const qIndexRef = useRef(qIndex);
-  // audioRef holds ONLY the programmatically-created `new Audio()` instance.
-  // Do NOT attach this ref to any rendered <audio> JSX element — doing so
-  // caused React to overwrite it with the DOM node on every render, which
-  // orphaned the real playing Audio object and made stopAudio() a no-op.
+
   const audioRef = useRef(null);
   const audioCleanupRef = useRef(null);
   const timerRef = useRef(null);
@@ -212,7 +209,6 @@ export default function ExamTakePage() {
   useEffect(() => { partIndexRef.current = partIndex; }, [partIndex]);
   useEffect(() => { qIndexRef.current = qIndex; }, [qIndex]);
 
-  // ─── Fetch security policies when intro phase loads ────────────────────
   useEffect(() => {
     const fetchSecurityPolicies = async () => {
       if (phase !== 'intro') return;
@@ -220,42 +216,24 @@ export default function ExamTakePage() {
         const res = await studentApi.get('/system-settings/security');
         if (res.data.success) {
           const maxV = res.data.data.maxViolationWarnings || 3;
-          const enabled = res.data.data.enableAntiCheat !== false; // Default true
+          const enabled = res.data.data.enableAntiCheat !== false;
           setMaxViolations(maxV);
           setAntiCheatEnabled(enabled);
-          console.log('✅ Security policies loaded:', { maxViolations: maxV, enableAntiCheat: enabled });
         }
       } catch (err) {
         console.error('Failed to fetch security policies:', err);
-        // Keep default values (3, true)
       }
     };
     
     fetchSecurityPolicies();
   }, [phase]);
 
-  // Attach a guaranteed-unique `_uid` to every item: `${sectionName}-${id}`,
-  // falling back to the item's index if `id` is missing. This is used ONLY
-  // for React `key` props / palette rendering.
   const withUid = (sectionName, arr) =>
     arr.map((it, idx) => ({
       ...it,
       _uid: it.id !== undefined && it.id !== null ? `${sectionName}-${it.id}` : `${sectionName}-${idx}`,
     }));
 
-  // FIX: `item.id` alone is NOT safe to use as the answers/flags storage
-  // key. Sub-question ids come from a `sub_questions` sub-collection scoped
-  // to each individual problem (もんだい), so the same id (e.g. "sub_01")
-  // legitimately repeats under every problem — within a section and across
-  // sections. Using raw `id` as the key caused answering one もんだい's
-  // question to also mark a same-id question in a different もんだい as
-  // answered, since they shared one entry in the `answers` object.
-  //
-  // `questionDocId` (the parent problem document's id) IS unique across the
-  // whole exam, since all problems live in one flat collection. Combining
-  // `questionDocId` + `id` gives a collision-proof key. The backend
-  // (examExecutionService.js submitExam) must use this exact same
-  // `${questionDocId}::${id}` format when grading, or answers won't match.
   const itemKey = (item) => (item ? `${item.questionDocId}::${item.id}` : null);
 
   const buildParts = useCallback((meta, itemsBySection) => {
@@ -277,7 +255,7 @@ export default function ExamTakePage() {
           sections: [sectionName],
           items,
           durationSec: (sectionTime[sectionName] || 15) * 60,
-          breakAfterSec: isListening ? BREAK_DURATION : BREAK_DURATION,
+          breakAfterSec: BREAK_DURATION,
           isAudio: isListening,
           audioUrl: isListening ? listeningAudio : null,
         });
@@ -340,7 +318,6 @@ export default function ExamTakePage() {
     return () => { cancelled = true; };
   }, [examId, buildParts]);
 
-  // ✅ Robust audio stop function
   const stopAudio = useCallback(() => {
     try {
       if (audioCleanupRef.current) {
@@ -365,10 +342,7 @@ export default function ExamTakePage() {
 
   const startListeningAudio = useCallback((audioUrl) => {
     if (!audioUrl) return;
-    if (audioPlayedRef.current) {
-      console.log('Audio already played, skipping...');
-      return;
-    }
+    if (audioPlayedRef.current) return;
 
     stopAudio();
 
@@ -386,23 +360,16 @@ export default function ExamTakePage() {
     };
 
     const handlePause = () => {
-      if (isMountedRef.current) {
-        setAudioPlaying(false);
-      }
+      if (isMountedRef.current) setAudioPlaying(false);
     };
 
     const handleEnded = () => {
-      if (isMountedRef.current) {
-        setAudioPlaying(false);
-        console.log('Audio ended naturally');
-      }
+      if (isMountedRef.current) setAudioPlaying(false);
     };
 
     const handleError = (e) => {
       console.error('Audio loading error:', e);
-      if (isMountedRef.current) {
-        setAudioPlaying(false);
-      }
+      if (isMountedRef.current) setAudioPlaying(false);
     };
 
     audio.addEventListener('play', handlePlay);
@@ -421,7 +388,6 @@ export default function ExamTakePage() {
     audio.play()
       .then(() => {
         if (isMountedRef.current) {
-          console.log('Audio started playing');
           setAudioPlaying(true);
           audioPlayedRef.current = true;
           setAudioLoaded(true);
@@ -468,6 +434,7 @@ export default function ExamTakePage() {
     if (!attemptIdRef.current) return;
 
     stopAudio();
+    setIsSubmitting(true);
     setPhase('submitting');
 
     try {
@@ -482,6 +449,8 @@ export default function ExamTakePage() {
       console.error('Submit failed:', err);
       setErrorMsg('We could not submit your exam. Please check your connection and try again.');
       setPhase('error');
+    } finally {
+      setIsSubmitting(false);
     }
   }, [navigate, stopAudio]);
 
@@ -500,9 +469,7 @@ export default function ExamTakePage() {
           const part = partsRef.current[idx];
           const isLast = idx >= partsRef.current.length - 1;
 
-          if (part.isAudio) {
-            stopAudio();
-          }
+          if (part.isAudio) stopAudio();
 
           if (isLast) {
             doSubmit(true);
@@ -551,18 +518,13 @@ export default function ExamTakePage() {
     };
   }, [phase, beginPart]);
 
-  // ✅ FIXED: reportViolation checks antiCheatDisabled flag
   const reportViolation = useCallback(async () => {
     if (!attemptIdRef.current) return;
     try {
       const res = await studentApi.post(`/exam-execution/${attemptIdRef.current}/violation`);
       const { currentViolations, isLocked, lockUntil, maxViolations: maxV, remaining, antiCheatDisabled } = res.data.data;
       
-      // ✅ CHECK: If anti-cheat is disabled, do nothing - NO warnings, NO violations
-      if (antiCheatDisabled) {
-        console.log('🔓 Anti-cheat is disabled. Tab switch ignored.');
-        return;
-      }
+      if (antiCheatDisabled) return;
       
       setViolationCount(currentViolations);
       setMaxViolations(maxV || 3);
@@ -617,6 +579,10 @@ export default function ExamTakePage() {
     };
   }, [stopAudio]);
 
+  const currentPart = parts[partIndex];
+  const currentItem = currentPart?.items?.[qIndex];
+  const totalInPart = currentPart?.items?.length || 0;
+
   const goNext = () => {
     if (qIndex < totalInPart - 1) setQIndex(qIndex + 1);
     setShowExplanation(false);
@@ -638,17 +604,8 @@ export default function ExamTakePage() {
     setShowExplanation(!showExplanation);
   };
 
-  const currentPart = parts[partIndex];
-  const currentItem = currentPart?.items?.[qIndex];
-  const totalInPart = currentPart?.items?.length || 0;
-
-  // ✅ Define these AFTER currentItem is declared
-  // Storage uses itemKey(item) — see the comment near its definition above
-  // for why raw `item.id` is unsafe. The backend must grade using the same
-  // `${questionDocId}::${id}` composite key.
   const selectAnswer = useCallback((optionIdx) => {
-    if (!currentItem) return;
-    if (currentItem.isExample === true) return;
+    if (!currentItem || currentItem.isExample === true) return;
 
     const key = itemKey(currentItem);
     if (answers[key] === optionIdx) {
@@ -674,13 +631,6 @@ export default function ExamTakePage() {
     });
   };
 
-  // FIX: Example questions (isExample: true) should never count toward
-  // progress. They're not user-answerable (selectAnswer blocks them), so
-  // counting them in the denominator understates real progress. Both the
-  // total and the answered tally are computed by walking each part's items
-  // directly (rather than Object.keys(answers).length) and filtering out
-  // examples, using the same collision-safe itemKey() the answers object is
-  // actually keyed by.
   const totalQuestions = parts.reduce(
     (sum, p) => sum + p.items.filter((it) => !it.isExample).length,
     0
@@ -689,8 +639,6 @@ export default function ExamTakePage() {
     (sum, p) => sum + p.items.filter((it) => !it.isExample && answers[itemKey(it)] !== undefined).length,
     0
   );
-  const tokens = timeColorTokens(partTimeLeft);
-  const timeColor = tokens.text;
 
   const isListening = currentPart?.isAudio;
   const hasAudio = currentPart?.audioUrl && currentPart.audioUrl.trim() !== '';
@@ -712,9 +660,7 @@ export default function ExamTakePage() {
       let count = 0;
       for (let i = 0; i <= qIndex; i++) {
         const item = currentPart.items[i];
-        if (item && !item.isExample) {
-          count++;
-        }
+        if (item && !item.isExample) count++;
       }
       return count;
     }
@@ -722,9 +668,7 @@ export default function ExamTakePage() {
     let count = 0;
     for (let i = 0; i <= qIndex; i++) {
       const item = currentPart.items[i];
-      if (item && !item.isExample && item.problem_title === currentProblemTitle) {
-        count++;
-      }
+      if (item && !item.isExample && item.problem_title === currentProblemTitle) count++;
     }
     return count;
   })();
@@ -738,11 +682,6 @@ export default function ExamTakePage() {
     isLocked: idx > partIndex,
   }));
 
-  // FIX: exclude example questions from the per-section answered count and
-  // give the palette a non-example total to render progress against.
-  // `totalInPart` (defined above, includes examples) must stay as-is since
-  // it's also used for navigation bounds (qIndex indexes the full items
-  // array, examples included).
   const partAnsweredCount = currentPart
     ? currentPart.items.reduce((sum, it) => (!it.isExample && answers[itemKey(it)] !== undefined ? sum + 1 : sum), 0)
     : 0;
@@ -753,7 +692,7 @@ export default function ExamTakePage() {
     ? currentPart.items.filter((it) => !it.isExample).length
     : 0;
 
-  // ─── Loading State ───────────────────────────────────────────────────
+  // ─── Loading State ───
   if (phase === 'loading') {
     return (
       <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-4 text-white">
@@ -771,7 +710,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ─── Error State ─────────────────────────────────────────────────────
+  // ─── Error State ───
   if (phase === 'error') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -789,7 +728,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ─── Intro State ─────────────────────────────────────────────────────
+  // ─── Intro State ───
   if (phase === 'intro') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4 py-10">
@@ -834,7 +773,6 @@ export default function ExamTakePage() {
               )}
               <p className="flex gap-2"><Lock size={15} className="text-gray-400 flex-shrink-0 mt-0.5" /> You cannot go back to previous sections once you move forward.</p>
               
-              {/* ✅ Dynamic anti-cheat status message */}
               {antiCheatEnabled ? (
                 <p className="flex gap-2">
                   <ShieldAlert size={15} className="text-amber-400 flex-shrink-0 mt-0.5" /> 
@@ -856,7 +794,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ─── Break State ─────────────────────────────────────────────────────
+  // ─── Break State ───
   if (phase === 'break') {
     const nextPart = parts[partIndex + 1];
     const NextIcon = nextPart ? sectionIconFor(nextPart.label) : Coffee;
@@ -914,7 +852,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ─── Locked State ────────────────────────────────────────────────────
+  // ─── Locked State ───
   if (phase === 'locked') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -939,7 +877,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ─── Submitting State ────────────────────────────────────────────────
+  // ─── Submitting State ───
   if (phase === 'submitting') {
     return (
       <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-4 text-white">
@@ -957,7 +895,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // ─── In Part (Main CBT Screen) ──────────────────────────────────────
+  // ─── Main CBT Screen ───
   if (!currentItem) {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center">
@@ -1008,11 +946,11 @@ export default function ExamTakePage() {
               <span className="font-semibold text-white text-sm">{answeredCount}</span>/{totalQuestions} answered
             </div>
 
-            <Button variant="danger" size="sm" onClick={handleSubmit} className="hidden sm:flex min-h-[40px]">
-              <Send size={14} /> Submit
+            <Button variant="danger" size="sm" onClick={handleSubmit} className="hidden sm:flex min-h-[40px]" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Submit
             </Button>
-            <Button variant="danger" size="sm" onClick={handleSubmit} className="sm:hidden min-h-[44px] min-w-[44px]">
-              <Send size={14} />
+            <Button variant="danger" size="sm" onClick={handleSubmit} className="sm:hidden min-h-[44px] min-w-[44px]" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             </Button>
           </div>
         </div>
@@ -1146,13 +1084,6 @@ export default function ExamTakePage() {
                       )}
                     </div>
                   </div>
-                  {/* NOTE: intentionally no <audio> JSX element here. Audio is
-                      managed entirely via the programmatic `new Audio()` instance
-                      in audioRef (see startListeningAudio/stopAudio). Rendering a
-                      second <audio ref={audioRef} .../> element here previously
-                      caused React to overwrite audioRef.current with the DOM node,
-                      orphaning the real playing audio so stopAudio() had nothing
-                      to stop. */}
                 </div>
               )}
 
@@ -1306,9 +1237,9 @@ export default function ExamTakePage() {
           </div>
         </div>
 
+        {/* ─── Question Navigator Sidebar ─── */}
         <div className="hidden lg:block w-64 xl:w-72 flex-shrink-0 p-5 border-l border-white/10 fixed right-0 top-[100px] bottom-0 overflow-y-auto bg-[#060d1f]/50">
           <PaletteContent
-            sections={parts.map(p => p.label)}
             filteredQs={currentPart?.items || []}
             allQuestions={currentPart?.items || []}
             answers={answers}
@@ -1353,7 +1284,6 @@ export default function ExamTakePage() {
               </div>
               <div className="p-5">
                 <PaletteContent
-                  sections={parts.map(p => p.label)}
                   filteredQs={currentPart?.items || []}
                   allQuestions={currentPart?.items || []}
                   answers={answers}
@@ -1413,12 +1343,6 @@ function PaletteContent({
   currentSectionLabel,
   sectionButtons,
 }) {
-  // Mirrors the main page's `questionNumberInSection` logic exactly: for a
-  // question sharing a problem_title with others (e.g. sub-questions under
-  // one reading passage), the number shown is this question's position among
-  // items with the SAME problem_title, not a digit pulled out of the title
-  // itself (which previously made every sub-question under one passage show
-  // the same number).
   const getDisplayText = (q, index) => {
     if (q.isExample) return '例';
     if (!q.problem_title) {

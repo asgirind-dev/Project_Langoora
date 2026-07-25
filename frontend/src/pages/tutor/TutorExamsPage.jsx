@@ -1,11 +1,25 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, Plus, Users, Star, Eye, Edit3, Trash2, BarChart2, Loader } from 'lucide-react';
+import { BookOpen, Plus, Users, Star, Edit3, Trash2, BarChart2, Loader, RotateCcw } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import { getTutorExams, deleteExam, updateExamStatus } from '../../services/examService';
+
+// Helper function to strip HTML tags completely (Best for card titles)
+const stripHtml = (html) => {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+};
+
+// Helper function to safely render HTML (Alternative approach)
+const renderHtml = (html) => {
+  if (!html) return '';
+  return html;
+};
 
 export default function TutorExamsPage() {
   const navigate = useNavigate();
@@ -15,7 +29,6 @@ export default function TutorExamsPage() {
   const [error, setError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // 📡 Fetch exams from backend
   useEffect(() => {
     fetchExams();
   }, []);
@@ -43,7 +56,6 @@ export default function TutorExamsPage() {
     ? exams 
     : exams.filter(e => e.status === filter);
 
-  // 🗑️ Delete exam
   const handleDelete = async (examId) => {
     try {
       const response = await deleteExam(examId);
@@ -57,7 +69,6 @@ export default function TutorExamsPage() {
     }
   };
 
-  // 📝 Update status (draft -> published)
   const handlePublish = async (examId) => {
     try {
       const response = await updateExamStatus(examId, 'published');
@@ -72,12 +83,10 @@ export default function TutorExamsPage() {
     }
   };
 
-  // ✏️ Edit exam
   const handleEdit = (examId) => {
     navigate(`/tutor/edit?examId=${examId}`);
   };
 
-  // 📊 View analytics
   const handleAnalytics = (examId) => {
     navigate(`/tutor/analytics/${examId}`);
   };
@@ -98,9 +107,14 @@ export default function TutorExamsPage() {
             <h1 className="text-3xl font-bold text-white mb-1">My Exams</h1>
             <p className="text-gray-400">Manage your published and draft exams</p>
           </div>
-          <Button variant="primary" onClick={() => navigate('/tutor/create')}>
-            <Plus size={16} /> New Exam
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => navigate('/tutor/recycle-bin')}>
+              <RotateCcw size={16} /> Recycle Bin
+            </Button>
+            <Button variant="primary" onClick={() => navigate('/tutor/create')}>
+              <Plus size={16} /> New Exam
+            </Button>
+          </div>
         </div>
       </motion.div>
 
@@ -123,13 +137,13 @@ export default function TutorExamsPage() {
         ))}
       </div>
 
-      {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-[#0a0f1e] border border-white/10 rounded-2xl p-6 max-w-md w-full">
             <h3 className="text-lg font-bold text-white mb-2">Delete Exam?</h3>
             <p className="text-gray-400 text-sm mb-6">
-              Are you sure you want to delete "{deleteConfirm.title}"? This action cannot be undone.
+              Are you sure you want to delete "{stripHtml(deleteConfirm.title)}"? It will be moved to the
+              Recycle Bin, where you can restore it or permanently delete it later.
             </p>
             <div className="flex gap-3 justify-end">
               <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>
@@ -157,7 +171,7 @@ export default function TutorExamsPage() {
                 <div className="relative h-40 flex-shrink-0">
                   <img 
                     src={exam.thumbnail || 'https://images.pexels.com/photos/5427671/pexels-photo-5427671.jpeg?w=200'} 
-                    alt={exam.title} 
+                    alt={stripHtml(exam.title) || 'Exam'} 
                     className="w-full h-full object-cover" 
                     onError={(e) => {
                       e.target.src = 'https://images.pexels.com/photos/5427671/pexels-photo-5427671.jpeg?w=200';
@@ -173,7 +187,19 @@ export default function TutorExamsPage() {
                   </div>
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="font-semibold text-white mb-2 line-clamp-2">{exam.title}</h3>
+                  {/* OPTION 1: Strip HTML completely (Best for card titles - CLEAN TEXT) */}
+                  <h3 className="font-semibold text-white mb-2 line-clamp-2">
+                    {stripHtml(exam.title)}
+                  </h3>
+                  
+                  {/* OPTION 2: Render HTML safely (Alternative - use if you want formatting) */}
+                  {/*
+                  <h3 
+                    className="font-semibold text-white mb-2 line-clamp-2"
+                    dangerouslySetInnerHTML={{ __html: exam.title }}
+                  />
+                  */}
+                  
                   <div className="grid grid-cols-3 gap-2 mb-3 text-center">
                     <div className="p-2 bg-white/3 rounded-xl">
                       <div className="text-lg font-bold text-white">{exam.students || 0}</div>
@@ -245,7 +271,6 @@ export default function TutorExamsPage() {
           ))
         )}
 
-        {/* Create New Exam Card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <GlassCard 
             hover 

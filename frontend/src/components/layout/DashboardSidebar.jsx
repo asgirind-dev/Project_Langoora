@@ -45,14 +45,16 @@ export default function DashboardSidebar({ navItems, basePath }) {
       {/* Navigation Links */}
       <nav className="flex-1 p-4 overflow-y-auto">
         <ul className="space-y-1">
-          {navItems.map(item => {
+          {navItems.map((item, index) => {
+            // Use a unique key combination: path + index, or item.path + item.label
+            const uniqueKey = item.path ? `${item.path}-${item.label}` : `${item.label}-${index}`;
             const fullPath = item.path === '' ? basePath : `${basePath}/${item.path}`;
             const isActive = item.path === '' 
               ? location.pathname === basePath 
               : location.pathname.startsWith(fullPath);
 
             return (
-              <li key={item.label}>
+              <li key={uniqueKey}>
                 <Link
                   to={fullPath}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group ${

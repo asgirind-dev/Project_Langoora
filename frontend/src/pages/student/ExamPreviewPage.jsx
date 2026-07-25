@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Clock, BookOpen, Users, Star, Play, ShoppingCart, CheckCircle, Mic, FileText, ArrowLeft } from 'lucide-react';
+import { Clock, BookOpen, Users, Star, Play, ShoppingCart, CheckCircle, Mic, FileText, ArrowLeft, Coins } from 'lucide-react';
 import { featuredExams } from '../../data/mockData';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -13,7 +13,22 @@ export default function ExamPreviewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [purchaseModal, setPurchaseModal] = useState(false);
-  const exam = featuredExams.find(e => e.id === Number(id)) || featuredExams[0];
+  
+  // Find the exam by ID, if not found, use the first exam as fallback
+  const exam = featuredExams.find(e => e.id === Number(id));
+  
+  // If exam is not found, show error or redirect
+  if (!exam) {
+    return (
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 text-center text-white">
+        <h2 className="text-2xl font-bold mb-4">Exam Not Found</h2>
+        <p className="text-gray-400 mb-6">The exam you're looking for doesn't exist.</p>
+        <Button variant="primary" onClick={() => navigate('/marketplace')}>
+          Back to Marketplace
+        </Button>
+      </div>
+    );
+  }
 
   const sections = [
     { name: 'Grammar', questions: 32, time: '25 min', icon: FileText, desc: 'Sentence completion, error correction, and grammar patterns' },
@@ -56,7 +71,10 @@ export default function ExamPreviewPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-400">
-              <div className="flex items-center gap-2"><img src={exam.tutorAvatar} alt="" className="w-6 h-6 rounded-full object-cover" />{exam.tutor}</div>
+              <div className="flex items-center gap-2">
+                <img src={exam.tutorAvatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                {exam.tutor}
+              </div>
               <StarRating rating={exam.rating} count={exam.reviews} size={12} />
               <span className="flex items-center gap-1"><Clock size={13} />{exam.duration}</span>
               <span className="flex items-center gap-1"><BookOpen size={13} />{exam.questions} Q</span>
@@ -131,13 +149,16 @@ export default function ExamPreviewPage() {
         <div className="lg:col-span-1">
           <GlassCard className="p-5 sm:p-6 lg:sticky lg:top-24">
             <div className="text-center mb-5">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-1">LKR {exam.price.toLocaleString()}</div>
-              <div className="text-gray-400 text-sm line-through">LKR {exam.originalPrice.toLocaleString()}</div>
-              <Badge color="green" className="mt-2">{Math.round((1 - exam.price / exam.originalPrice) * 100)}% OFF</Badge>
+              <div className="flex items-center justify-center gap-2 text-3xl sm:text-4xl font-bold text-amber-400 mb-1">
+                <Coins size={32} className="text-amber-400" />
+                {exam.credits}
+              </div>
+              <div className="text-gray-400 text-sm">Credits required</div>
+              <Badge color="blue" className="mt-2">Mock Exam</Badge>
             </div>
             <div className="space-y-3 mb-6">
               <Button variant="primary" size="lg" fullWidth onClick={() => setPurchaseModal(true)}>
-                <ShoppingCart size={18} /> Buy Now
+                <ShoppingCart size={18} /> Unlock with Credits
               </Button>
               <Button variant="secondary" size="lg" fullWidth onClick={() => navigate(`/exam/${exam.id}/take`)}>
                 <Play size={18} /> Free Preview
@@ -161,13 +182,15 @@ export default function ExamPreviewPage() {
         </div>
       </div>
 
-      <Modal isOpen={purchaseModal} onClose={() => setPurchaseModal(false)} title="Complete Purchase">
+      <Modal isOpen={purchaseModal} onClose={() => setPurchaseModal(false)} title="Confirm Purchase">
         <div className="space-y-5">
           <div className="flex gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
             <img src={exam.thumbnail} alt="" className="w-16 h-12 rounded-lg object-cover" />
             <div>
               <p className="font-medium text-white text-sm">{exam.title}</p>
-              <p className="text-sm text-blue-400 font-semibold mt-1">LKR {exam.price.toLocaleString()}</p>
+              <div className="flex items-center gap-1 text-sm text-amber-400 font-semibold mt-1">
+                <Coins size={14} /> {exam.credits} Credits
+              </div>
             </div>
           </div>
           <Button variant="primary" fullWidth onClick={() => { setPurchaseModal(false); navigate(`/exam/${exam.id}/take`); }}>

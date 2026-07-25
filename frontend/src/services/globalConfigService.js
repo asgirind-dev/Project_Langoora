@@ -1,3 +1,4 @@
+// frontend/src/services/globalConfigService.js
 import axios from 'axios';
 
 // Backend node API base endpoint mapping
@@ -5,7 +6,6 @@ const API_URL = 'http://localhost:5000/api/system-settings';
 
 /**
  * 🌐 Get Global Configurations
- * Firebase එකෙන් Global Settings ගන්නවා
  */
 export const fetchGlobalConfig = async () => {
   try {
@@ -19,21 +19,28 @@ export const fetchGlobalConfig = async () => {
 
 /**
  * 💾 Save Global Configurations
- * Global Settings Firebase එකට Save කරනවා
  */
 export const saveGlobalConfig = async (configData) => {
   try {
+    console.log('📤 Sending global config:', configData);
+    
     const response = await axios.post(`${API_URL}/global`, configData);
-    return response.data.data;
+    
+    console.log('📥 Response:', response.data);
+    
+    // ✅ Return the full response object, not just response.data.data
+    // The backend returns: { success: true, message: '...', data: updatedConfig }
+    // So we need to return the whole response.data
+    return response.data;
   } catch (error) {
     console.error("Error saving global configurations:", error);
+    console.error("Response error:", error.response?.data);
     throw error;
   }
 };
 
 /**
  * 📧 Send Test Email
- * Email configuration එක Test කරනවා
  */
 export const sendTestEmail = async (senderEmail, senderName) => {
   try {
@@ -44,6 +51,81 @@ export const sendTestEmail = async (senderEmail, senderName) => {
     return response.data;
   } catch (error) {
     console.error("Error sending test email:", error);
+    console.error("Response error:", error.response?.data);
+    throw error;
+  }
+};
+
+// =============================================
+// ⭐ NEW - EXCHANGE RATE & PLATFORM COMMISSION
+// =============================================
+
+/**
+ * ⭐ Get Exchange Rate + Platform Commission එකට
+ * GET /api/system-settings/rates
+ */
+export const getRates = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/rates`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching rates:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Get Exchange Rate විතරක්
+ * GET /api/system-settings/exchange-rate
+ */
+export const getExchangeRate = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/exchange-rate`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching exchange rate:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Get Platform Commission විතරක්
+ * GET /api/system-settings/platform-commission
+ */
+export const getPlatformCommission = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/platform-commission`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching platform commission:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Update Exchange Rate (creditPrice)
+ * PUT /api/system-settings/exchange-rate
+ */
+export const updateExchangeRate = async (creditPrice) => {
+  try {
+    const response = await axios.put(`${API_URL}/exchange-rate`, { creditPrice });
+    return response.data;
+  } catch (error) {
+    console.error("Error updating exchange rate:", error);
+    throw error;
+  }
+};
+
+/**
+ * ⭐ Update Platform Commission
+ * PUT /api/system-settings/platform-commission
+ */
+export const updatePlatformCommission = async (platformCommission) => {
+  try {
+    const response = await axios.put(`${API_URL}/platform-commission`, { platformCommission });
+    return response.data;
+  } catch (error) {
+    console.error("Error updating platform commission:", error);
     throw error;
   }
 };

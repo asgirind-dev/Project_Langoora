@@ -60,7 +60,7 @@ const provisionStaffNode = async (req, res) => {
     const {
       name,
       email,
-      roleId,          // new: reference to a role in the 'roles' collection
+      roleId,
       institution,
       languageScope,
       privileges
@@ -79,7 +79,6 @@ const provisionStaffNode = async (req, res) => {
     const roleData = roleDoc.data();
 
     // Security: Check that the actor has permission to assign this role
-    // The actor's role is stored in req.user.roleId (attached by protect middleware)
     const actorRoleId = req.user.roleId;
     if (!actorRoleId) {
       return res.status(403).json({ success: false, message: 'Your role does not allow assigning roles.' });
@@ -89,8 +88,6 @@ const provisionStaffNode = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Your role not found.' });
     }
     const actorRoleData = actorRoleDoc.data();
-    // Only allow assigning roles that have a higher level number (less privileged) or equal?
-    // We'll require that the actor's level is lower (more privileged) than the target.
     if (actorRoleData.level >= roleData.level) {
       return res.status(403).json({
         success: false,
@@ -105,12 +102,13 @@ const provisionStaffNode = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email already exists in terminal records.' });
     }
 
+    // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
     const newStaffNode = {
       name,
       email: formattedEmail,
-      roleId,                       // store reference to role
+      roleId,
       joined: new Date().toISOString().split('T')[0],
-      institution,
+      institution: institution || 'Langoora',
       languageScope: roleData.name === 'finance' ? 'All' : languageScope,
       privileges: privileges || [],
       status: 'invited'
@@ -135,8 +133,7 @@ const provisionStaffNode = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 3. Toggle Suspension or Revoke Invitations (with permission check)
-//    This controller assumes the middleware has already checked manage_users permission.
+// 3. Toggle Suspension or Revoke Invitations
 // ----------------------------------------------------------------------
 const toggleUserLifecycle = async (req, res) => {
   try {
@@ -188,8 +185,7 @@ const updatePrivileges = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 5. 🔒 PERMANENT DELETE WORKFLOW (Hard Delete - Auth + Firestore Sync)
-//    Permission to delete is checked by manage_users middleware.
+// 5. PERMANENT DELETE WORKFLOW (Hard Delete - Auth + Firestore Sync)
 // ----------------------------------------------------------------------
 const deleteUserNode = async (req, res) => {
   try {
@@ -216,8 +212,51 @@ const deleteUserNode = async (req, res) => {
   }
 };
 
+/**
+ * 6. 👤 GET LOGGED IN STUDENT PROFILE (For Checkout Auto-fill)
+ */
+const getStudentProfile = async (req, res) => {
+  try {
+    const studentId = req.user?.uid || req.user?.id;
+
+    // 🔍 1. ලොග් වෙලා ඉන්න යූසර්ගේ ID එක backend එකට එන්නේ මොකක්ද කියලා බලන්න
+    console.log("=== DEBUG: REQUESTED STUDENT ID ===", studentId);
+
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const userDoc = await db.collection('users').doc(studentId).get();
+
+    // 🔍 2. Firestore එකේ ඒ ID එකෙන් document එකක් තියෙනවද කියලා බලන්න
+    console.log(`=== DEBUG: DOES DOC EXIST FOR ${studentId}? ===`, userDoc.exists);
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+
+    const userData = userDoc.data();
+    
+    // 🔍 3. Firestore එකෙන් ඇත්තටම ඇදලා ගන්නා මුළු ඩේටා ටික terminal එකේ පෙන්වන්න
+    console.log("=== DEBUG: FIRESTORE USER DATA ===", userData);
+
+    return res.status(200).json({
+      success: true,
+      name: userData.name || 'Verified Student',
+      email: userData.email,
+      bankName: userData.bankName || null,
+      accountNo: userData.accountNo || null,
+      accountHolder: userData.accountHolder || userData.name || 'Verified Student'
+    });
+
+  } catch (error) {
+    console.error('Error fetching student profile:', error.message);
+    return res.status(500).json({ success: false, message: 'Server error fetching profile registry.' });
+  }
+};
+
 // ======================================================================
-//  NEW RBAC FUNCTIONS – Role Management
+// RBAC FUNCTIONS – Role Management
 // ======================================================================
 
 // ----------------------------------------------------------------------
@@ -245,8 +284,6 @@ const createRole = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required fields: name, level, permissions.' });
     }
 
-    // Check that the actor has manage_roles permission (handled by middleware)
-    // Also ensure that the new role's level is greater than actor's level (less privileged)
     const actorRoleId = req.user.roleId;
     if (!actorRoleId) {
       return res.status(403).json({ success: false, message: 'Your role does not allow creating roles.' });
@@ -286,12 +323,10 @@ const updateRole = async (req, res) => {
     const { roleId } = req.params;
     const { name, level, permissions } = req.body;
 
-    // Validate input
     if (!roleId) {
       return res.status(400).json({ success: false, message: 'Role ID is required.' });
     }
 
-    // Check actor's privilege
     const actorRoleId = req.user.roleId;
     if (!actorRoleId) {
       return res.status(403).json({ success: false, message: 'Your role does not allow updating roles.' });
@@ -302,14 +337,12 @@ const updateRole = async (req, res) => {
     }
     const actorRoleData = actorRoleDoc.data();
 
-    // Fetch the target role
     const targetRoleDoc = await db.collection('roles').doc(roleId).get();
     if (!targetRoleDoc.exists) {
       return res.status(404).json({ success: false, message: 'Role not found.' });
     }
     const targetRoleData = targetRoleDoc.data();
 
-    // Prevent demoting a role to a level that is equal or higher than actor's level
     if (level !== undefined) {
       if (actorRoleData.level >= level) {
         return res.status(403).json({
@@ -342,7 +375,6 @@ const deleteRole = async (req, res) => {
   try {
     const { roleId } = req.params;
 
-    // Check actor's privilege
     const actorRoleId = req.user.roleId;
     if (!actorRoleId) {
       return res.status(403).json({ success: false, message: 'Your role does not allow deleting roles.' });
@@ -352,8 +384,6 @@ const deleteRole = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Your role not found.' });
     }
     const actorRoleData = actorRoleDoc.data();
-    // Super Admin (level 1) can delete any role, but we can restrict based on level
-    // For safety, we'll allow deletion only if actor's level is lower than target's level
     const targetRoleDoc = await db.collection('roles').doc(roleId).get();
     if (!targetRoleDoc.exists) {
       return res.status(404).json({ success: false, message: 'Role not found.' });
@@ -366,7 +396,6 @@ const deleteRole = async (req, res) => {
       });
     }
 
-    // Optional: check if any user has this role, and prevent deletion if in use
     const usersWithRole = await db.collection('users').where('roleId', '==', roleId).get();
     if (!usersWithRole.empty) {
       return res.status(400).json({
@@ -384,7 +413,7 @@ const deleteRole = async (req, res) => {
 };
 
 // ======================================================================
-//  EXPORTS
+// EXPORTS
 // ======================================================================
 
 module.exports = {
@@ -393,6 +422,7 @@ module.exports = {
   toggleUserLifecycle,
   updatePrivileges,
   deleteUserNode,
+  getStudentProfile,
   getRoles,
   createRole,
   updateRole,

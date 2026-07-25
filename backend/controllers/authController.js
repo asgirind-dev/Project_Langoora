@@ -1,23 +1,48 @@
 const { db, auth } = require('../config/firebase'); 
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 // Service Layer Link integration
 const authService = require('../services/authService');
 const tutorValidationService = require('../services/tutorValidationService'); 
 
 // ==========================================
-// 1. REGISTER LOGIC
+// 1. REGISTER LOGIC - FIXED FOR PRE-AUTHORIZED STAFF & USERS
 // ==========================================
 exports.registerUser = async (req, res) => {
   const { email, password, role, userData } = req.body;
 
   try {
-    if (!email || !password || !role || !userData) {
+    // Check required fields
+    if (!email || !password || !userData) {
       return res.status(400).json({ message: 'Missing required registration fields.' });
     }
 
-    //  Back-end Enterprise Validation Interceptions
+    // Set default role if not provided
+    const userRole = role || 'student';
+    const formattedEmail = email.toLowerCase().trim();
+
+    // FIRST: Check if this email is pre-authorized (staff)
+    const preAuthRef = db.collection('pre_authorized_staff').doc(formattedEmail);
+    const preAuthDoc = await preAuthRef.get();
+
+    let finalRole = userRole;
+    let additionalStaffData = { privileges: [] };
+    let isPreAuthStaff = false;
+
+    if (preAuthDoc.exists) {
+      const preAuthData = preAuthDoc.data();
+      finalRole = preAuthData.role || userRole;
+      additionalStaffData = {
+        institution: preAuthData.institution || 'Langoora',
+        privileges: preAuthData.privileges || [],
+        languageScope: preAuthData.languageScope || 'All'
+      };
+      isPreAuthStaff = true;
+      console.log(`✅ Pre-authorized staff found: ${formattedEmail} with role ${finalRole}`);
+    }
+
+    // Back-end Enterprise Validation
     if (!authService.validateFullName(userData.name)) {
       return res.status(400).json({ message: 'Invalid name syntax configuration. Use alphabetic letters only.' });
     }
@@ -34,62 +59,76 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ message: 'Age barrier restriction failed. You must be at least 15 years old to hook up.' });
     }
 
-    const formattedEmail = email.toLowerCase().trim();
-
-    // Check pre-authorized staging block
-    const preAuthRef = db.collection('pre_authorized_staff').doc(formattedEmail);
-    const preAuthDoc = await preAuthRef.get();
-
-    let finalRole = role; 
-    let additionalStaffData = { privileges: [] };
-    let isPreAuthStaff = false;
-
-    if (preAuthDoc.exists) {
-      const preAuthData = preAuthDoc.data();
-      finalRole = preAuthData.role; 
-      additionalStaffData = {
-        institution: preAuthData.institution || 'LNBTI',
-        privileges: preAuthData.privileges || []
-      };
-      isPreAuthStaff = true;
+    // Check if user already exists in Firebase Auth or Create
+    let userRecord;
+    try {
+      userRecord = await auth.createUser({
+        email: formattedEmail,
+        password: password,
+        displayName: userData.name || 'User'
+      });
+    } catch (authError) {
+      if (authError.code === 'auth/email-already-exists') {
+        return res.status(400).json({ message: 'The email address is already registered in our system.' });
+      } else {
+        throw authError;
+      }
     }
 
-
+    // Hash password for Firestore storage (if needed by legacy login)
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const userRecord = await auth.createUser({
-      email: formattedEmail,
-      password: password,
-      displayName: userData.name || 'User'
-    });
-
+    // Build user profile with proper role
     const userProfile = {
       uid: userRecord.uid,
       email: formattedEmail,
-      password: hashedPassword, 
-      role: finalRole, 
+      password: hashedPassword,
+      role: finalRole || 'student',
       status: finalRole === 'tutor' ? 'pending' : 'active',
+      credits: finalRole === 'student' ? 300 : 0, // Students get default 300 credits
       joined: new Date().toISOString().split('T')[0],
-      name: userData.name.trim(),
-      phone: userData.phone.trim(),
-      dob: userData.dob,
-      ...(finalRole === 'tutor' && {
-        university: userData.university?.trim() || '',
-        qualifications: userData.qualifications?.trim() || '',
-        address: userData.address?.trim() || '',
-        certificateData: userData.certificateData || '',
-        language: userData.language || '' // ✅ New field for tutor's language expertise
-      }),
-      ...additionalStaffData, 
+      name: userData.name?.trim() || 'User',
+      phone: userData.phone?.trim() || '',
+      dob: userData.dob || '',
       createdAt: new Date().toISOString()
     };
 
+    // Add staff-specific fields for pre-authorized staff
+    if (isPreAuthStaff) {
+      userProfile.institution = additionalStaffData.institution || 'Langoora';
+      userProfile.privileges = additionalStaffData.privileges;
+      userProfile.languageScope = additionalStaffData.languageScope || 'All';
+      userProfile.isPreAuthorized = true;
+      
+      // Special handling for validator role
+      if (finalRole === 'validator') {
+        userProfile.validatorStatus = 'active';
+        userProfile.languageScope = additionalStaffData.languageScope || 'Japanese';
+      }
+    }
 
+    // Add tutor-specific fields
+    if (finalRole === 'tutor') {
+      userProfile.university = userData.university?.trim() || '';
+      userProfile.qualifications = userData.qualifications?.trim() || '';
+      userProfile.address = userData.address?.trim() || '';
+      userProfile.certificateData = userData.certificateData || '';
+      userProfile.language = userData.language || '';
+    }
+
+    // Remove any undefined values before saving
+    Object.keys(userProfile).forEach(key => {
+      if (userProfile[key] === undefined) {
+        delete userProfile[key];
+      }
+    });
+
+    // Save user to Firestore
     await db.collection('users').doc(userRecord.uid).set(userProfile);
 
-
-    if (finalRole === 'tutor' || role === 'tutor') {
+    // Handle tutor application
+    if (finalRole === 'tutor') {
       console.log(`LOG: Spawning tutor application node for UID: ${userRecord.uid}`);
       await tutorValidationService.createApplication(userRecord.uid, {
         qualifications: userData.qualifications?.trim() || 'JLPT Level Unspecified',
@@ -97,37 +136,47 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    if (isPreAuthStaff) {
+    // Delete pre-authorization doc after success
+    if (isPreAuthStaff && preAuthDoc.exists) {
       await preAuthRef.delete();
+      console.log(`✅ Pre-authorization document deleted for ${formattedEmail}`);
     }
 
-
+    // Remove password hash before sending response
     delete userProfile.password;
 
+    // Generate JWT token
     const appToken = jwt.sign(
-      { id: userRecord.uid, role: finalRole },
-      process.env.JWT_SECRET || 'fallback_secret_key',
+      { id: userRecord.uid, role: finalRole || 'student' },
+      process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
       { expiresIn: '1d' }
     );
 
-    return res.status(201).json({ token: appToken, user: { id: userRecord.uid, ...userProfile } });
+    return res.status(201).json({ 
+      success: true,
+      token: appToken, 
+      user: { 
+        id: userRecord.uid, 
+        uid: userRecord.uid,
+        ...userProfile,
+        isPreAuthorized: isPreAuthStaff
+      } 
+    });
 
   } catch (error) {
     console.error('Registration Failure:', error);
-    if (error.code === 'auth/email-already-exists') {
-      return res.status(400).json({ message: 'The email address is already registered in our system.' });
-    }
     return res.status(500).json({ message: error.message || 'Server error during registration.' });
   }
 };
 
 // ==========================================
-// 2. UNIFIED LOGIN GATEWAY LOGIC
+// 2. UNIFIED LOGIN GATEWAY LOGIC (Firebase ID Token Support)
 // ==========================================
 exports.loginUser = async (req, res) => {
-  const { email, password, idToken } = req.body;
+  const { idToken, email, password } = req.body;
 
   try {
+    // Option A: Firebase ID Token Authentication
     if (idToken) {
       const decodedToken = await auth.verifyIdToken(idToken);
       const uid = decodedToken.uid;
@@ -165,44 +214,44 @@ exports.loginUser = async (req, res) => {
         { expiresIn: '1d' }
       );
 
+      delete userData.password;
+
       return res.status(200).json({ 
         token: appToken, 
         user: { id: uid, uid: uid, ...userData } 
       });
     }
 
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Please provide valid credentials or an identity idToken.' });
-    }
+    // Option B: Legacy Email & Password Authentication
+    if (email && password) {
+      const userSnapshot = await db.collection('users').where('email', '==', email.toLowerCase().trim()).get();
+      if (userSnapshot.empty) {
+        return res.status(404).json({ message: 'User not found!' });
+      }
 
-    const userSnapshot = await db.collection('users').where('email', '==', email.toLowerCase().trim()).get();
-    if (userSnapshot.empty) {
-      return res.status(404).json({ message: 'User not found!' });
-    }
-
-    let userData = null;
-    let userId = null;
-    userSnapshot.forEach(doc => {
-      userData = doc.data();
-      userId = doc.id;
-    });
-
-    // 🎯 CRITICAL SECURITY BLOCK: Disallow corporate staff roles from authenticating via the public email/password layout
-    const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
-    if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
+      let userData = null;
+      let userId = null;
+      userSnapshot.forEach(doc => {
+        userData = doc.data();
+        userId = doc.id;
       });
-    }
 
-    if (userData.status === 'suspended') {
-      return res.status(403).json({ message: 'Your account has been suspended!' });
-    }
+      const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
+      if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
+        });
+      }
 
-    if (userData.password && (userData.password.startsWith('$2a$') || userData.password.startsWith('$2b$'))) {
-      const isMatch = await bcrypt.compare(password, userData.password);
-      if (!isMatch) return res.status(400).json({ message: 'Invalid credentials!' });
+      if (userData.status === 'suspended') {
+        return res.status(403).json({ message: 'Your account has been suspended!' });
+      }
+
+      const isMatch = await bcrypt.compare(password, userData.password || '');
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Invalid credentials!' });
+      }
 
       const appToken = jwt.sign(
         { id: userId, role: userData.role },
@@ -218,7 +267,7 @@ exports.loginUser = async (req, res) => {
       });
     }
 
-    return res.status(400).json({ message: 'Invalid identity target authentication method.' });
+    return res.status(400).json({ message: 'Please provide valid credentials or an identity idToken.' });
 
   } catch (error) {
     console.error('Login Failure:', error);
@@ -252,11 +301,12 @@ exports.completeGoogleRegistration = async (req, res) => {
     const newGoogleProfile = {
       uid: uid,
       email: email.toLowerCase().trim(),
-      name: name,
+      name: name || 'User',
       phone: phone.trim(),
       dob: dob,
       role: role || 'student',
       status: 'active',
+      credits: role === 'student' ? 300 : 0,
       joined: new Date().toISOString().split('T')[0], 
       privileges: [],
       createdAt: new Date().toISOString()
@@ -266,7 +316,7 @@ exports.completeGoogleRegistration = async (req, res) => {
 
     const appToken = jwt.sign(
       { id: uid, role: newGoogleProfile.role },
-      process.env.JWT_SECRET || 'fallback_secret_key',
+      process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
       { expiresIn: '1d' }
     );
 
@@ -279,7 +329,7 @@ exports.completeGoogleRegistration = async (req, res) => {
 };
 
 // ==========================================
-// 🔒 REFACTORED SECURE STAFF LOGIN GATEWAY
+// 4. SECURE STAFF LOGIN GATEWAY
 // ==========================================
 exports.loginStaff = async (req, res) => {
   const { email, password } = req.body;
@@ -304,7 +354,6 @@ exports.loginStaff = async (req, res) => {
       userId = doc.id;
     });
 
-    // ✅ Enforce staff role boundaries – now includes super_admin
     const allowedStaffRoles = ['super_admin', 'admin', 'validator', 'finance'];
     if (!allowedStaffRoles.includes(userData.role)) {
       return res.status(403).json({

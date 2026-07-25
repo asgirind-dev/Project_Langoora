@@ -9,26 +9,116 @@ const {
 } = require('../middleware/authMiddleware');
 const { db, admin } = require('../config/firebase');
 
-// All routes are protected by authentication
-router.use(protect);
+// ======================================================================
+// 🔓 1. PUBLIC ROUTES (Login වීම අවශ්‍ය නැත / Authentication NOT required)
+// ======================================================================
+
+/**
+ * ✅ Check if an email is pre-authorized for staff registration
+ * GET /api/users/preauth-check?email=user@example.com
+ */
+router.get('/preauth-check', async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required for pre-authorization check.' 
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid email format.' 
+      });
+    }
+
+    const formattedEmail = email.toLowerCase().trim();
+    
+    // Check if email exists in pre_authorized_staff collection
+    const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+
+    if (preAuthDoc.exists) {
+      const data = preAuthDoc.data();
+      
+      // Check if this pre-auth record is still valid (not expired)
+      const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+      const now = new Date();
+      
+      if (expiresAt && expiresAt < now) {
+        return res.status(200).json({
+          success: true,
+          isPreAuthorized: false,
+          expired: true,
+          message: 'This invitation has expired. Please contact your administrator.'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        isPreAuthorized: true,
+        role: data.role || 'validator',
+        languageScope: data.languageScope || 'All',
+        institution: data.institution || 'Langoora',
+        privileges: data.privileges || [],
+        name: data.name || '',
+        expiresAt: data.expiresAt || null
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      isPreAuthorized: false
+    });
+
+  } catch (error) {
+    console.error('Pre-authorization check error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to check pre-authorization status.',
+      error: error.message 
+    });
+  }
+});
 
 // ======================================================================
-// STUDENT PROFILE ROUTES (No admin permissions required)
+// 🔒 2. PROTECTED ROUTES (මෙතැනින් පහළ සියලුම Routes සඳහා Auth Token එකක් අවශ්‍ය වේ)
 // ======================================================================
+router.use(protect);
+
+// ----------------------------------------------------------------------
+// 👤 STUDENT / USER PROFILE ENDPOINTS
+// ----------------------------------------------------------------------
 
 // 🔄 Get student profile
 router.get('/profile', async (req, res) => {
   try {
     const { uid } = req.query;
     if (!uid) return res.status(400).json({ success: false, message: "User ID (uid) is required" });
-    const doc = await db.collection('students').doc(uid).get();
-    if (!doc.exists) return res.status(200).json({ success: true, data: {} });
-    res.status(200).json({ success: true, data: doc.data() });
+    
+    let doc = await db.collection('users').doc(uid).get();
+    
+    if (!doc.exists) {
+      doc = await db.collection('students').doc(uid).get();
+    }
+    
+    if (!doc.exists) {
+      return res.status(200).json({ success: true, data: {} });
+    }
+    
+    res.status(200).json({ success: true, data: { id: doc.id, ...doc.data() } });
   } catch (error) {
     console.error("Backend Fetch Profile Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// 💳 Checkout Autofill Endpoint
+router.get('/checkout-profile', userController.getStudentProfile);
 
 // 🔄 Update student profile
 router.put('/profile/update', async (req, res) => {
@@ -45,6 +135,10 @@ router.put('/profile/update', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// ----------------------------------------------------------------------
+// ⚙️ USER SETTINGS ENDPOINTS
+// ----------------------------------------------------------------------
 
 // 🔄 Update language settings
 router.put('/settings/language', async (req, res) => {
@@ -73,66 +167,55 @@ router.put('/settings/password', async (req, res) => {
 });
 
 // ======================================================================
-// ADMIN ROUTES – require specific permissions
+// 🛡️ 3. ADMIN PRIVILEGED ROUTES (Admin හට පමණක් සීමා වේ)
 // ======================================================================
+router.use(authorizeRoles('admin'));
 
 // ---- User Management ----
-// GET all users (requires 'manage_users' permission)
 router.get(
   '/',
   requirePermission('manage_users'),
   userController.getAllUsers
 );
 
-// Provision a new staff member (requires 'manage_users')
 router.post(
   '/provision',
   requirePermission('manage_users'),
   userController.provisionStaffNode
 );
 
-// Update user privileges (requires 'manage_users')
 router.put(
   '/:uid/privileges',
   requirePermission('manage_users'),
   userController.updatePrivileges
 );
 
-// Toggle user lifecycle (suspend/activate) – requires 'manage_users'
 router.put(
   '/:uid/lifecycle',
   requirePermission('manage_users'),
   userController.toggleUserLifecycle
 );
 
-// Delete a user – requires 'manage_users'
 router.delete(
   '/:uid',
   requirePermission('manage_users'),
   userController.deleteUserNode
 );
 
-// ======================================================================
-// ROLE MANAGEMENT – only for users with 'manage_roles' permission
-// We also require level < 2 (Super Admin) to enforce hierarchy
-// ======================================================================
-
-// Get all roles (view)
+// ---- Role Management ----
 router.get(
   '/roles',
   requirePermission('manage_roles'),
   userController.getRoles
 );
 
-// Create a new role (Super Admin only)
 router.post(
   '/roles',
   requirePermission('manage_roles'),
-  requireLevel(2), // only users with level < 2 (Super Admin)
+  requireLevel(2),
   userController.createRole
 );
 
-// Update a role (Super Admin only)
 router.put(
   '/roles/:roleId',
   requirePermission('manage_roles'),
@@ -140,12 +223,65 @@ router.put(
   userController.updateRole
 );
 
-// Delete a role (Super Admin only)
 router.delete(
   '/roles/:roleId',
   requirePermission('manage_roles'),
   requireLevel(2),
   userController.deleteRole
+);
+
+// ---- Bulk Pre-authorization Check ----
+router.post(
+  '/preauth-bulk-check',
+  requirePermission('manage_users'),
+  async (req, res) => {
+    try {
+      const { emails } = req.body;
+      
+      if (!emails || !Array.isArray(emails) || emails.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Emails array is required.' 
+        });
+      }
+
+      const results = [];
+      
+      for (const email of emails) {
+        const formattedEmail = email.toLowerCase().trim();
+        const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+        
+        if (preAuthDoc.exists) {
+          const data = preAuthDoc.data();
+          results.push({
+            email: formattedEmail,
+            isPreAuthorized: true,
+            role: data.role || 'validator',
+            languageScope: data.languageScope || 'All',
+            institution: data.institution || 'Langoora'
+          });
+        } else {
+          results.push({
+            email: formattedEmail,
+            isPreAuthorized: false
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        results
+      });
+
+    } catch (error) {
+      console.error('Bulk pre-authorization check error:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to check pre-authorization statuses.',
+        error: error.message 
+      });
+    }
+  }
 );
 
 module.exports = router;

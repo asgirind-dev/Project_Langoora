@@ -26,13 +26,11 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', handler);
   }, []);
 
-
   const handleDashboardNavigation = () => {
     if (!user) {
       navigate('/auth/login');
       return;
     }
-
 
     if (user.role === 'tutor') {
       if (user.status === 'pending') {
