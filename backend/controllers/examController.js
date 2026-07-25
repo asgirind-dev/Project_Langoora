@@ -213,13 +213,86 @@ const deleteExam = async (req, res) => {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
-    const result = await examServices.deleteExamFromDB(examId, tutorId);
+    // Soft delete: moves the exam to the Recycle Bin instead of
+    // permanently removing it. See getRecycleBinExams / restoreExam /
+    // permanentDeleteExam below for the rest of the Recycle Bin flow.
+    const result = await examServices.softDeleteExamFromDB(examId, tutorId);
     return res.status(200).json(result);
   } catch (error) {
     console.error('Delete Exam Error:', error);
     return res.status(500).json({
       success: false,
       message: 'Error deleting exam',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 🗑️ Recycle Bin: Get all soft-deleted exams for the logged-in tutor
+// =========================================================================
+const getRecycleBinExams = async (req, res) => {
+  try {
+    const tutorId = req.user?.id || req.user?.uid;
+
+    if (!tutorId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const examsList = await examServices.getDeletedExamsFromDB(tutorId);
+
+    return res.status(200).json({
+      success: true,
+      exams: examsList
+    });
+  } catch (error) {
+    console.error('Get Recycle Bin Exams Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching recycle bin exams',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// ♻️ Recycle Bin: Restore a soft-deleted exam
+// =========================================================================
+const restoreExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.restoreExamFromDB(examId, tutorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Restore Exam Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error restoring exam',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 🗑️ Recycle Bin: Permanently delete an exam
+// =========================================================================
+const permanentDeleteExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.permanentlyDeleteExamFromDB(examId, tutorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Permanent Delete Exam Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error permanently deleting exam',
       error: error.message
     });
   }
@@ -455,6 +528,9 @@ module.exports = {
   getStudentExams,
   getExamById,
   deleteExam,
+  getRecycleBinExams,
+  restoreExam,
+  permanentDeleteExam,
   updateExamStatus,
   updateExamDraft,
   updateExam,

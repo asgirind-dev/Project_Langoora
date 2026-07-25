@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, Plus, Users, Star, Edit3, Trash2, BarChart2, Loader } from 'lucide-react';
+import { BookOpen, Plus, Users, Star, Edit3, Trash2, BarChart2, Loader, RotateCcw } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -93,9 +93,14 @@ export default function TutorExamsPage() {
             <h1 className="text-3xl font-bold text-white mb-1">My Exams</h1>
             <p className="text-gray-400">Manage your published and draft exams</p>
           </div>
-          <Button variant="primary" onClick={() => navigate('/tutor/create')}>
-            <Plus size={16} /> New Exam
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => navigate('/tutor/recycle-bin')}>
+              <RotateCcw size={16} /> Recycle Bin
+            </Button>
+            <Button variant="primary" onClick={() => navigate('/tutor/create')}>
+              <Plus size={16} /> New Exam
+            </Button>
+          </div>
         </div>
       </motion.div>
 
@@ -123,7 +128,8 @@ export default function TutorExamsPage() {
           <div className="bg-[#0a0f1e] border border-white/10 rounded-2xl p-6 max-w-md w-full">
             <h3 className="text-lg font-bold text-white mb-2">Delete Exam?</h3>
             <p className="text-gray-400 text-sm mb-6">
-              Are you sure you want to delete "{deleteConfirm.title}"? This action cannot be undone.
+              Are you sure you want to delete "{deleteConfirm.title}"? It will be moved to the
+              Recycle Bin, where you can restore it or permanently delete it later.
             </p>
             <div className="flex gap-3 justify-end">
               <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>

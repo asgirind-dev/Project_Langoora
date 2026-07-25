@@ -192,9 +192,14 @@ const getTutorExamsFromDB = async (tutorId) => {
       examsList.push({ id: doc.id, ...doc.data() });
     });
 
-    examsList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    // Recycle Bin: exams soft-deleted (isDeleted: true) no longer show in
+    // "My Exams". Docs created before this feature have no `isDeleted`
+    // field at all, which is treated as "not deleted".
+    const activeExamsList = examsList.filter((exam) => exam.isDeleted !== true);
 
-    return examsList;
+    activeExamsList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    return activeExamsList;
   } catch (error) {
     console.error('Get Tutor Exams Service Error:', error);
     return [];
@@ -312,10 +317,99 @@ const getExamByIdFromDB = async (examId, tutorId) => {
 };
 
 /**
- * Delete an exam (with access control), including all nested
- * problems / example_question / sub_questions sub-collections.
+ * Soft-delete an exam (with access control). Marks the exam as deleted
+ * instead of removing it, so it can be restored later from the Recycle Bin.
+ * Nested problems/sub_questions are left in place untouched.
  */
-const deleteExamFromDB = async (examId, tutorId) => {
+const softDeleteExamFromDB = async (examId, tutorId) => {
+  try {
+    const examDoc = await db.collection('exams').doc(examId).get();
+
+    if (!examDoc.exists) {
+      throw new Error('Exam not found');
+    }
+
+    const examData = examDoc.data();
+
+    if (tutorId && examData.tutor_id !== tutorId) {
+      throw new Error('You do not have permission to delete this exam');
+    }
+
+    await db.collection('exams').doc(examId).update({
+      isDeleted: true,
+      deleted_at: new Date().toISOString()
+    });
+
+    return { success: true, message: 'Exam moved to Recycle Bin.' };
+  } catch (error) {
+    console.error('Soft Delete Exam Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * Restore a soft-deleted exam back to "My Exams" (with access control).
+ */
+const restoreExamFromDB = async (examId, tutorId) => {
+  try {
+    const examDoc = await db.collection('exams').doc(examId).get();
+
+    if (!examDoc.exists) {
+      throw new Error('Exam not found');
+    }
+
+    const examData = examDoc.data();
+
+    if (tutorId && examData.tutor_id !== tutorId) {
+      throw new Error('You do not have permission to restore this exam');
+    }
+
+    await db.collection('exams').doc(examId).update({
+      isDeleted: false,
+      deleted_at: null
+    });
+
+    return { success: true, message: 'Exam restored successfully.' };
+  } catch (error) {
+    console.error('Restore Exam Service Error:', error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * Get all soft-deleted exams for a specific tutor (Recycle Bin view).
+ */
+const getDeletedExamsFromDB = async (tutorId) => {
+  try {
+    if (!tutorId) {
+      console.warn('No tutor ID provided, returning empty array');
+      return [];
+    }
+
+    const snapshot = await db.collection('exams').where('tutor_id', '==', tutorId).get();
+    const examsList = [];
+
+    snapshot.forEach((doc) => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+
+    const deletedExamsList = examsList.filter((exam) => exam.isDeleted === true);
+
+    deletedExamsList.sort((a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0));
+
+    return deletedExamsList;
+  } catch (error) {
+    console.error('Get Deleted Exams Service Error:', error);
+    return [];
+  }
+};
+
+/**
+ * Permanently delete an exam (with access control), including all nested
+ * problems / example_question / sub_questions sub-collections.
+ * Used by the Recycle Bin's "Permanent Delete" action.
+ */
+const permanentlyDeleteExamFromDB = async (examId, tutorId) => {
   try {
     const examDoc = await db.collection('exams').doc(examId).get();
 
@@ -590,7 +684,10 @@ module.exports = {
   getTutorExamsFromDB,
   getStudentExamsFromDB,
   getExamByIdFromDB,
-  deleteExamFromDB,
+  softDeleteExamFromDB,
+  restoreExamFromDB,
+  getDeletedExamsFromDB,
+  permanentlyDeleteExamFromDB,
   deleteStudentExamFromDB,
   updateExamStatusInDB,
   updateExamDraftInDB,

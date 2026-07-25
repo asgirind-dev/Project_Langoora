@@ -43,6 +43,7 @@ import TutorEarningsPage from "../pages/tutor/TutorEarningsPage";
 import TutorProfilePage from "../pages/tutor/TutorProfilePage";
 import TutorAnalyticsPage from "../pages/tutor/TutorAnalyticsPage";
 import TutorReviewsPage from "../pages/tutor/TutorReviewsPage";
+import RecycleBinPage from "../pages/tutor/RecycleBinPage";
 
 // Academic Validator Pages
 import AcademicValidatorDashboard from "../pages/validator/AcademicValidatorDashboard";
@@ -139,6 +140,8 @@ export default function AppRoutes() {
             
             {/* ✅ Edit Exam Route - Pass examId as query parameter */}
             <Route path="edit" element={<CreateExamPage />} />
+            {/* ✅ Recycle Bin Route */}
+            <Route path="recycle-bin" element={<RecycleBinPage />} />
             
             <Route path="earnings" element={<TutorEarningsPage />} />
             <Route path="analytics" element={<TutorAnalyticsPage />} />

@@ -6,6 +6,9 @@ const {
   getTutorExams,
   getExamById,
   deleteExam,
+  getRecycleBinExams, // NEW: Recycle Bin
+  restoreExam,         // NEW: Recycle Bin
+  permanentDeleteExam, // NEW: Recycle Bin
   updateExamStatus,
   updateExamDraft,
   updateExam,
@@ -71,6 +74,14 @@ router.post('/delete-asset', protect, authorizeRoles('tutor', 'admin'), deleteAs
 router.get('/tutor-exams', protect, authorizeRoles('tutor', 'admin'), getTutorExams);
 
 /**
+ * ♻️ Recycle Bin: Get all soft-deleted exams for the logged-in tutor
+ * GET /api/exams/recycle-bin
+ * (Literal path — must stay above the '/:examId' routes below, same
+ * reasoning as '/available' and '/dev/all'.)
+ */
+router.get('/recycle-bin', protect, authorizeRoles('tutor', 'admin'), getRecycleBinExams);
+
+/**
  * Create a new exam with questions
  * POST /api/exams/create
  */
@@ -117,6 +128,18 @@ router.get('/:examId', protect, authorizeRoles('tutor', 'admin'), getExamById);
  * DELETE /api/exams/:examId
  */
 router.delete('/:examId', protect, authorizeRoles('tutor', 'admin'), deleteExam);
+
+/**
+ * ♻️ Recycle Bin: Restore a soft-deleted exam
+ * PUT /api/exams/:examId/restore
+ */
+router.put('/:examId/restore', protect, authorizeRoles('tutor', 'admin'), restoreExam);
+
+/**
+ * 🗑️ Recycle Bin: Permanently delete an exam
+ * DELETE /api/exams/:examId/permanent
+ */
+router.delete('/:examId/permanent', protect, authorizeRoles('tutor', 'admin'), permanentDeleteExam);
 //  STUDENT EXAM ATTEMPTS MANAGEMENT
 // ============================================================
 
