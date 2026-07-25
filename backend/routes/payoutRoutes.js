@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../config/firebase');
 const payoutController = require('../controllers/payoutController');
+const financeController = require('../controllers/financeController'); // ⭐ මෙන්න මේක අනිවාර්යයෙන්ම එකතු කරන්න!
 
 // ============================================
 // PAYOUT ROUTES
@@ -33,6 +34,9 @@ router.patch('/update-status/:id', payoutController.updatePayoutStatus);
 // Get active tutors for payouts
 router.get('/active-tutors', payoutController.getActiveTutorsPayouts);
 
+// ⭐ GET ALL TUTORS WITH TOKENS FROM PURCHASED_EXAMS (මෙන්න මේකටයි financeController අවශ්‍ය වුණේ)
+router.get('/tutors-tokens', financeController.getAllTutorsWithTokens);
+
 // Get single tutor details
 router.get('/tutor/:id', payoutController.getTutorDetails);
 
@@ -58,7 +62,7 @@ router.patch('/bulk-update', payoutController.bulkUpdatePayoutStatus);
 router.post('/revert/:id', payoutController.revertSettledPayout);
 
 // ============================================
-// UPDATE PAYOUT STATUS (Alternative route - Keep for backward compatibility)
+// UPDATE PAYOUT STATUS (Alternative route)
 // ============================================
 router.put('/update/:id', async (req, res) => {
     const { id } = req.params;

@@ -1,8 +1,7 @@
-// backend/controllers/systemSettingsController.js
 const systemSettingsService = require('../services/systemSettingsService');
 const { db } = require('../config/firebase'); 
 
-// ✅ Helper function defined outside the class to avoid 'this' binding issues
+// Helper function defined outside the class to avoid 'this' binding issues
 function isValidEmail(email) {
   if (!email) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -54,13 +53,12 @@ class SystemSettingsController {
 
   async saveSecuritySettings(req, res) {
     try {
-      // ✅ Include maintenanceEstimatedTime and maintenanceMessage
       const { 
         enableAntiCheat, 
         maxViolationWarnings, 
         maintenanceMode, 
-        maintenanceEstimatedTime,  // ✅ Add this
-        maintenanceMessage,        // ✅ Add this
+        maintenanceEstimatedTime, 
+        maintenanceMessage, 
         sessionTimeouts 
       } = req.body;
       
@@ -68,8 +66,8 @@ class SystemSettingsController {
         enableAntiCheat,
         maxViolationWarnings,
         maintenanceMode,
-        maintenanceEstimatedTime,   // ✅ Add this
-        maintenanceMessage,         // ✅ Add this
+        maintenanceEstimatedTime,
+        maintenanceMessage,
         sessionTimeouts
       });
       
@@ -120,7 +118,6 @@ class SystemSettingsController {
         announcementColor
       } = req.body;
 
-      // Validate credit price
       if (creditPrice !== undefined && (creditPrice < 10 || creditPrice > 1000)) {
         return res.status(400).json({
           success: false,
@@ -128,7 +125,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate signup bonus
       if (signupBonus !== undefined && (signupBonus < 0 || signupBonus > 100)) {
         return res.status(400).json({
           success: false,
@@ -136,7 +132,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate platform commission
       if (platformCommission !== undefined && (platformCommission < 0 || platformCommission > 100)) {
         return res.status(400).json({
           success: false,
@@ -144,7 +139,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate min payout threshold
       if (minPayoutThreshold !== undefined && (minPayoutThreshold < 100 || minPayoutThreshold > 100000)) {
         return res.status(400).json({
           success: false,
@@ -152,7 +146,6 @@ class SystemSettingsController {
         });
       }
 
-      // ✅ FIX: Use the helper function instead of this.isValidEmail
       if (senderEmail && !isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
@@ -160,7 +153,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate sender name
       if (senderName && senderName.length > 50) {
         return res.status(400).json({
           success: false,
@@ -168,7 +160,6 @@ class SystemSettingsController {
         });
       }
 
-      // Save configurations
       const updatedConfig = await systemSettingsService.updateGlobalConfig({
         creditPrice,
         signupBonus,
@@ -202,13 +193,8 @@ class SystemSettingsController {
   // 4. EXCHANGE RATE & PLATFORM COMMISSION ⭐
   // =============================================
 
-  /**
-   * ⭐ Get Both Exchange Rate & Platform Commission
-   * GET /api/system-settings/rates
-   */
   async getRates(req, res) {
     try {
-      // ⭐ admin.firestore() වෙනුවට db use කරන්න
       const docRef = db.collection('system_settings').doc('global_config');
       const docSnap = await docRef.get();
 
@@ -241,10 +227,6 @@ class SystemSettingsController {
     }
   }
 
-  /**
-   * Get Exchange Rate (creditPrice) Only
-   * GET /api/system-settings/exchange-rate
-   */
   async getExchangeRate(req, res) {
     try {
       const docRef = db.collection('system_settings').doc('global_config');
@@ -277,10 +259,6 @@ class SystemSettingsController {
     }
   }
 
-  /**
-   * Get Platform Commission Only
-   * GET /api/system-settings/platform-commission
-   */
   async getPlatformCommission(req, res) {
     try {
       const docRef = db.collection('system_settings').doc('global_config');
@@ -312,10 +290,6 @@ class SystemSettingsController {
     }
   }
 
-  /**
-   * Update Exchange Rate (creditPrice)
-   * PUT /api/system-settings/exchange-rate
-   */
   async updateExchangeRate(req, res) {
     try {
       const { creditPrice } = req.body;
@@ -363,10 +337,6 @@ class SystemSettingsController {
     }
   }
 
-  /**
-   * Update Platform Commission
-   * PUT /api/system-settings/platform-commission
-   */
   async updatePlatformCommission(req, res) {
     try {
       const { platformCommission } = req.body;
@@ -423,7 +393,6 @@ class SystemSettingsController {
 
       const { senderEmail, senderName } = req.body;
 
-      // Validate sender email
       if (!senderEmail) {
         return res.status(400).json({
           success: false,
@@ -431,7 +400,6 @@ class SystemSettingsController {
         });
       }
 
-      // ✅ FIX: Use the helper function instead of this.isValidEmail
       if (!isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
@@ -439,7 +407,6 @@ class SystemSettingsController {
         });
       }
 
-      // Send test email
       const result = await systemSettingsService.sendTestEmail(senderEmail, senderName);
 
       console.log('✅ Test email sent successfully:', result);
@@ -458,6 +425,7 @@ class SystemSettingsController {
       });
     }
   }
+} // 👈 මෙන්න මේ Class එක වහන Bracket එක එකතු කරලා හදලා තියෙනවා!
 
 // Export as singleton instance
 module.exports = new SystemSettingsController();

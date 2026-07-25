@@ -1,5 +1,6 @@
 const { db, storage } = require('../config/firebase');
 const cloudinary = require('cloudinary').v2;
+const path = require('path');
 
 // =========================================================================
 // Cloudinary Configuration
@@ -58,8 +59,6 @@ const createExam = async (req, res) => {
         message: 'Exam structure deployed successfully!',
         examId: result.examId
       });
-
-      await batch.commit();
     }
 
     return res.status(500).json({
@@ -73,9 +72,11 @@ const createExam = async (req, res) => {
       message: 'Internal server failed to execute blueprint commit.',
       error: error.message
     });
+  }
+};
 
 // =========================================================================
-// 2. Get Purchased Exams for Logged-In Student (UPDATED FOR UI FIX)
+// 2. Get Purchased Exams for Logged-In Student
 // =========================================================================
 const getStudentExams = async (req, res) => {
   try {
@@ -114,15 +115,12 @@ const getStudentExams = async (req, res) => {
             if (examDoc.exists) {
               const examData = examDoc.data();
               
-              // Extract Tutor Name with multiple fallbacks
               const tutorName = examData.tutor_name || examData.tutorName || examData.tutor?.name || 'Expert Tutor';
 
-              // Extract Questions count (check Array length first, then direct numbers)
               const questionsCount = Array.isArray(examData.questions) 
                 ? examData.questions.length 
                 : (examData.total_questions || examData.questions_count || 0);
 
-              // Extract Duration
               const duration = examData.duration_minutes || examData.duration || examData.time_limit || 'N/A';
 
               return {
@@ -131,16 +129,15 @@ const getStudentExams = async (req, res) => {
                 title: examData.title || examData.name || `Exam Pack (${examData.level_id || 'JLPT'})`,
                 description: examData.description || '',
                 
-                // 🎯 FIXED METADATA FOR FRONTEND CARDS
                 tutor_id: examData.tutor_id || examData.tutorId || null,
                 tutor_name: tutorName,
-                tutor: tutorName, // backwards compatibility
+                tutor: tutorName,
                 
                 duration_minutes: duration,
-                duration: duration, // backwards compatibility
+                duration: duration,
                 
                 total_questions: questionsCount,
-                questions: questionsCount, // backwards compatibility
+                questions: questionsCount,
                 
                 category: examData.category_id || examData.category || '',
                 level: examData.level_id || examData.level || '',
@@ -201,7 +198,7 @@ const deleteStudentExam = async (req, res) => {
 };
 
 // =========================================================================
-// 4. Purchase an Exam (FIXED UNDEFINED QUERY & CREDIT DEDUCTION)
+// 4. Purchase an Exam
 // =========================================================================
 const purchaseExam = async (req, res) => {
   try {
@@ -212,7 +209,6 @@ const purchaseExam = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized user." });
     }
 
-    // 🎯 Ensure targetExamId is NEVER undefined to avoid Firestore query crash
     const targetExamId = exam_id || level_id || req.body.id;
 
     if (!targetExamId) {
@@ -222,7 +218,6 @@ const purchaseExam = async (req, res) => {
       });
     }
 
-    // Check existing purchase
     const existingPurchase = await db.collection('purchased_exams')
       .where('student_id', '==', studentId)
       .where('exam_id', '==', targetExamId)
@@ -237,7 +232,6 @@ const purchaseExam = async (req, res) => {
 
     let examData = null;
 
-    // 1. Try to fetch from exam_categories/levels
     if (category_id && level_id) {
       const levelDoc = await db.collection('exam_categories')
         .doc(category_id.toLowerCase())
@@ -250,7 +244,6 @@ const purchaseExam = async (req, res) => {
       }
     }
 
-    // 2. Try to fetch directly from exams collection
     if (!examData && targetExamId) {
       const examDoc = await db.collection('exams').doc(targetExamId).get();
       if (examDoc.exists) {
@@ -258,7 +251,6 @@ const purchaseExam = async (req, res) => {
       }
     }
 
-    // 🎯 Determine required credits accurately (Priority: Request > credits > price > credit_cost)
     let requiredCredits = 0;
     if (requestCredits !== undefined && Number(requestCredits) > 0) {
       requiredCredits = Number(requestCredits);
@@ -276,8 +268,7 @@ const purchaseExam = async (req, res) => {
       }
 
       const freshUserData = freshUserDoc.data();
-      
-      // Get current credits/wallet_balance from user document
+
       const currentCredits = Number(
         freshUserData.credits !== undefined 
           ? freshUserData.credits 
@@ -290,13 +281,11 @@ const purchaseExam = async (req, res) => {
 
       const newBalance = currentCredits - requiredCredits;
 
-      // Update User Wallet/Credits
       const updateData = { updatedAt: new Date().toISOString() };
       if (freshUserData.credits !== undefined) updateData.credits = newBalance;
       if (freshUserData.wallet_balance !== undefined) updateData.wallet_balance = newBalance;
       if (freshUserData.walletBalance !== undefined) updateData.walletBalance = newBalance;
-      
-      // Fallback if none existed
+
       if (freshUserData.credits === undefined && freshUserData.wallet_balance === undefined) {
         updateData.credits = newBalance;
         updateData.wallet_balance = newBalance;
@@ -304,7 +293,6 @@ const purchaseExam = async (req, res) => {
 
       transaction.update(userRef, updateData);
 
-      // Add to Purchased Exams
       const purchaseRef = db.collection('purchased_exams').doc();
       transaction.set(purchaseRef, {
         student_id: studentId,
@@ -313,7 +301,6 @@ const purchaseExam = async (req, res) => {
         status: 'active'
       });
 
-      // Save Transaction Log
       const transactionRef = db.collection('transactions').doc(transactionId);
       transaction.set(transactionRef, {
         order_id: transactionId,
@@ -384,7 +371,7 @@ const getAllExams = async (req, res) => {
 };
 
 // =========================================================================
-// 5.5 Get ALL exams (Development only - NO AUTH)
+// 5.5 Get ALL exams (Dev mode)
 // =========================================================================
 const getAllExamsDev = async (req, res) => {
   try {
@@ -412,7 +399,7 @@ const getAllExamsDev = async (req, res) => {
 };
 
 // =========================================================================
-// 6. Submit Exam and Update Purchase Document
+// 6. Submit Exam Result
 // =========================================================================
 const submitExamResult = async (req, res) => {
   try {
@@ -498,7 +485,7 @@ const submitExamResult = async (req, res) => {
 };
 
 // =========================================================================
-// 7. Get Tutor Exams (Only logged-in tutor's exams)
+// 7. Get Tutor Exams
 // =========================================================================
 const getTutorExams = async (req, res) => {
   try {
@@ -528,7 +515,7 @@ const getTutorExams = async (req, res) => {
 };
 
 // =========================================================================
-// 8. Get Exam by ID (with access control)
+// 8. Get Exam by ID
 // =========================================================================
 const getExamById = async (req, res) => {
   try {
@@ -552,16 +539,13 @@ const getExamById = async (req, res) => {
 };
 
 // =========================================================================
-// 9. Delete Exam (with access control)
+// 9. Delete Exam
 // =========================================================================
 const deleteExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
-    // Soft delete: moves the exam to the Recycle Bin instead of
-    // permanently removing it. See getRecycleBinExams / restoreExam /
-    // permanentDeleteExam below for the rest of the Recycle Bin flow.
     const result = await examServices.softDeleteExamFromDB(examId, tutorId);
     return res.status(200).json(result);
   } catch (error) {
@@ -575,7 +559,7 @@ const deleteExam = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ Recycle Bin: Get all soft-deleted exams for the logged-in tutor
+// Recycle Bin: Get soft-deleted exams
 // =========================================================================
 const getRecycleBinExams = async (req, res) => {
   try {
@@ -605,7 +589,7 @@ const getRecycleBinExams = async (req, res) => {
 };
 
 // =========================================================================
-// ♻️ Recycle Bin: Restore a soft-deleted exam
+// Recycle Bin: Restore exam
 // =========================================================================
 const restoreExam = async (req, res) => {
   try {
@@ -625,7 +609,7 @@ const restoreExam = async (req, res) => {
 };
 
 // =========================================================================
-// 🗑️ Recycle Bin: Permanently delete an exam
+// Recycle Bin: Permanently delete exam
 // =========================================================================
 const permanentDeleteExam = async (req, res) => {
   try {
@@ -673,7 +657,7 @@ const updateExamStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 11. Update Exam Draft (Auto-save)
+// 11. Update Exam Draft
 // =========================================================================
 const updateExamDraft = async (req, res) => {
   try {
@@ -715,7 +699,7 @@ const updateExam = async (req, res) => {
 };
 
 // =========================================================================
-// 13. Upload Asset (Audio to Cloudinary | Images to Base64)
+// 13. Upload Asset
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -780,7 +764,7 @@ const uploadAsset = async (req, res) => {
         fileUrl: dataUriString,
         type: 'image'
       });
-    };
+    }
 
     return res.status(400).json({
       success: false,
