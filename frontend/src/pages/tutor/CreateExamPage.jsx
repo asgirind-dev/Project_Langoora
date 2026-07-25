@@ -656,17 +656,9 @@ const addStandardQuestion = (sectionName) => {
     return;
   }
   const isReading = sectionName?.toLowerCase() === 'reading';
-  // ✅ FIX: was `sectionName?.toLowerCase() === 'listen'` (never true —
-  // section names are "Listening", not "listen"). Now uses the same
-  // isListeningSection() helper used everywhere else in this file, so
-  // Listening questions are detected identically to Grammar/Vocabulary.
   const isListening = isListeningSection(sectionName);
   let parentProblemId = '';
   
-  // ✅ Find last problem in the same section — this is what actually
-  // links a question to its Problem block. This logic is now shared by
-  // every section (Grammar, Vocabulary, Listening, Reading) via this
-  // single function, so Listening behaves exactly like the others.
   const lastProblem = [...questions].reverse().find(q => q.section === sectionName && q.is_problem);
   parentProblemId = lastProblem ? lastProblem.id : '';
   
@@ -1447,8 +1439,6 @@ const renderSectionSidebar = (sec) => {
       {/* ✅ Problems List - Works for ALL sections including Listening */}
       {secProblems.map((problem) => {
         const childQuestions = getQuestionsForProblem(problem.id);
-        // Log to debug
-        console.log(`📊 Problem: ${problem.problem_title}, Questions: ${childQuestions.length}`);
         return (
           <div key={problem.id} className="space-y-1 mb-2">
             <button 
@@ -1556,10 +1546,6 @@ const renderSectionSidebar = (sec) => {
               showNotification(`⚠️ Maximum limit of ${maxQuestions} questions reached for ${sec.name}.`, 'error');
               return;
             }
-            // ✅ FIX: Listening now goes through the exact same
-            // addStandardQuestion() path as Grammar/Vocabulary/Reading,
-            // instead of the old addListeningQuestion() which never
-            // linked the new question to its parent Problem block.
             addStandardQuestion(sec.name);
           }}
           className={`w-full py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${
@@ -1920,14 +1906,19 @@ const renderSectionSidebar = (sec) => {
       </GlassCard>
 
       {/* ============================================================
-          🌐 GLOBAL FLOATING TOOLBAR
-          Sticky directly under the stepper, persistent across ALL
-          steps (Exam Details → Sections → Questions → Preview).
-          Formats/inserts into whichever text field was last focused.
+          🌐 GLOBAL FLOATING TOOLBAR - ONLY visible on Step 3 (Questions)
+          Matches Stepper Bar styling exactly
       ============================================================ */}
-      <div className="sticky top-0 z-40 -mx-1 px-1 pt-1 pb-1 bg-gradient-to-b from-[#060b13] via-[#060b13]/95 to-transparent">
-        <QuestionEditorToolbar activeFieldRef={activeFieldRef} activeFieldLabel={activeFieldLabel} />
-      </div>
+      {step === 2 && (
+        <div className="sticky top-0 z-40 -mx-1 px-1 pt-1 pb-1">
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-1.5 backdrop-blur-sm">
+            <QuestionEditorToolbar 
+              activeFieldRef={activeFieldRef} 
+              activeFieldLabel={activeFieldLabel} 
+            />
+          </div>
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} transition={{ duration: 0.15 }}>
