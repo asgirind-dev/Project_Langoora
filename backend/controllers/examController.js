@@ -1,5 +1,10 @@
 const { db, storage } = require('../config/firebase');
 const cloudinary = require('cloudinary').v2;
+const path = require('path'); // 🎯 Added path module
+
+// 🎯 FIX: Import examServices to resolve "ReferenceError: examServices is not defined"
+const examServices = require('../services/examServices'); 
+// (සටහන: ඔබේ project structure එක අනුව 'examService' ද 'examServices' ද යන්න මත folder path එක නිවැරදිදැයි බලන්න. e.g. ../services/examService)
 
 // =========================================================================
 // Cloudinary Configuration
@@ -58,8 +63,6 @@ const createExam = async (req, res) => {
         message: 'Exam structure deployed successfully!',
         examId: result.examId
       });
-
-      await batch.commit();
     }
 
     return res.status(500).json({
@@ -73,6 +76,8 @@ const createExam = async (req, res) => {
       message: 'Internal server failed to execute blueprint commit.',
       error: error.message
     });
+  }
+};
 
 // =========================================================================
 // 2. Get Purchased Exams for Logged-In Student (UPDATED FOR UI FIX)
@@ -559,9 +564,6 @@ const deleteExam = async (req, res) => {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
-    // Soft delete: moves the exam to the Recycle Bin instead of
-    // permanently removing it. See getRecycleBinExams / restoreExam /
-    // permanentDeleteExam below for the rest of the Recycle Bin flow.
     const result = await examServices.softDeleteExamFromDB(examId, tutorId);
     return res.status(200).json(result);
   } catch (error) {
@@ -780,7 +782,7 @@ const uploadAsset = async (req, res) => {
         fileUrl: dataUriString,
         type: 'image'
       });
-    };
+    }
 
     return res.status(400).json({
       success: false,
