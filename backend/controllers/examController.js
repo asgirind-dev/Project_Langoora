@@ -1,5 +1,7 @@
 const { db, storage } = require('../config/firebase');
 const cloudinary = require('cloudinary').v2;
+const path = require('path');
+const examServices = require('../services/examServices');
 
 // =========================================================================
 // Cloudinary Configuration
@@ -73,6 +75,8 @@ const createExam = async (req, res) => {
       message: 'Internal server failed to execute blueprint commit.',
       error: error.message
     });
+  }
+};
 
 // =========================================================================
 // 2. Get Purchased Exams for Logged-In Student (UPDATED FOR UI FIX)

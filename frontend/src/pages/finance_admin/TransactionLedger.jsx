@@ -35,7 +35,6 @@ export default function TransactionLedger() {
         console.log('📊 Transactions Response:', response.data);
         
         if (response.data && Array.isArray(response.data)) {
-          // Transform data to match UI format
           const transformedLogs = response.data.map(tx => ({
             ref: tx.id || tx.transactionId || `TXN-${Date.now()}`,
             student: tx.student_name || tx.userName || tx.user || 'Unknown Student',
@@ -67,12 +66,6 @@ export default function TransactionLedger() {
     fetchTransactions();
   }, []);
 
-  // Summary Stats
-  const totalTransactions = logs.length;
-  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? log.amount : 0), 0);
-  const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
-  const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : 0;
-  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
   // 🎯 Fetch Real Database Transactions
   const fetchLedgerData = async () => {
     setLoading(true);
@@ -90,22 +83,18 @@ export default function TransactionLedger() {
     fetchLedgerData();
   }, []);
 
-  // Summary Stats Calculations from Real Data
+  // ✅ SUMMARY STATS - FIXED (Only ONE declaration of each)
   const totalTransactions = logs.length;
-  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' ? Number(log.amount || 0) : 0), 0);
-  const successCount = logs.filter(l => l.status === 'Success').length;
+  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? Number(log.amount || 0) : 0), 0);
+  const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
   const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : '0.0';
-  const failedCount = logs.filter(l => l.status === 'Failed').length;
+  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
 
-  // Search & Filters
+  // ✅ SEARCH & FILTERS - FIXED (removed duplicate conditions)
   const filteredLogs = logs.filter(log => {
     const matchSearch = (log.student || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                        (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                        (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
-    const matchGateway = filterGateway === 'all' || (log.gateway || '').toLowerCase() === filterGateway.toLowerCase();
-                        (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
     const matchGateway = filterGateway === 'all' || (log.gateway || '').toLowerCase().includes(filterGateway.toLowerCase());
     return matchSearch && matchStatus && matchGateway;
@@ -121,7 +110,6 @@ export default function TransactionLedger() {
         label: 'Success'
       },
       'Completed': { 
-        color: '#10b981', 
         bg: 'bg-emerald-500/10', 
         border: 'border-emerald-500/20',
         text: 'text-emerald-400',
@@ -136,7 +124,6 @@ export default function TransactionLedger() {
         label: 'Failed'
       },
       'Declined': { 
-        color: '#ef4444', 
         bg: 'bg-red-500/10', 
         border: 'border-red-500/20',
         text: 'text-red-400',
@@ -174,7 +161,10 @@ export default function TransactionLedger() {
       });
     } catch {
       return dateStr;
-  // 🎯 PDF Export Handler (Finance Dashboard Style)
+    }
+  };
+
+  // 🎯 PDF Export Handler
   const handleExportPDF = () => {
     if (filteredLogs.length === 0) return alert("No transaction records available to export.");
 
@@ -202,7 +192,7 @@ export default function TransactionLedger() {
       doc.text(`Generated: ${timestamp}`, 140, 28);
 
       // Audit Highlights Box
-      const successfulTxs = filteredLogs.filter(t => t.status === 'Success');
+      const successfulTxs = filteredLogs.filter(t => t.status === 'Success' || t.status === 'Completed');
       const filteredRev = successfulTxs.reduce((sum, log) => sum + Number(log.amount || 0), 0);
 
       doc.setFillColor(241, 245, 249);
@@ -254,10 +244,10 @@ export default function TransactionLedger() {
         },
         didParseCell: function(data) {
           if (data.section === 'body' && data.column.index === 6) {
-            if (data.cell.raw === 'Success') {
+            if (data.cell.raw === 'Success' || data.cell.raw === 'Completed') {
               data.cell.styles.textColor = [16, 185, 129];
               data.cell.styles.fontStyle = 'bold';
-            } else if (data.cell.raw === 'Failed') {
+            } else if (data.cell.raw === 'Failed' || data.cell.raw === 'Declined') {
               data.cell.styles.textColor = [239, 68, 68];
               data.cell.styles.fontStyle = 'bold';
             } else {
@@ -286,9 +276,6 @@ export default function TransactionLedger() {
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
         <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
         <p className="text-gray-400">Loading transactions...</p>
-      <div className="flex flex-col items-center justify-center py-28 gap-3">
-        <RefreshCw className="animate-spin text-blue-500" size={36} />
-        <p className="text-gray-400 text-sm">Fetching real-time transaction ledger...</p>
       </div>
     );
   }
@@ -369,15 +356,11 @@ export default function TransactionLedger() {
               onChange={(e) => setFilterStatus(e.target.value)}
               className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
             >
-              <option value="all" className="bg-[#0a1628] text-white hover:bg-blue-500/20">All Status</option>
-              <option value="success" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Success</option>
-              <option value="completed" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Completed</option>
-              <option value="failed" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Failed</option>
-              <option value="declined" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Declined</option>
-              <option value="pending" className="bg-[#0a1628] text-white hover:bg-blue-500/20">Pending</option>
               <option value="all">All Status</option>
               <option value="success">Success</option>
+              <option value="completed">Completed</option>
               <option value="failed">Failed</option>
+              <option value="declined">Declined</option>
               <option value="pending">Pending</option>
             </select>
             
@@ -405,7 +388,6 @@ export default function TransactionLedger() {
             Print
           </motion.button>
 
-          {/* 🎯 Updated Export PDF Button */}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -609,7 +591,6 @@ export default function TransactionLedger() {
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Amount</p>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">LKR {selectedLog.amount?.toLocaleString() || 0}</p>
                     <p className="text-xl font-bold text-emerald-400 mt-1">LKR {Number(selectedLog.amount || 0).toLocaleString()}</p>
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
@@ -628,7 +609,6 @@ export default function TransactionLedger() {
                         <span className={`text-sm font-bold ${getStatusConfig(selectedLog.status).text}`}>{selectedLog.status || 'Pending'}</span>
                       </span>
                     </div>
-                    <p className="text-base font-semibold text-emerald-400 mt-1">{selectedLog.status}</p>
                   </div>
                 </div>
 
