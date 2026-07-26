@@ -180,7 +180,7 @@ export default function MyExamsPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          title: `Complete ${exam.title}`,
+          title: `Complete ${cleanTitle(exam.title)}`,
           description: `Tutor: ${exam.tutor_name || 'Expert'} · Expected duration: ${exam.duration_minutes || exam.duration || 60} min.`,
           scheduled_date: selectedDate
         })
@@ -386,7 +386,7 @@ export default function MyExamsPage() {
                     <div className={`relative ${viewMode === 'list' ? 'w-48 flex-shrink-0' : 'w-32 flex-shrink-0'} overflow-hidden`}>
                       <img
                         src={exam.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400'}
-                        alt={exam.title}
+                        alt={cleanTitle(exam.title)}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
@@ -413,9 +413,9 @@ export default function MyExamsPage() {
                           </div>
                         </div>
 
-                        {/* Title */}
+                        {/* Title (Clean HTML Tags) */}
                         <h3 className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words">
-                          {exam.title}
+                          {cleanTitle(exam.title)}
                         </h3>
 
                         {/* ✅ Show Score if completed and has score */}

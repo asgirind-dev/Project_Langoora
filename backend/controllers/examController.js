@@ -374,7 +374,7 @@ const purchaseExam = async (req, res) => {
       transaction.set(transactionRef, {
         order_id: transactionId,
         student_id: studentId,
-        plan_name: `Exam Purchase: ${examData?.level_name || examData?.levelName || examData?.title || targetExamId}`,
+        plan_name: `Exam Purchase: ${examData?.title || examData?.level_name || targetExamId}`,
         credits: requiredCredits,
         amount: requiredCredits,
         payment_method: "Wallet Credits",
@@ -409,10 +409,46 @@ const getAllExams = async (req, res) => {
       .where("status", "in", ["active", "published"])
       .get();
 
+    // 2. Exam Categories සහ Subcollections (levels) query කර Credits Map එකක් හදාගැනීම
+    const categoriesSnapshot = await db.collection('exam_categories').get();
+    const levelCreditsMap = {};
+
+    for (const categoryDoc of categoriesSnapshot.docs) {
+      const categoryId = categoryDoc.id; // e.g., 'jlpt', 'eps---topik'
+      
+      const levelsSnapshot = await db
+        .collection('exam_categories')
+        .doc(categoryId)
+        .collection('levels')
+        .get();
+
+      levelsSnapshot.forEach((levelDoc) => {
+        const levelData = levelDoc.data();
+        const levelId = levelDoc.id; // e.g., 'jlpt_n4', 'jlpt_n5'
+        
+        // Document එකෙන් credits ලබා ගැනීම
+        const creditValue = Number(levelData.credits ?? levelData.price ?? levelData.credit_cost ?? 0);
+        
+        // key 2 කින්ම Map එකට එකතු කරයි (e.g. 'jlpt_jlpt_n5' සහ 'jlpt_n5')
+        levelCreditsMap[`${categoryId}_${levelId}`] = creditValue;
+        levelCreditsMap[levelId] = creditValue;
+      });
+    }
+
+    // 3. Exams Process කිරීම සහ Credits Join කිරීම
     const examsList = [];
 
     snapshot.forEach((doc) => {
       const data = doc.data();
+      const catId = data.category_id || data.category || '';
+      const levelId = data.level_id || data.level || '';
+
+      // subcollection වලින් ආපු dynamic level credits සෙවීම
+      const matchedCredits = 
+        levelCreditsMap[`${catId}_${levelId}`] ?? 
+        levelCreditsMap[levelId] ?? 
+        Number(data.credits ?? 0);
+
       examsList.push({
         id: doc.id,
         title: data.title || "Untitled Exam",

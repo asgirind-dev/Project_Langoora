@@ -8,7 +8,6 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import GlassCard from '../../components/ui/GlassCard';
-import axios from 'axios';
 import FinanceService from '../../services/financeService';
 
 export default function TransactionLedger() {
@@ -23,7 +22,7 @@ export default function TransactionLedger() {
   const [copied, setCopied] = useState(false);
 
   // ============================================
-  // ⭐ FETCH TRANSACTIONS FROM FIRESTORE
+  // ⭐ FETCH TRANSACTIONS FROM SERVICE
   // ============================================
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -71,10 +70,28 @@ export default function TransactionLedger() {
     setLoading(true);
     try {
       const data = await FinanceService.getAllTransactions();
-      setLogs(Array.isArray(data) ? data : []);
+      const rawLogs = Array.isArray(data) ? data : [];
+      
+      // Transform & Normalize data structure
+      const transformedLogs = rawLogs.map(tx => ({
+        ref: tx.id || tx.transactionId || tx.ref || `TXN-${Date.now()}`,
+        student: tx.student_name || tx.userName || tx.student || tx.user || 'Unknown Student',
+        tier: tx.plan || tx.subscriptionType || 'Standard Plan',
+        amount: Number(tx.amount || 0),
+        gateway: tx.gateway || tx.paymentMethod || 'Stripe',
+        status: tx.status || 'Pending',
+        timestamp: tx.created_at || tx.createdAt || tx.timestamp || new Date().toISOString(),
+        email: tx.email || tx.student_email || 'N/A',
+        plan: tx.plan || tx.subscriptionType || 'Standard Plan',
+        credits: tx.credits || 0,
+        transactionId: tx.id || tx.transactionId
+      }));
+
+      setLogs(transformedLogs);
     } catch (error) {
       console.error("Failed to load transaction audit logs:", error);
-    } finally {
+      setLogs([]);
+    } fontFinally: {
       setLoading(false);
     }
   };
@@ -147,7 +164,6 @@ export default function TransactionLedger() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Format date
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     try {
@@ -173,11 +189,9 @@ export default function TransactionLedger() {
       const doc = new jsPDF();
       const timestamp = new Date().toLocaleString();
 
-      // Dark Blue Header Banner
       doc.setFillColor(15, 22, 41);
       doc.rect(0, 0, 210, 42, 'F');
 
-      // Title & Subtitle
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
@@ -205,7 +219,6 @@ export default function TransactionLedger() {
       doc.text(`Successful Sales: ${successfulTxs.length}`, 80, 56);
       doc.text(`Total Revenue: LKR ${filteredRev.toLocaleString()}`, 140, 56);
 
-      // Table Rows Preparation
       const tableRows = filteredLogs.map(l => [
         l.ref || 'N/A',
         l.student || 'Unknown',
@@ -214,7 +227,7 @@ export default function TransactionLedger() {
         `+${l.credits || 0} c`,
         l.gateway || 'Card',
         l.status || 'Pending',
-        l.timestamp || 'N/A'
+        formatDate(l.timestamp)
       ]);
 
       autoTable(doc, {
@@ -257,7 +270,6 @@ export default function TransactionLedger() {
         }
       });
 
-      // Footer
       doc.setFontSize(8);
       doc.setTextColor(156, 163, 175);
       doc.text('Confidential Document - Internal Finance Administration Langoora Platform', 14, 285);
