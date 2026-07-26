@@ -2,49 +2,57 @@
 const jwt = require("jsonwebtoken");
 const { auth, db } = require("../config/firebase");
 
-// ✅ Role definitions (from main)
+// ✅ Role definitions
 const ADMIN_ROLES = ["admin", "super_admin", "finance_admin"];
-const MAINTENANCE_ALLOWED_ROLES = [
-  "admin",
-  "super_admin",
-  "finance_admin",
-  "finance",
-];
+const MAINTENANCE_ALLOWED_ROLES = ["admin", "super_admin", "finance_admin", "finance"];
 const MAINTENANCE_READONLY_ROLES = ["validator"];
 
+// ✅ ALL permissions for Super Admin
+const SUPER_ADMIN_PERMISSIONS = {
+  manage_users: true,
+  manage_roles: true,
+  manage_system: true,
+  view_audit_logs: true,
+  verify_tutors: true,
+  audit_exams: true,
+  manage_questions: true,
+  approve_content: true,
+  resolve_disputes: true,
+  manage_subscriptions: true,
+  approve_payouts: true,
+  view_ledger: true,
+  manage_credits: true,
+  process_refunds: true,
+  create_exams: true,
+  manage_own_content: true,
+  view_student_progress: true,
+  view_reports: true,
+  view_own_profile: true
+};
+
 /**
- * 1. Authentication Middleware
- * Intercepts incoming requests and validates either a Custom JWT Token (Internal Staff)
- * or a Native Firebase ID Token (Students/Tutors).
- *
- * Also fetches the user's role document and attaches permissions to req.user.
+ * 1. Authentication Middleware - COMPLETE FIX
  */
 const protect = async (req, res, next) => {
   let token;
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
-  ) {
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
     try {
       token = req.headers.authorization.split(" ")[1];
       let decodedUID;
       let fullUserData = {};
 
-      // Strategy A: Attempt to decode via Custom JWT signing scheme (Staff Sessions)
       try {
         const verifiedJWT = jwt.verify(
           token,
-          process.env.JWT_SECRET || "fallback_secret_key_production_2026",
+          process.env.JWT_SECRET || "fallback_secret_key_production_2026"
         );
         decodedUID = verifiedJWT.id;
       } catch (jwtErr) {
-        // Strategy B: Fallback to verification against Native Firebase Identity Management Service
         const decodedFirebase = await auth.verifyIdToken(token);
         decodedUID = decodedFirebase.uid;
       }
 
-      // Fetch verified user metadata block from central database node
       const userDoc = await db.collection("users").doc(decodedUID).get();
 
       if (!userDoc.exists) {
@@ -55,86 +63,70 @@ const protect = async (req, res, next) => {
       }
 
       fullUserData = userDoc.data();
+      
+      console.log(`🔍 User found: ${fullUserData.email}`);
+      console.log(`🔍 Role: ${fullUserData.role}`);
+      console.log(`🔍 RoleId: ${fullUserData.roleId}`);
 
-      // --- RBAC: Fetch the user's role document if roleId exists ---
-      let roleData = null;
       let permissions = {};
-      let roleName = fullUserData.role || "student"; // fallback display name
 
-      if (fullUserData.roleId) {
-        const roleDoc = await db
-          .collection("roles")
-          .doc(fullUserData.roleId)
-          .get();
-        if (roleDoc.exists) {
-          roleData = roleDoc.data();
-          roleName = roleData.name || roleName;
-          permissions = roleData.permissions || {};
-          if (fullUserData.customPermissions) {
-            permissions = { ...permissions, ...fullUserData.customPermissions };
-          }
-        } else {
-          console.warn(
-            `Role ${fullUserData.roleId} not found for user ${decodedUID}`,
-          );
-        }
-      } else if (fullUserData.role) {
-        // 🔥 IMPROVED: Map legacy role strings to roleId
-        const roleNameToId = {
-          admin: "super_admin",
-          super_admin: "super_admin",
-          validator: "validator",
-          finance: "finance",
-          finance_admin: "finance_admin",
-          tutor: "tutor",
-          student: "student",
-        };
-        const mappedRoleId = roleNameToId[fullUserData.role];
-        if (mappedRoleId) {
-          const roleDoc = await db.collection("roles").doc(mappedRoleId).get();
-          if (roleDoc.exists) {
-            roleData = roleDoc.data();
-            roleName = roleData.name || fullUserData.role;
-            permissions = roleData.permissions || {};
-            if (fullUserData.customPermissions) {
-              permissions = {
-                ...permissions,
-                ...fullUserData.customPermissions,
-              };
+      // ✅ STEP 1: Check if user is SUPER_ADMIN
+      if (fullUserData.role === 'super_admin' || fullUserData.roleId === 'super_admin') {
+        // ✅ Super Admin gets ALL permissions
+        permissions = { ...SUPER_ADMIN_PERMISSIONS };
+        console.log(`✅ Super Admin detected - ALL permissions granted to ${fullUserData.email}`);
+      } else {
+        // ✅ STEP 2: Load from permissions array
+        if (fullUserData.permissions && Array.isArray(fullUserData.permissions)) {
+          fullUserData.permissions.forEach(p => {
+            if (typeof p === 'string') {
+              permissions[p] = true;
             }
-            console.log(
-              `✅ Mapped legacy role '${fullUserData.role}' to roleId '${mappedRoleId}' for user ${decodedUID}`,
-            );
-          }
-        } else {
-          console.warn(
-            `User ${decodedUID} has legacy role string '${fullUserData.role}' without roleId.`,
-          );
+          });
+          console.log(`✅ Loaded permissions for ${fullUserData.email}:`, Object.keys(permissions));
+        }
+        
+        // ✅ STEP 3: Load from privileges array (legacy)
+        if (fullUserData.privileges && Array.isArray(fullUserData.privileges)) {
+          fullUserData.privileges.forEach(p => {
+            if (typeof p === 'string') {
+              permissions[p] = true;
+            }
+          });
+          console.log(`✅ Loaded privileges for ${fullUserData.email}:`, fullUserData.privileges);
+        }
+        
+        // ✅ STEP 4: If admin role, ensure admin permissions
+        if (fullUserData.role === 'admin' || fullUserData.roleId === 'admin') {
+          const adminPerms = {
+            manage_users: true,
+            manage_system: true,
+            view_audit_logs: true,
+            view_reports: true,
+            view_own_profile: true
+          };
+          permissions = { ...permissions, ...adminPerms };
+          console.log(`✅ Admin detected - added admin permissions for ${fullUserData.email}`);
         }
       }
 
-      // ✅ FIX: Set role to the roleId for authorization checks, keep roleName for display
-      const effectiveRole =
-        fullUserData.roleId || fullUserData.role || "student";
-
-      // Attach everything to req.user
+      // ✅ Attach everything to req.user
       req.user = {
         uid: decodedUID,
+        id: decodedUID,
         email: fullUserData.email || "",
-        role: effectiveRole, // ✅ used for authorizeRoles
-        roleName: roleName, // human-readable name
+        role: fullUserData.role || "student",
         roleId: fullUserData.roleId || null,
-        roleData: roleData, // full role document data (if any)
-        permissions: permissions, // effective permissions (merged with custom)
-        ...fullUserData, // include all original fields (includes languageGroup)
+        permissions: permissions,
+        ...fullUserData
       };
+
+      console.log(`✅ User authenticated: ${fullUserData.email}`);
+      console.log(`📋 Final permissions:`, Object.keys(permissions).filter(k => permissions[k]));
 
       return next();
     } catch (error) {
-      console.error(
-        "Security Perimeter Breach: Token Verification Failed:",
-        error.message,
-      );
+      console.error("Security Perimeter Breach: Token Verification Failed:", error.message);
       return res.status(401).json({
         success: false,
         message: "Not authorized, token validation failed.",
@@ -151,17 +143,15 @@ const protect = async (req, res, next) => {
 };
 
 /**
- * 2. Role-Based Authorization Middleware (legacy)
- * Evaluates authenticated session context mappings against restricted administrative boundaries.
- * This is kept for backward compatibility with existing routes that use role names.
- * New routes should use requirePermission.
+ * 2. Role-Based Authorization Middleware
  */
 const authorizeRoles = (...allowedRoles) => {
   return async (req, res, next) => {
     try {
-      const userRole = req.user && req.user.role; // now uses roleId
+      const userRole = req.user && req.user.role;
 
       if (!userRole || !allowedRoles.includes(userRole)) {
+        console.log(`❌ Role '${userRole}' not in allowed: ${allowedRoles}`);
         return res.status(403).json({
           success: false,
           message: `Forbidden: Access denied for role type '${userRole || "unknown"}'.`,
@@ -171,37 +161,38 @@ const authorizeRoles = (...allowedRoles) => {
       next();
     } catch (error) {
       console.error("Server Role Auth Error:", error.message);
-      return res
-        .status(500)
-        .json({ success: false, message: "Server Role Auth Error" });
+      return res.status(500).json({ success: false, message: "Server Role Auth Error" });
     }
   };
 };
 
 /**
- * 3. Permission-Based Authorization Middleware
- * Checks if the authenticated user has a specific permission.
- * Usage: router.put('/admin/route', protect, requirePermission('manage_users'), controller)
+ * 3. Permission-Based Authorization Middleware - FIXED
  */
 const requirePermission = (permissionKey) => {
   return async (req, res, next) => {
     try {
       const user = req.user;
       if (!user) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Unauthorized: No user attached." });
+        console.log('❌ No user attached to request');
+        return res.status(401).json({ success: false, message: "Unauthorized: No user attached." });
       }
 
       const permissions = user.permissions || {};
+      const permKeys = Object.keys(permissions).filter(k => permissions[k] === true);
+      
+      console.log(`🔍 Checking permission '${permissionKey}' for user ${user.email}`);
+      console.log(`📋 User permissions:`, permKeys);
 
       if (!permissions[permissionKey]) {
+        console.log(`❌ Permission '${permissionKey}' not found for user ${user.email}`);
         return res.status(403).json({
           success: false,
           message: `Forbidden: Permission '${permissionKey}' is required to perform this action.`,
         });
       }
 
+      console.log(`✅ Permission '${permissionKey}' granted for user ${user.email}`);
       next();
     } catch (error) {
       console.error("Permission check error:", error.message);
@@ -215,25 +206,20 @@ const requirePermission = (permissionKey) => {
 
 /**
  * 4. Role Level Check
- * Ensures the user's role level is lower (more privileged) than a given level.
- * Usage: requireLevel(2) would allow only roles with level < 2 (i.e., super_admin only).
  */
 const requireLevel = (maxLevel) => {
   return async (req, res, next) => {
     try {
       const user = req.user;
       if (!user) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Unauthorized: No user attached." });
+        return res.status(401).json({ success: false, message: "Unauthorized: No user attached." });
       }
 
       const roleData = user.roleData;
       if (!roleData || roleData.level === undefined) {
         return res.status(403).json({
           success: false,
-          message:
-            "Forbidden: Your role does not have a defined privilege level.",
+          message: "Forbidden: Your role does not have a defined privilege level.",
         });
       }
 
@@ -260,7 +246,7 @@ module.exports = {
   authorizeRoles,
   requirePermission,
   requireLevel,
-  ADMIN_ROLES, // ✅ from main
-  MAINTENANCE_ALLOWED_ROLES, // ✅ from main
-  MAINTENANCE_READONLY_ROLES, // ✅ from main
+  ADMIN_ROLES,
+  MAINTENANCE_ALLOWED_ROLES,
+  MAINTENANCE_READONLY_ROLES,
 };

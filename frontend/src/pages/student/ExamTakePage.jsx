@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import {
   Clock, AlertTriangle, ChevronLeft, ChevronRight,
-  Flag, CheckCircle, Send, LayoutGrid, X,
+  CheckCircle, Send, LayoutGrid, X,
   Volume2, Coffee, Lock, Loader2, AlertCircle,
   BookOpen, PenSquare, Headphones, Sparkles, Info,
   ChevronUp, ChevronDown, ShieldAlert, PartyPopper, Mic, SkipForward
@@ -16,7 +16,7 @@ import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
 import studentApi from '../../services/examExecutionService';
 
-const BREAK_DURATION = 25; // 25 seconds break between sections
+const BREAK_DURATION = 25;
 
 function fmtClock(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -25,7 +25,6 @@ function fmtClock(totalSeconds) {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-// ─── Brand tokens (Langoora) ─────────────────────────────────────────────
 const BRAND = {
   primary: '#6366F1',
   secondary: '#8B5CF6',
@@ -46,7 +45,7 @@ const BREAK_TIPS = [
   "For 聴解 (Listening), the first sentence usually sets the scene. Catch it and the rest gets easier.",
   "Stuck between two options? Eliminate the one that contradicts the passage's tone, not just its facts.",
   "Take three slow breaths. A calm mind reads kanji faster than a rushed one.",
-  "Flag and move on — you can always return. Momentum matters more than perfection.",
+  "Skip and move on — you can always return to a question later. Momentum matters more than perfection.",
 ];
 
 function sectionIconFor(label) {
@@ -59,7 +58,6 @@ function timeColorTokens(secondsLeft) {
   return { text: 'text-emerald-300', ring: BRAND.success, bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' };
 }
 
-// ─── Circular progress ring ───
 function CircularTimer({ timeLeft, totalTime, size = 56, strokeWidth = 5, label }) {
   const tokens = timeColorTokens(timeLeft);
   const isCritical = timeLeft <= 30 && timeLeft > 0;
@@ -97,7 +95,6 @@ function CircularTimer({ timeLeft, totalTime, size = 56, strokeWidth = 5, label 
   );
 }
 
-// ─── Small ring used inside the submit modal ─────────────────────────────
 function RingStat({ value, total, size = 72, strokeWidth = 6, color, label, big }) {
   const r = (100 - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;
@@ -126,7 +123,6 @@ function RingStat({ value, total, size = 72, strokeWidth = 6, color, label, big 
   );
 }
 
-// ─── Segmented section progress bar for the header ───────────────────────
 function SectionProgressBar({ parts, partIndex, qIndex }) {
   return (
     <div className="flex items-center gap-1.5 w-full">
@@ -166,7 +162,6 @@ export default function ExamTakePage() {
   const [partIndex, setPartIndex] = useState(0);
   const [qIndex, setQIndex] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [flagged, setFlagged] = useState(new Set());
 
   const [partTimeLeft, setPartTimeLeft] = useState(0);
   const [breakTimeLeft, setBreakTimeLeft] = useState(0);
@@ -188,7 +183,6 @@ export default function ExamTakePage() {
   const phaseRef = useRef(phase);
   const attemptIdRef = useRef(attemptId);
   const answersRef = useRef(answers);
-  const flaggedRef = useRef(flagged);
   const partsRef = useRef(parts);
   const partIndexRef = useRef(partIndex);
   const qIndexRef = useRef(qIndex);
@@ -204,7 +198,6 @@ export default function ExamTakePage() {
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { attemptIdRef.current = attemptId; }, [attemptId]);
   useEffect(() => { answersRef.current = answers; }, [answers]);
-  useEffect(() => { flaggedRef.current = flagged; }, [flagged]);
   useEffect(() => { partsRef.current = parts; }, [parts]);
   useEffect(() => { partIndexRef.current = partIndex; }, [partIndex]);
   useEffect(() => { qIndexRef.current = qIndex; }, [qIndex]);
@@ -440,7 +433,6 @@ export default function ExamTakePage() {
     try {
       const payload = {
         answers: answersRef.current,
-        flagged: Array.from(flaggedRef.current),
         autoSubmitted,
       };
       await studentApi.post(`/exam-execution/${attemptIdRef.current}/submit`, payload);
@@ -620,17 +612,6 @@ export default function ExamTakePage() {
     setShowExplanation(false);
   }, [currentItem, answers]);
 
-  const toggleFlag = () => {
-    if (!currentItem) return;
-    const key = itemKey(currentItem);
-    setFlagged((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   const totalQuestions = parts.reduce(
     (sum, p) => sum + p.items.filter((it) => !it.isExample).length,
     0
@@ -643,7 +624,6 @@ export default function ExamTakePage() {
   const isListening = currentPart?.isAudio;
   const hasAudio = currentPart?.audioUrl && currentPart.audioUrl.trim() !== '';
   const hasImage = currentItem?.image_url && currentItem.image_url.trim() !== '';
-  const isFlagged = currentItem && flagged.has(itemKey(currentItem));
   const selected = currentItem ? answers[itemKey(currentItem)] : undefined;
   const isExample = currentItem?.isExample === true;
   const correctAnswerIndex = currentItem?._correct;
@@ -684,9 +664,6 @@ export default function ExamTakePage() {
 
   const partAnsweredCount = currentPart
     ? currentPart.items.reduce((sum, it) => (!it.isExample && answers[itemKey(it)] !== undefined ? sum + 1 : sum), 0)
-    : 0;
-  const partFlaggedCount = currentPart
-    ? currentPart.items.reduce((sum, it) => (flagged.has(itemKey(it)) ? sum + 1 : sum), 0)
     : 0;
   const partNonExampleTotal = currentPart
     ? currentPart.items.filter((it) => !it.isExample).length
@@ -935,11 +912,6 @@ export default function ExamTakePage() {
             >
               <LayoutGrid size={16} className="text-gray-300" />
               <span className="text-xs font-semibold text-white">{answeredCount}/{totalQuestions}</span>
-              {flagged.size > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-[9px] font-bold text-white flex items-center justify-center">
-                  {flagged.size}
-                </span>
-              )}
             </button>
 
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 px-2">
@@ -1036,11 +1008,6 @@ export default function ExamTakePage() {
                 {!isExample && (
                   <span className="text-xs text-gray-500">
                     Question {questionNumberInSection}
-                  </span>
-                )}
-                {isFlagged && (
-                  <span className="flex items-center gap-1 text-amber-400 text-xs bg-amber-500/10 border border-amber-500/25 rounded-full px-2.5 py-1">
-                    <Flag size={11} /> Flagged
                   </span>
                 )}
               </div>
@@ -1208,15 +1175,6 @@ export default function ExamTakePage() {
             >
               <ChevronLeft size={14} /> <span className="hidden sm:inline">Previous</span>
             </Button>
-            <Button
-              variant={isFlagged ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={toggleFlag}
-              className="min-h-[44px]"
-            >
-              <Flag size={14} className={isFlagged ? 'text-amber-400' : ''} />
-              <span className="hidden sm:inline ml-1">{isFlagged ? 'Unflag' : 'Flag'}</span>
-            </Button>
             {qIndex < totalInPart - 1 ? (
               <Button variant="primary" size="sm" onClick={goNext} className="min-h-[44px]">
                 <span className="hidden sm:inline">Next</span> <ChevronRight size={14} />
@@ -1243,11 +1201,9 @@ export default function ExamTakePage() {
             filteredQs={currentPart?.items || []}
             allQuestions={currentPart?.items || []}
             answers={answers}
-            flagged={flagged}
             currentQ={qIndex}
             setCurrentQ={setQIndex}
             answeredCount={partAnsweredCount}
-            flaggedCount={partFlaggedCount}
             totalQuestions={partNonExampleTotal}
             currentSectionLabel={currentPart?.label || ''}
             sectionButtons={sectionButtons}
@@ -1287,11 +1243,9 @@ export default function ExamTakePage() {
                   filteredQs={currentPart?.items || []}
                   allQuestions={currentPart?.items || []}
                   answers={answers}
-                  flagged={flagged}
                   currentQ={qIndex}
                   setCurrentQ={(idx) => { setQIndex(idx); setPaletteOpen(false); }}
                   answeredCount={partAnsweredCount}
-                  flaggedCount={partFlaggedCount}
                   totalQuestions={partNonExampleTotal}
                   currentSectionLabel={currentPart?.label || ''}
                   sectionButtons={sectionButtons}
@@ -1306,7 +1260,6 @@ export default function ExamTakePage() {
         <div className="space-y-6">
           <div className="grid grid-cols-3 gap-3">
             <RingStat value={answeredCount} total={totalQuestions} color={BRAND.success} label="Answered" />
-            <RingStat value={flagged.size} total={totalQuestions} color={BRAND.warning} label="Flagged" />
             <RingStat value={totalQuestions - answeredCount} total={totalQuestions} color="rgba(255,255,255,0.4)" label="Unanswered" />
           </div>
           {totalQuestions - answeredCount > 0 && (
@@ -1329,16 +1282,14 @@ export default function ExamTakePage() {
   );
 }
 
-// ─── Palette Component ──────────────────────────────────────────────────
+// ─── Palette Component ────────────────────────────────────────────────── (Flag removed)
 function PaletteContent({
   filteredQs,
   allQuestions,
   answers,
-  flagged,
   currentQ,
   setCurrentQ,
   answeredCount,
-  flaggedCount,
   totalQuestions,
   currentSectionLabel,
   sectionButtons,
@@ -1361,14 +1312,13 @@ function PaletteContent({
     return count;
   };
 
-  const getButtonColor = (q, isCurrent, isAnswered, isFlagged) => {
+  const getButtonColor = (q, isCurrent, isAnswered) => {
     if (isCurrent) return 'text-white shadow-lg';
     if (q.isExample) {
       return isAnswered
         ? 'bg-amber-500/30 border-amber-500/40 text-amber-200'
         : 'bg-amber-500/20 border-amber-500/30 text-amber-400 hover:bg-amber-500/30';
     }
-    if (isFlagged) return 'bg-amber-500/20 border-amber-500/50 text-amber-300';
     if (isAnswered) return 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300';
     return 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20';
   };
@@ -1416,11 +1366,10 @@ function PaletteContent({
         {filteredQs.map((q, idx) => {
           const qKey = `${q.questionDocId}::${q.id}`;
           const isAnswered = answers[qKey] !== undefined;
-          const isFlagged = flagged.has(qKey);
           const isCurrent = idx === currentQ;
           const isExample = q.isExample === true;
           const displayText = isExample ? '例' : getDisplayText(q, idx);
-          const colorClass = getButtonColor(q, isCurrent, isAnswered, isFlagged);
+          const colorClass = getButtonColor(q, isCurrent, isAnswered);
 
           return (
             <button
@@ -1440,10 +1389,6 @@ function PaletteContent({
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-emerald-500/20 border border-emerald-500/30 rounded" />
           <span className="text-gray-400">Answered ({answeredCount})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-amber-500/20 border border-amber-500/50 rounded" />
-          <span className="text-gray-400">Flagged ({flaggedCount})</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-white/5 border border-white/10 rounded" />

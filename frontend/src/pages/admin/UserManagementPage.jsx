@@ -22,14 +22,221 @@ import {
   deleteRole
 } from '../../services/userService';
 
-const AVAILABLE_PRIVILEGES = [
-  { key: 'verify_tutors', role: 'validator', label: 'Tutor Verification Power', desc: 'Approve or reject external partner academy tutors.' },
-  { key: 'audit_exams', role: 'validator', label: 'Exam Quality Audit Power', desc: 'Inspect question matrices and structures for quality assurance.' },
-  { key: 'resolve_disputes', role: 'validator', label: 'Resolve Content Disputes', desc: 'Settle student arguments and recheck requests.' },
-  { key: 'manage_subscriptions', role: 'finance', label: 'Subscription Framework Manager', desc: 'Modify packages, pricing, and active credit values.' },
-  { key: 'approve_payouts', role: 'finance', label: 'Tutor Payouts Approver', desc: 'Validate accumulated tutor credits and authorize bank transfers.' },
-  { key: 'view_ledger', role: 'finance', label: 'Transaction Ledger Auditor', desc: 'View full platform financial inflows and outflows ledger.' }
+// ================================================================
+// ✅ FINAL: SYSTEM-WIDE PRIVILEGES (Validator permissions cleaned)
+// ================================================================
+const SYSTEM_PRIVILEGES = [
+  // 🔐 System Administration (Admin, Super Admin, Sub Admin)
+  { 
+    key: 'manage_users', 
+    roles: ['admin', 'super_admin', 'sub_admin'], 
+    label: 'Manage Users', 
+    category: 'system',
+    desc: 'Create, update, suspend, and delete user accounts' 
+  },
+  { 
+    key: 'manage_roles', 
+    roles: ['super_admin'], 
+    label: 'Manage Roles', 
+    category: 'system',
+    desc: 'Create, edit, and delete system roles' 
+  },
+  { 
+    key: 'manage_system', 
+    roles: ['admin', 'super_admin'], 
+    label: 'System Settings', 
+    category: 'system',
+    desc: 'Configure system-wide settings and configurations' 
+  },
+  { 
+    key: 'view_audit_logs', 
+    roles: ['admin', 'super_admin'], 
+    label: 'View Audit Logs', 
+    category: 'system',
+    desc: 'Access system audit trail and security logs' 
+  },
+  
+  // 📚 Academic Operations (Validator)
+  // ✅ REMOVED: resolve_disputes, manage_questions, approve_content
+  { 
+    key: 'verify_tutors', 
+    roles: ['validator'], 
+    label: 'Verify Tutors', 
+    category: 'academic',
+    desc: 'Approve or reject tutor applications and verify credentials' 
+  },
+  { 
+    key: 'audit_exams', 
+    roles: ['validator'], 
+    label: 'Audit Exams', 
+    category: 'academic',
+    desc: 'Review exam quality, question accuracy, and content validity' 
+  },
+  
+  // 💰 Financial Operations (Finance)
+  { 
+    key: 'manage_subscriptions', 
+    roles: ['finance'], 
+    label: 'Manage Subscriptions', 
+    category: 'financial',
+    desc: 'Create, modify, and manage subscription plans and pricing' 
+  },
+  { 
+    key: 'approve_payouts', 
+    roles: ['finance'], 
+    label: 'Approve Payouts', 
+    category: 'financial',
+    desc: 'Authorize and process tutor and staff payments' 
+  },
+  { 
+    key: 'view_ledger', 
+    roles: ['finance'], 
+    label: 'View Ledger', 
+    category: 'financial',
+    desc: 'Access and review financial transaction records' 
+  },
+  { 
+    key: 'manage_credits', 
+    roles: ['finance'], 
+    label: 'Manage Credits', 
+    category: 'financial',
+    desc: 'Adjust and manage user credit balances' 
+  },
+  { 
+    key: 'process_refunds', 
+    roles: ['finance'], 
+    label: 'Process Refunds', 
+    category: 'financial',
+    desc: 'Process and approve refund requests' 
+  },
+  
+  // 📝 Content Management (Tutor)
+  { 
+    key: 'create_exams', 
+    roles: ['tutor'], 
+    label: 'Create Exams', 
+    category: 'content',
+    desc: 'Create new exams and assessments' 
+  },
+  { 
+    key: 'manage_own_content', 
+    roles: ['tutor'], 
+    label: 'Manage Own Content', 
+    category: 'content',
+    desc: 'Edit and delete own content' 
+  },
+  { 
+    key: 'view_student_progress', 
+    roles: ['tutor'], 
+    label: 'View Student Progress', 
+    category: 'content',
+    desc: 'Track student performance and progress' 
+  },
+  
+  // 📊 General Access (All staff roles)
+  { 
+    key: 'view_reports', 
+    roles: ['admin', 'super_admin', 'sub_admin', 'validator', 'finance', 'tutor'], 
+    label: 'View Reports', 
+    category: 'general',
+    desc: 'Access analytics and performance reports' 
+  },
+  { 
+    key: 'view_own_profile', 
+    roles: ['admin', 'super_admin', 'sub_admin', 'validator', 'finance', 'tutor', 'student'], 
+    label: 'View Own Profile', 
+    category: 'general',
+    desc: 'Access and manage personal profile' 
+  }
 ];
+
+// ================================================================
+// ✅ FINAL: ROLE PRIVILEGE TEMPLATES (Validator updated)
+// ================================================================
+const ROLE_PRIVILEGE_TEMPLATES = {
+  validator: [
+    'verify_tutors', 
+    'audit_exams',
+    'view_reports'
+  ],
+  finance: [
+    'manage_subscriptions', 'approve_payouts', 'view_ledger', 
+    'manage_credits', 'process_refunds', 'view_reports'
+  ],
+  tutor: [
+    'create_exams', 'manage_own_content', 'view_student_progress', 'view_reports'
+  ],
+  student: ['view_own_profile'],
+  admin: [
+    'manage_users', 'manage_system', 'view_audit_logs', 
+    'view_reports', 'view_own_profile'
+  ],
+  super_admin: [
+    'manage_users', 'manage_roles', 'manage_system', 'view_audit_logs',
+    'view_reports', 'view_own_profile'
+  ],
+  sub_admin: [
+    'manage_users', 'view_reports', 'view_own_profile'
+  ]
+};
+
+// ================================================================
+// ✅ PRIVILEGE CATEGORIES CONFIGURATION
+// ================================================================
+const PRIVILEGE_CATEGORIES = {
+  system: { 
+    label: 'System Administration', 
+    color: 'text-purple-500',
+    bg: 'bg-purple-500/10',
+    border: 'border-purple-500/30'
+  },
+  academic: { 
+    label: 'Academic Operations', 
+    color: 'text-blue-500',
+    bg: 'bg-blue-500/10',
+    border: 'border-blue-500/30'
+  },
+  financial: { 
+    label: 'Financial Operations', 
+    color: 'text-emerald-500',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/30'
+  },
+  content: { 
+    label: 'Content Management', 
+    color: 'text-amber-500',
+    bg: 'bg-amber-500/10',
+    border: 'border-amber-500/30'
+  },
+  general: { 
+    label: 'General Access', 
+    color: 'text-gray-500',
+    bg: 'bg-gray-500/10',
+    border: 'border-gray-500/30'
+  }
+};
+
+// ================================================================
+// ✅ HELPER FUNCTIONS
+// ================================================================
+const getPrivilegesForRole = (roleId) => {
+  return SYSTEM_PRIVILEGES
+    .filter(p => p.roles.includes(roleId))
+    .map(p => p.key);
+};
+
+const getPrivilegesByCategory = (category) => {
+  return SYSTEM_PRIVILEGES.filter(p => p.category === category);
+};
+
+const getAvailablePrivilegesForRole = (roleId) => {
+  return SYSTEM_PRIVILEGES.filter(p => p.roles.includes(roleId));
+};
+
+// ================================================================
+// ✅ BACKWARD COMPATIBILITY
+// ================================================================
+const AVAILABLE_PRIVILEGES = SYSTEM_PRIVILEGES;
 
 const ALL_PERMISSION_KEYS = [
   'manage_users',
@@ -101,7 +308,6 @@ export default function UserManagementPage() {
   const [roleFormError, setRoleFormError] = useState('');
   const [isRoleSubmitting, setIsRoleSubmitting] = useState(false);
 
-  // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
   const [createForm, setCreateForm] = useState({
     firstName: '',
     lastName: '',
@@ -114,6 +320,12 @@ export default function UserManagementPage() {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ✅ Bulk Privilege Assignment States
+  const [isBulkPrivilegeModalOpen, setIsBulkPrivilegeModalOpen] = useState(false);
+  const [selectedUsersForBulk, setSelectedUsersForBulk] = useState([]);
+  const [bulkPrivileges, setBulkPrivileges] = useState([]);
+  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
+
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
@@ -122,13 +334,29 @@ export default function UserManagementPage() {
   const fetchAllUsersAndPreAuth = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Fetching users...');
       const data = await fetchUsers();
+      console.log('✅ Users data:', data);
+      
       if (data.success) {
         setUsers(data.users.filter(u => u.status !== 'deleted'));
+      } else {
+        console.error('❌ Users fetch failed:', data.message);
+        showNotification(data.message || 'Failed to fetch users.', 'error');
       }
     } catch (error) {
-      console.error("Error synchronizing storage directory registry:", error);
-      showNotification("Failed to fetch central user repository streams.", "error");
+      console.error('❌ Error fetching users:', error);
+      
+      if (error.response?.status === 403) {
+        showNotification('You do not have permission to view users. Please contact your administrator.', 'error');
+      } else if (error.response?.status === 401) {
+        showNotification('Your session has expired. Please login again.', 'error');
+        setTimeout(() => {
+          window.location.href = '/auth/login';
+        }, 2000);
+      } else {
+        showNotification('Failed to fetch users. Please try again later.', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -136,14 +364,29 @@ export default function UserManagementPage() {
 
   const fetchAllRoles = async () => {
     try {
+      console.log('🔄 Fetching roles...');
       const data = await fetchRoles();
+      console.log('✅ Roles data:', data);
+      
       if (data.success) {
-        // Exclude super_admin from the list for staff creation
         setRoles(data.roles.filter(r => r.id !== 'super_admin'));
+      } else {
+        console.error('❌ Roles fetch failed:', data.message);
+        showNotification(data.message || 'Failed to fetch roles.', 'error');
       }
     } catch (error) {
-      console.error("Error fetching roles:", error);
-      showNotification("Failed to fetch roles.", "error");
+      console.error('❌ Error fetching roles:', error);
+      
+      if (error.response?.status === 403) {
+        showNotification('You do not have permission to manage roles.', 'error');
+      } else if (error.response?.status === 401) {
+        showNotification('Your session has expired. Please login again.', 'error');
+        setTimeout(() => {
+          window.location.href = '/auth/login';
+        }, 2000);
+      } else {
+        showNotification('Failed to fetch roles. Please try again later.', 'error');
+      }
     }
   };
 
@@ -211,7 +454,18 @@ export default function UserManagementPage() {
       }
     } catch (error) {
       console.error("Failed to commit capability profiles:", error);
-      showNotification("Failed to finalize staff permissions matrix update.", "error");
+      
+      // ✅ FIXED: Better error handling
+      if (error.response?.status === 403) {
+        showNotification("You do not have permission to change user privileges. Please contact your administrator.", "error");
+      } else if (error.response?.status === 401) {
+        showNotification("Your session has expired. Please login again.", "error");
+        setTimeout(() => {
+          window.location.href = '/auth/login';
+        }, 2000);
+      } else {
+        showNotification("Failed to finalize staff permissions matrix update.", "error");
+      }
     }
   };
 
@@ -243,7 +497,6 @@ export default function UserManagementPage() {
     setIsSubmitting(true);
     const formattedEmail = createForm.email.toLowerCase().trim();
 
-    // Validate firstName, lastName, email, roleId
     if (!createForm.firstName.trim() || !createForm.lastName.trim() || !formattedEmail || !createForm.roleId) {
       setFormError('All fields are mandatory.');
       setIsSubmitting(false);
@@ -256,7 +509,6 @@ export default function UserManagementPage() {
     }
 
     try {
-      // Combine first and last name
       const fullName = `${createForm.firstName.trim()} ${createForm.lastName.trim()}`;
       const payload = {
         name: fullName,
@@ -270,7 +522,6 @@ export default function UserManagementPage() {
       if (data.success) {
         setUsers(prev => [data.user, ...prev]);
         setIsCreateModalOpen(false);
-        // ✅ FIX: Reset form with "Langoora" as default institution
         setCreateForm({
           firstName: '',
           lastName: '',
@@ -283,7 +534,19 @@ export default function UserManagementPage() {
         showNotification("Staff provisioning lifecycle executed. Invitation dispatched.", "success");
       }
     } catch (error) {
-      setFormError(error.response?.data?.message || "Failed to create user.");
+      console.error("Provision error:", error);
+      
+      // ✅ FIXED: Better error handling
+      if (error.response?.status === 403) {
+        setFormError('You do not have permission to provision users. Please contact your administrator.');
+      } else if (error.response?.status === 401) {
+        setFormError('Your session has expired. Please login again.');
+        setTimeout(() => {
+          window.location.href = '/auth/login';
+        }, 2000);
+      } else {
+        setFormError(error.response?.data?.message || "Failed to create user.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -378,6 +641,72 @@ export default function UserManagementPage() {
       }
     } catch (error) {
       showNotification(error.response?.data?.message || 'Failed to delete role.', 'error');
+    }
+  };
+
+  // ✅ Bulk Privilege Assignment Handler
+  const handleBulkPrivilegeAssignment = async () => {
+    if (selectedUsersForBulk.length === 0 || bulkPrivileges.length === 0) {
+      showNotification('Please select at least one user and one privilege.', 'error');
+      return;
+    }
+
+    setIsBulkSubmitting(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      for (const userId of selectedUsersForBulk) {
+        const user = users.find(u => u.id === userId);
+        if (!user) continue;
+
+        try {
+          // Merge existing privileges with new ones
+          const existingPrivileges = user.privileges || [];
+          const mergedPrivileges = [...new Set([...existingPrivileges, ...bulkPrivileges])];
+
+          const payload = {
+            privileges: mergedPrivileges,
+            languageScope: user.languageScope || 'All',
+            status: user.status,
+            email: user.email,
+            reason: `Bulk assignment: ${bulkPrivileges.join(', ')}`
+          };
+
+          await saveUserPrivileges(userId, payload);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to update user ${userId}:`, err);
+          failCount++;
+        }
+      }
+
+      // Refresh users list
+      await fetchAllUsersAndPreAuth();
+      
+      // Show results
+      if (failCount === 0) {
+        showNotification(
+          `✅ Successfully assigned ${bulkPrivileges.length} privileges to ${successCount} users!`,
+          'success'
+        );
+      } else {
+        showNotification(
+          `⚠️ ${successCount} users updated, ${failCount} failed. Check console for details.`,
+          'error'
+        );
+      }
+
+      // Close modal and reset state
+      setIsBulkPrivilegeModalOpen(false);
+      setSelectedUsersForBulk([]);
+      setBulkPrivileges([]);
+
+    } catch (error) {
+      console.error('Bulk assignment error:', error);
+      showNotification('Failed to complete bulk assignment. Please try again.', 'error');
+    } finally {
+      setIsBulkSubmitting(false);
     }
   };
 
@@ -485,6 +814,15 @@ export default function UserManagementPage() {
           </p>
         </motion.div>
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end select-none">
+          {/* ✅ Bulk Privilege Assignment Button */}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="bg-white/5 border-white/10 hover:bg-white/10 text-gray-300 flex items-center gap-1.5"
+            onClick={() => setIsBulkPrivilegeModalOpen(true)}
+          >
+            <Shield size={14} /> Bulk Permissions
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -813,7 +1151,6 @@ export default function UserManagementPage() {
                         ) : (
                           <>
                             <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Institution</label>
-                            {/* ✅ FIX: Changed placeholder from "e.g., LNBTI" to "e.g., Langoora" */}
                             <input
                               type="text"
                               placeholder="e.g., Langoora"
@@ -826,34 +1163,85 @@ export default function UserManagementPage() {
                       </div>
                     </div>
 
+                    {/* ✅ UPDATED PRIVILEGE SELECTION WITH CATEGORIES */}
                     {(createForm.roleId === 'validator' || createForm.roleId === 'finance') && (
                       <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-white/5">
-                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1">
-                          <Zap size={13} className="text-amber-500"/> Assign Action Permissions
-                        </label>
-                        <div className="space-y-2 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
-                          {AVAILABLE_PRIVILEGES.filter(p => p.role === createForm.roleId).map((p) => {
-                            const isChecked = createForm.privileges.includes(p.key);
-                            return (
-                              <div
-                                key={p.key} onClick={() => handleToggleFormPrivilege(p.key)}
-                                className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                                  isChecked
-                                    ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 shadow-sm'
-                                    : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 text-gray-400 hover:border-white/20'
-                                }`}
-                              >
-                                <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300 dark:border-white/10'}`}>
-                                  {isChecked && <Check size={11} className="text-white" />}
-                                </div>
-                                <div>
-                                  <div className={`text-xs font-bold ${isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
-                                  <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-1">{p.desc}</div>
-                                </div>
-                              </div>
-                            );
-                          })}
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1">
+                            <Zap size={13} className="text-amber-500"/> Assign Action Permissions
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const template = ROLE_PRIVILEGE_TEMPLATES[createForm.roleId] || [];
+                              setCreateForm(prev => ({
+                                ...prev,
+                                privileges: template
+                              }));
+                            }}
+                            className="text-[9px] text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                          >
+                            Apply Template
+                          </button>
                         </div>
+                        
+                        {Object.entries(PRIVILEGE_CATEGORIES).map(([categoryKey, category]) => {
+                          const categoryPrivileges = getAvailablePrivilegesForRole(createForm.roleId)
+                            .filter(p => p.category === categoryKey);
+                          
+                          if (categoryPrivileges.length === 0) return null;
+                          
+                          const checkedCount = categoryPrivileges.filter(p => 
+                            createForm.privileges.includes(p.key)
+                          ).length;
+                          
+                          return (
+                            <div key={categoryKey} className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[9px] font-semibold uppercase tracking-wider ${category.color}`}>
+                                  {category.label}
+                                </span>
+                                <span className="text-[8px] text-slate-400">
+                                  {checkedCount}/{categoryPrivileges.length}
+                                </span>
+                              </div>
+                              <div className="space-y-1.5 pl-2 max-h-32 overflow-y-auto pr-1 scrollbar-thin">
+                                {categoryPrivileges.map((p) => {
+                                  const isChecked = createForm.privileges.includes(p.key);
+                                  return (
+                                    <div
+                                      key={p.key}
+                                      onClick={() => handleToggleFormPrivilege(p.key)}
+                                      className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-2.5 select-none ${
+                                        isChecked
+                                          ? `${category.bg} ${category.border} shadow-sm`
+                                          : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 hover:border-white/20'
+                                      }`}
+                                    >
+                                      <div className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
+                                        isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300 dark:border-white/10'
+                                      }`}>
+                                        {isChecked && <Check size={9} className="text-white" />}
+                                      </div>
+                                      <div>
+                                        <div className={`text-[10px] font-bold ${isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                                          {p.label}
+                                        </div>
+                                        <div className="text-[9px] text-slate-500 dark:text-slate-400 leading-normal">
+                                          {p.desc}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        
+                        <p className="text-[8px] text-slate-500 mt-1">
+                          ⚡ Click "Apply Template" to assign default permissions for this role
+                        </p>
                       </div>
                     )}
 
@@ -877,8 +1265,8 @@ export default function UserManagementPage() {
           <Portal>
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
               <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}>
-                <GlassCard className="w-full max-w-md p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative">
-                  <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-white/5 pb-4">
+                <GlassCard className="w-full max-w-2xl p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-white/5 pb-4 sticky top-0 bg-white dark:bg-[#070c19] z-10">
                     <div>
                       <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <Shield className="text-indigo-500" size={18} /> Update Staff Privileges
@@ -906,24 +1294,89 @@ export default function UserManagementPage() {
                     </div>
                   )}
 
-                  <div className="space-y-2.5 mb-5 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
-                    {AVAILABLE_PRIVILEGES.filter(p => p.role === selectedUser.role).map((p) => {
-                      const isChecked = selectedUser.privileges?.includes(p.key);
-                      return (
-                        <div
-                          key={p.key} onClick={() => handleToggleExistingPrivilege(p.key)}
-                          className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                            isChecked
-                              ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300 shadow-sm'
-                              : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 text-gray-400 hover:border-white/20'
-                          }`}
+                  {/* ✅ Quick Apply Templates */}
+                  <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-2">Quick Apply Template</label>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.keys(ROLE_PRIVILEGE_TEMPLATES).map(templateRole => (
+                        <button
+                          key={templateRole}
+                          type="button"
+                          onClick={() => {
+                            const template = ROLE_PRIVILEGE_TEMPLATES[templateRole] || [];
+                            setSelectedUser(prev => ({
+                              ...prev,
+                              privileges: template
+                            }));
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 hover:border-blue-500/30 hover:bg-blue-500/10 transition-all"
                         >
-                          <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${isChecked ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-white/10'}`}>
-                            {isChecked && <Check size={11} className="text-white" />}
+                          {templateRole.replace('_', ' ').toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-slate-400 mt-1.5">Apply predefined privilege templates for each role</p>
+                  </div>
+
+                  {/* ✅ Privileges by Category */}
+                  <div className="space-y-4 mb-5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
+                    {Object.entries(PRIVILEGE_CATEGORIES).map(([categoryKey, category]) => {
+                      const categoryPrivileges = SYSTEM_PRIVILEGES.filter(p => 
+                        p.category === categoryKey && p.roles.includes(selectedUser.role)
+                      );
+                      
+                      if (categoryPrivileges.length === 0) return null;
+                      
+                      const checkedCount = categoryPrivileges.filter(p => 
+                        selectedUser.privileges?.includes(p.key)
+                      ).length;
+                      
+                      return (
+                        <div key={categoryKey} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-1 h-4 rounded ${category.bg}`} />
+                              <span className={`text-xs font-bold uppercase tracking-wider ${category.color}`}>
+                                {category.label}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400">
+                              {checkedCount}/{categoryPrivileges.length}
+                            </span>
                           </div>
-                          <div>
-                            <div className={`text-xs font-bold ${isChecked ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{p.label}</div>
-                            <div className="text-[11px] text-slate-500 mt-1 leading-normal">{p.desc}</div>
+                          <div className="space-y-1.5 pl-3">
+                            {categoryPrivileges.map((p) => {
+                              const isChecked = selectedUser.privileges?.includes(p.key);
+                              return (
+                                <div
+                                  key={p.key}
+                                  onClick={() => handleToggleExistingPrivilege(p.key)}
+                                  className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
+                                    isChecked
+                                      ? `${category.bg} ${category.border} shadow-sm`
+                                      : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 hover:border-white/20'
+                                  }`}
+                                >
+                                  <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
+                                    isChecked 
+                                      ? 'bg-indigo-500 border-indigo-500' 
+                                      : 'border-slate-300 dark:border-white/10'
+                                  }`}>
+                                    {isChecked && <Check size={11} className="text-white" />}
+                                  </div>
+                                  <div>
+                                    <div className={`text-xs font-bold ${
+                                      isChecked ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'
+                                    }`}>
+                                      {p.label}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
+                                      {p.desc}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1051,6 +1504,197 @@ export default function UserManagementPage() {
                       </div>
                     </div>
                   )}
+                </GlassCard>
+              </motion.div>
+            </div>
+          </Portal>
+        )}
+      </AnimatePresence>
+
+      {/* --- ✅ BULK PRIVILEGE ASSIGNMENT MODAL --- */}
+      <AnimatePresence>
+        {isBulkPrivilegeModalOpen && (
+          <Portal>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <motion.div 
+                initial={{ scale: 0.96, opacity: 0 }} 
+                animate={{ scale: 1, opacity: 1 }} 
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full max-w-2xl"
+              >
+                <GlassCard className="p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-white/5 pb-4 sticky top-0 bg-white dark:bg-[#070c19] z-10">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Shield className="text-indigo-500" size={18} /> Bulk Privilege Assignment
+                    </h3>
+                    <button 
+                      onClick={() => {
+                        setIsBulkPrivilegeModalOpen(false);
+                        setSelectedUsersForBulk([]);
+                        setBulkPrivileges([]);
+                      }} 
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Step 1: Select Users */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+                          Select Users ({selectedUsersForBulk.length} selected)
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allIds = users
+                                .filter(u => u.role === 'validator' || u.role === 'finance' || u.role === 'tutor')
+                                .map(u => u.id);
+                              setSelectedUsersForBulk(allIds);
+                            }}
+                            className="text-[9px] text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUsersForBulk([])}
+                            className="text-[9px] text-gray-400 hover:text-gray-300 transition-colors font-medium"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1 border border-white/10 rounded-xl p-2 scrollbar-thin">
+                        {users
+                          .filter(u => u.role === 'validator' || u.role === 'finance' || u.role === 'tutor')
+                          .map(user => (
+                            <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={selectedUsersForBulk.includes(user.id)}
+                                onChange={() => {
+                                  setSelectedUsersForBulk(prev =>
+                                    prev.includes(user.id)
+                                      ? prev.filter(id => id !== user.id)
+                                      : [...prev, user.id]
+                                  );
+                                }}
+                                className="w-4 h-4 rounded border-white/10 text-blue-500 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-white">{user.name || 'Unnamed User'}</span>
+                              <span className="text-xs text-gray-400 ml-2">({user.role})</span>
+                              <span className="text-xs text-gray-500 ml-auto">{user.email}</span>
+                            </label>
+                          ))}
+                        {users.filter(u => u.role === 'validator' || u.role === 'finance' || u.role === 'tutor').length === 0 && (
+                          <p className="text-xs text-gray-500 text-center py-4">No staff users available</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 2: Select Privileges */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+                          Select Privileges ({bulkPrivileges.length} selected)
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allKeys = SYSTEM_PRIVILEGES.map(p => p.key);
+                              setBulkPrivileges(allKeys);
+                            }}
+                            className="text-[9px] text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBulkPrivileges([])}
+                            className="text-[9px] text-gray-400 hover:text-gray-300 transition-colors font-medium"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1 border border-white/10 rounded-xl p-2 scrollbar-thin">
+                        {SYSTEM_PRIVILEGES.map(p => (
+                          <label key={p.key} className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={bulkPrivileges.includes(p.key)}
+                              onChange={() => {
+                                setBulkPrivileges(prev =>
+                                  prev.includes(p.key)
+                                    ? prev.filter(k => k !== p.key)
+                                    : [...prev, p.key]
+                                );
+                              }}
+                              className="w-4 h-4 rounded border-white/10 text-blue-500 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-white">{p.label}</span>
+                            <span className={`text-[9px] ml-2 px-1.5 py-0.5 rounded ${PRIVILEGE_CATEGORIES[p.category]?.bg || 'bg-gray-500/10'} ${PRIVILEGE_CATEGORIES[p.category]?.color || 'text-gray-400'}`}>
+                              {PRIVILEGE_CATEGORIES[p.category]?.label || p.category}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Summary */}
+                    <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                      <p className="text-xs text-gray-400">
+                        <span className="font-bold text-white">{selectedUsersForBulk.length}</span> users will receive{' '}
+                        <span className="font-bold text-white">{bulkPrivileges.length}</span> privileges
+                      </p>
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        ⚡ This will <span className="text-emerald-400">add</span> privileges to existing permissions (not replace)
+                      </p>
+                      {selectedUsersForBulk.length > 0 && bulkPrivileges.length > 0 && (
+                        <p className="text-[10px] text-blue-400 mt-1">
+                          📋 Affected users: {selectedUsersForBulk.map(id => {
+                            const user = users.find(u => u.id === id);
+                            return user?.name || 'Unknown';
+                          }).join(', ')}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => {
+                          setIsBulkPrivilegeModalOpen(false);
+                          setSelectedUsersForBulk([]);
+                          setBulkPrivileges([]);
+                        }} 
+                        className="text-xs"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        variant="primary" 
+                        size="sm" 
+                        disabled={selectedUsersForBulk.length === 0 || bulkPrivileges.length === 0 || isBulkSubmitting}
+                        onClick={handleBulkPrivilegeAssignment}
+                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm disabled:opacity-50"
+                      >
+                        {isBulkSubmitting ? (
+                          <Loader size={14} className="animate-spin mr-1" />
+                        ) : (
+                          <Shield size={14} className="mr-1" />
+                        )}
+                        {isBulkSubmitting ? 'Assigning...' : `Assign to ${selectedUsersForBulk.length} Users`}
+                      </Button>
+                    </div>
+                  </div>
                 </GlassCard>
               </motion.div>
             </div>
