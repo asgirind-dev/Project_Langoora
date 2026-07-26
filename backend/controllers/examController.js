@@ -1,17 +1,15 @@
-const { db, storage } = require('../config/firebase');
-const cloudinary = require('cloudinary').v2;
-const path = require('path');
-
-// Dynamic requirement for services if defined in your structure
-// const examServices = require('../services/examServices'); 
+const { db } = require("../config/firebase");
+const cloudinary = require("cloudinary").v2;
+const path = require("path");
+const examServices = require("../services/examServices");
 
 // =========================================================================
-// Cloudinary Configuration
+// Cloudinary Configuration (using environment variables)
 // =========================================================================
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
 // =========================================================================
@@ -28,30 +26,31 @@ const createExam = async (req, res) => {
       status,
       sections,
       questions,
-      thumbnail
+      thumbnail,
     } = req.body;
 
     if (!title || !category_id || !duration_minutes) {
       return res.status(400).json({
         success: false,
-        message: 'Core metadata parameters are missing.'
+        message: "Core metadata parameters are missing.",
       });
     }
 
-    const tutorId = req.user?.id || req.user?.uid || 'mock_tutor_id';
-    const tutorName = req.user?.name || req.user?.displayName || 'Expert Tutor';
+    const tutorId = req.user?.id || req.user?.uid || "mock_tutor_id";
+    const tutorName = req.user?.name || req.user?.displayName || "Expert Tutor";
 
     const examData = {
       title,
       category_id,
-      level_id,
+      level_id: level_id || "",
       duration_minutes: Number(duration_minutes),
-      description: description ? description.trim() : '',
-      status: status || 'draft',
+      description: description || "",
+      status: status || "draft",
       sections: sections || [],
+      questions: questions || [],
       thumbnail: thumbnail || null,
       tutor_id: tutorId,
-      tutor_name: tutorName
+      tutor_name: tutorName,
     };
 
     const result = await examServices.createExamInDB(examData);
@@ -59,27 +58,27 @@ const createExam = async (req, res) => {
     if (result.success) {
       return res.status(201).json({
         success: true,
-        message: 'Exam structure deployed successfully!',
-        examId: result.examId
+        message: "Exam structure deployed successfully!",
+        examId: result.examId,
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: 'Exam creation did not complete successfully.'
+      message: "Exam creation did not complete successfully.",
     });
   } catch (error) {
-    console.error('Exam Creation Core Runtime Exception:', error);
+    console.error("Exam Creation Core Runtime Exception:", error);
     return res.status(500).json({
       success: false,
-      message: 'Internal server failed to execute blueprint commit.',
-      error: error.message
+      message: "Internal server failed to execute blueprint commit.",
+      error: error.message,
     });
-  } // 👈 FIXED: Missing bracket was added here
+  }
 };
 
 // =========================================================================
-// 2. Get Purchased Exams for Logged-In Student (UPDATED FOR UI FIX)
+// 2. Get Purchased Exams for Logged-In Student
 // =========================================================================
 const getStudentExams = async (req, res) => {
   try {
@@ -89,11 +88,14 @@ const getStudentExams = async (req, res) => {
     console.log("1. Logged-in Student ID from Token:", studentId);
 
     if (!studentId) {
-      return res.status(401).json({ success: false, message: 'Unauthorized: No student ID found' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Unauthorized: No student ID found" });
     }
 
-    const snapshot = await db.collection('purchased_exams')
-      .where('student_id', '==', studentId)
+    const snapshot = await db
+      .collection("purchased_exams")
+      .where("student_id", "==", studentId)
       .get();
 
     console.log("2. Total Purchased Exams Found in DB:", snapshot.size);
@@ -113,57 +115,79 @@ const getStudentExams = async (req, res) => {
           if (!examId) return null;
 
           try {
-            const examDoc = await db.collection('exams').doc(examId).get();
+            const examDoc = await db.collection("exams").doc(examId).get();
 
             if (examDoc.exists) {
               const examData = examDoc.data();
-              
+
               // Extract Tutor Name with multiple fallbacks
-              const tutorName = examData.tutor_name || examData.tutorName || examData.tutor?.name || 'Expert Tutor';
+              const tutorName =
+                examData.tutor_name ||
+                examData.tutorName ||
+                examData.tutor?.name ||
+                "Expert Tutor";
 
               // Extract Questions count (check Array length first, then direct numbers)
-              const questionsCount = Array.isArray(examData.questions) 
-                ? examData.questions.length 
-                : (examData.total_questions || examData.questions_count || 0);
+              const questionsCount = Array.isArray(examData.questions)
+                ? examData.questions.length
+                : examData.total_questions || examData.questions_count || 0;
 
               // Extract Duration
-              const duration = examData.duration_minutes || examData.duration || examData.time_limit || 'N/A';
+              const duration =
+                examData.duration_minutes ||
+                examData.duration ||
+                examData.time_limit ||
+                "N/A";
 
               return {
                 id: doc.id,
                 exam_id: examId,
-                title: examData.title || examData.name || `Exam Pack (${examData.level_id || 'JLPT'})`,
-                description: examData.description || '',
-                
-                // 🎯 FIXED METADATA FOR FRONTEND CARDS
+                title:
+                  examData.title ||
+                  examData.name ||
+                  `Exam Pack (${examData.level_id || "JLPT"})`,
+                description: examData.description || "",
+
+                // FIXED METADATA FOR FRONTEND CARDS
                 tutor_id: examData.tutor_id || examData.tutorId || null,
                 tutor_name: tutorName,
                 tutor: tutorName, // backwards compatibility
-                
+
                 duration_minutes: duration,
                 duration: duration, // backwards compatibility
-                
+
                 total_questions: questionsCount,
                 questions: questionsCount, // backwards compatibility
-                
-                category: examData.category_id || examData.category || '',
-                level: examData.level_id || examData.level || '',
-                
-                thumbnail: examData.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400',
-                status: purchaseData.status || 'active',
-                lastScore: purchaseData.lastScore !== undefined ? purchaseData.lastScore : null,
-                attempts_count: purchaseData.attempts || purchaseData.attempts_count || 0,
-                attempts: purchaseData.attempts || 0
+
+                category: examData.category_id || examData.category || "",
+                level: examData.level_id || examData.level || "",
+
+                thumbnail:
+                  examData.thumbnail ||
+                  "https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400",
+                status: purchaseData.status || "active",
+                lastScore:
+                  purchaseData.lastScore !== undefined
+                    ? purchaseData.lastScore
+                    : null,
+                attempts_count:
+                  purchaseData.attempts || purchaseData.attempts_count || 0,
+                attempts: purchaseData.attempts || 0,
               };
             } else {
-              console.log(`❌ Error: Exam ID "${examId}" not found in 'exams' collection! Skipping orphaned record.`);
+              console.log(
+                `❌ Error: Exam ID "${examId}" not found in 'exams' collection! Skipping orphaned record.`,
+              );
               return null;
             }
           } catch (innerError) {
-            console.error(`Error fetching individual exam ID ${examId}:`, innerError);
+            console.error(
+              `Error fetching individual exam ID ${examId}:`,
+              innerError,
+            );
             return null;
           }
-        })
+        }),
       )
     ).filter(Boolean);
 
@@ -172,12 +196,15 @@ const getStudentExams = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      exams: myExams
+      exams: myExams,
     });
-
   } catch (error) {
     console.error("Firebase Fetch Error:", error);
-    return res.status(500).json({ success: false, message: 'Error fetching exams', error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching exams",
+      error: error.message,
+    });
   }
 };
 
@@ -188,71 +215,82 @@ const deleteStudentExam = async (req, res) => {
   try {
     const examDocId = req.params.id;
 
-    const examRef = db.collection('purchased_exams').doc(examDocId);
+    const examRef = db.collection("purchased_exams").doc(examDocId);
     const doc = await examRef.get();
 
     if (!doc.exists) {
-      return res.status(404).json({ success: false, message: 'Exam connection not found in database' });
+      return res.status(404).json({
+        success: false,
+        message: "Exam connection not found in database",
+      });
     }
 
     await examRef.delete();
 
-    return res.status(200).json({ success: true, message: 'Exam successfully removed from your dashboard!' });
+    return res.status(200).json({
+      success: true,
+      message: "Exam successfully removed from your dashboard!",
+    });
   } catch (error) {
     console.error("Firebase Delete Error:", error);
-    return res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    return res
+      .status(500)
+      .json({ success: false, message: "Server Error", error: error.message });
   }
 };
 
 // =========================================================================
-// 4. Purchase an Exam (FIXED UNDEFINED QUERY & CREDIT DEDUCTION)
+// 4. Purchase an Exam
 // =========================================================================
 const purchaseExam = async (req, res) => {
   try {
     const studentId = req.user?.uid || req.user?.id;
-    const { exam_id, level_id, category_id, credits: requestCredits } = req.body;
+    const {
+      exam_id,
+      level_id,
+      category_id,
+      credits: requestCredits,
+    } = req.body;
 
     if (!studentId) {
-      return res.status(401).json({ success: false, message: "Unauthorized user." });
+      return res
+        .status(401)
+        .json({ success: false, message: "Unauthorized user." });
     }
 
+    // Ensure targetExamId is never undefined
     const targetExamId = exam_id || level_id || req.body.id;
 
     if (!targetExamId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid Request: Exam ID or Level ID is missing." 
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Request: Exam ID or Level ID is missing.",
       });
     }
 
-    // 1. Check existing purchase
-    const existingPurchase = await db.collection('purchased_exams')
-      .where('student_id', '==', studentId)
-      .where('exam_id', '==', targetExamId)
+    // Check existing purchase
+    const existingPurchase = await db
+      .collection("purchased_exams")
+      .where("student_id", "==", studentId)
+      .where("exam_id", "==", targetExamId)
       .get();
 
     if (!existingPurchase.empty) {
       return res.status(400).json({
         success: false,
-        message: "You have already unlocked this exam!"
+        message: "You have already unlocked this exam!",
       });
     }
 
     let examData = null;
 
-    // 🎯 SMART FETCH LOGIC:
-    // A. Try directly fetching from 'exams' collection
-    const examDoc = await db.collection('exams').doc(targetExamId).get();
-    if (examDoc.exists) {
-      examData = examDoc.data();
-    }
-
-    // B. If not found, try nested category/levels
-    if (!examData && category_id && level_id) {
-      const levelDoc = await db.collection('exam_categories')
-        .doc(String(category_id).toLowerCase())
-        .collection('levels')
-        .doc(String(level_id).toLowerCase())
+    // 1. Try to fetch from exam_categories/levels
+    if (category_id && level_id) {
+      const levelDoc = await db
+        .collection("exam_categories")
+        .doc(category_id.toLowerCase())
+        .collection("levels")
+        .doc(level_id.toLowerCase())
         .get();
 
       if (levelDoc.exists) {
@@ -260,26 +298,24 @@ const purchaseExam = async (req, res) => {
       }
     }
 
-    // C. Fallback: Search all levels sub-collections if still not found
-    if (!examData) {
-      const groupSnap = await db.collectionGroup('levels').where('id', '==', targetExamId).get();
-      if (!groupSnap.empty) {
-        examData = groupSnap.docs[0].data();
+    // 2. Try to fetch directly from exams collection
+    if (!examData && targetExamId) {
+      const examDoc = await db.collection("exams").doc(targetExamId).get();
+      if (examDoc.exists) {
+        examData = examDoc.data();
       }
     }
 
-    // 🎯 Validation: Check if Exam Data is found
-    if (!examData) {
-      return res.status(404).json({ 
-        success: false, 
-        message: `Exam '${targetExamId}' not found in database!` 
-      });
+    let requiredCredits = 0;
+    if (requestCredits !== undefined && Number(requestCredits) > 0) {
+      requiredCredits = Number(requestCredits);
+    } else if (examData) {
+      requiredCredits = Number(
+        examData.credits || examData.price || examData.credit_cost || 0,
+      );
     }
 
-    // Calculate Credits accurately from DB
-    const requiredCredits = Number(examData.credits ?? examData.price ?? examData.credit_cost ?? requestCredits ?? 0);
-
-    const userRef = db.collection('users').doc(studentId);
+    const userRef = db.collection("users").doc(studentId);
     const transactionId = `TRX-${Date.now()}`;
 
     await db.runTransaction(async (transaction) => {
@@ -289,15 +325,19 @@ const purchaseExam = async (req, res) => {
       }
 
       const freshUserData = freshUserDoc.data();
-      
+
       const currentCredits = Number(
-        freshUserData.credits !== undefined 
-          ? freshUserData.credits 
-          : (freshUserData.wallet_balance !== undefined ? freshUserData.wallet_balance : freshUserData.walletBalance || 0)
+        freshUserData.credits !== undefined
+          ? freshUserData.credits
+          : freshUserData.wallet_balance !== undefined
+            ? freshUserData.wallet_balance
+            : freshUserData.walletBalance || 0,
       );
 
       if (currentCredits < requiredCredits) {
-        throw new Error(`Insufficient credits! Required: ${requiredCredits}, Available: ${currentCredits}`);
+        throw new Error(
+          `Insufficient credits! Required: ${requiredCredits}, Available: ${currentCredits}`,
+        );
       }
 
       const newBalance = currentCredits - requiredCredits;
@@ -305,10 +345,15 @@ const purchaseExam = async (req, res) => {
       // Update User Wallet/Credits
       const updateData = { updatedAt: new Date().toISOString() };
       if (freshUserData.credits !== undefined) updateData.credits = newBalance;
-      if (freshUserData.wallet_balance !== undefined) updateData.wallet_balance = newBalance;
-      if (freshUserData.walletBalance !== undefined) updateData.walletBalance = newBalance;
-      
-      if (freshUserData.credits === undefined && freshUserData.wallet_balance === undefined) {
+      if (freshUserData.wallet_balance !== undefined)
+        updateData.wallet_balance = newBalance;
+      if (freshUserData.walletBalance !== undefined)
+        updateData.walletBalance = newBalance;
+
+      if (
+        freshUserData.credits === undefined &&
+        freshUserData.wallet_balance === undefined
+      ) {
         updateData.credits = newBalance;
         updateData.wallet_balance = newBalance;
       }
@@ -316,41 +361,40 @@ const purchaseExam = async (req, res) => {
       transaction.update(userRef, updateData);
 
       // Add to Purchased Exams
-      const purchaseRef = db.collection('purchased_exams').doc();
+      const purchaseRef = db.collection("purchased_exams").doc();
       transaction.set(purchaseRef, {
         student_id: studentId,
         exam_id: targetExamId,
         purchasedAt: new Date().toISOString(),
-        status: 'active'
+        status: "active",
       });
 
       // Save Transaction Log
-      const transactionRef = db.collection('transactions').doc(transactionId);
+      const transactionRef = db.collection("transactions").doc(transactionId);
       transaction.set(transactionRef, {
         order_id: transactionId,
         student_id: studentId,
         plan_name: `Exam Purchase: ${examData?.title || examData?.level_name || targetExamId}`,
         credits: requiredCredits,
         amount: requiredCredits,
-        payment_method: 'Wallet Credits',
-        status: 'SUCCESS',
-        type: 'EXAM_PURCHASE',
-        createdAt: new Date().toISOString()
+        payment_method: "Wallet Credits",
+        status: "SUCCESS",
+        type: "EXAM_PURCHASE",
+        createdAt: new Date().toISOString(),
       });
     });
 
     return res.status(200).json({
       success: true,
       message: "Exam unlocked successfully! 🎉",
-      transactionId: transactionId
+      transactionId: transactionId,
     });
-
   } catch (error) {
     console.error("Purchase Exam Error:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: error.message || "Internal server error during purchase.",
-      error: error.message 
+      error: error.message,
     });
   }
 };
@@ -360,9 +404,9 @@ const purchaseExam = async (req, res) => {
 // =========================================================================
 const getAllExams = async (req, res) => {
   try {
-    // 1. Published / Active Exams ලබා ගැනීම
-    const snapshot = await db.collection('exams')
-      .where('status', 'in', ['active', 'published'])
+    const snapshot = await db
+      .collection("exams")
+      .where("status", "in", ["active", "published"])
       .get();
 
     // 2. Exam Categories සහ Subcollections (levels) query කර Credits Map එකක් හදාගැනීම
@@ -394,7 +438,7 @@ const getAllExams = async (req, res) => {
     // 3. Exams Process කිරීම සහ Credits Join කිරීම
     const examsList = [];
 
-    snapshot.forEach(doc => {
+    snapshot.forEach((doc) => {
       const data = doc.data();
       const catId = data.category_id || data.category || '';
       const levelId = data.level_id || data.level || '';
@@ -407,27 +451,38 @@ const getAllExams = async (req, res) => {
 
       examsList.push({
         id: doc.id,
-        title: data.title || 'Untitled Exam',
-        category: catId || 'JLPT',
-        level: levelId || 'N/A',
-        tutor: data.tutor_name || 'Expert Tutor',
-        tutorAvatar: data.tutor_avatar || 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?w=40',
-        duration: data.duration_minutes ? `${data.duration_minutes} min` : (data.time ? `${data.time} min` : 'N/A'),
-        questions: Array.isArray(data.questions) ? data.questions.length : (data.total_questions || 0),
-        credits: matchedCredits, // 🎯 Database join එකෙන් ආපු නිවැරදි credits අගය මෙතැනට වැටේ
+        title: data.title || "Untitled Exam",
+        category: data.category_id || data.category || "JLPT",
+        level: data.level_id || data.level || "N/A",
+        tutor: data.tutor_name || "Expert Tutor",
+        tutorAvatar:
+          data.tutor_avatar ||
+          "https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?w=40",
+        duration: data.duration_minutes
+          ? `${data.duration_minutes} min`
+          : data.time
+            ? `${data.time} min`
+            : "N/A",
+        questions: Array.isArray(data.questions)
+          ? data.questions.length
+          : data.total_questions || 0,
+        credits: data.credits || 0,
         rating: data.rating || 5.0,
         reviews: data.reviews || 0,
-        difficulty: data.difficulty || 'Intermediate',
-        thumbnail: data.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400',
-        tag: data.tag || ''
+        difficulty: data.difficulty || "Intermediate",
+        thumbnail:
+          data.thumbnail ||
+          "https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400",
+        tag: data.tag || "",
       });
     });
 
     return res.status(200).json({ success: true, exams: examsList });
-
   } catch (error) {
     console.error("Fetch All Exams Error:", error);
-    return res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    return res
+      .status(500)
+      .json({ success: false, message: "Server Error", error: error.message });
   }
 };
 
@@ -436,25 +491,25 @@ const getAllExams = async (req, res) => {
 // =========================================================================
 const getAllExamsDev = async (req, res) => {
   try {
-    console.log('🛠️ DEV: Fetching ALL exams from Firestore (NO AUTH)');
-    const snapshot = await db.collection('exams').get();
+    console.log("🛠️ DEV: Fetching ALL exams from Firestore (NO AUTH)");
+    const snapshot = await db.collection("exams").get();
     const examsList = [];
-    
-    snapshot.forEach(doc => {
-      examsList.push({ id: doc.id, ...doc.data() }); 
+
+    snapshot.forEach((doc) => {
+      examsList.push({ id: doc.id, ...doc.data() });
     });
     console.log(`✅ DEV: Found ${examsList.length} total exams`);
-    return res.status(200).json({ 
-      success: true, 
+    return res.status(200).json({
+      success: true,
       data: examsList,
-      count: examsList.length
+      count: examsList.length,
     });
   } catch (error) {
-    console.error('Get all exams (dev) error:', error.message);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching exams', 
-      error: error.message 
+    console.error("Get all exams (dev) error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching exams",
+      error: error.message,
     });
   }
 };
@@ -469,29 +524,36 @@ const submitExamResult = async (req, res) => {
     const studentId = req.user?.uid || req.user?.id;
 
     if (!purchaseId || !answers) {
-      return res.status(400).json({ success: false, message: 'Missing required data.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required data." });
     }
 
-    const purchaseRef = db.collection('purchased_exams').doc(purchaseId);
+    const purchaseRef = db.collection("purchased_exams").doc(purchaseId);
     const purchaseDoc = await purchaseRef.get();
 
     if (!purchaseDoc.exists) {
-      return res.status(404).json({ success: false, message: 'Purchased record not found.' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Purchased record not found." });
     }
 
     const purchaseData = purchaseDoc.data();
 
     if (purchaseData.student_id !== studentId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized action.' });
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized action." });
     }
 
-    const examRef = db.collection('exams').doc(purchaseData.exam_id);
+    const examRef = db.collection("exams").doc(purchaseData.exam_id);
     const examDoc = await examRef.get();
 
     if (!examDoc.exists) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'The original exam paper has been removed by the tutor and can no longer be evaluated.' 
+      return res.status(404).json({
+        success: false,
+        message:
+          "The original exam paper has been removed by the tutor and can no longer be evaluated.",
       });
     }
 
@@ -506,7 +568,9 @@ const submitExamResult = async (req, res) => {
       const studentAnswer = answers[q.id];
       const correctAnswer = q.correct_option_index;
 
-      const isCorrect = studentAnswer !== undefined && Number(studentAnswer) === Number(correctAnswer);
+      const isCorrect =
+        studentAnswer !== undefined &&
+        Number(studentAnswer) === Number(correctAnswer);
       if (isCorrect) {
         correctCount++;
       }
@@ -515,33 +579,37 @@ const submitExamResult = async (req, res) => {
         questionId: q.id,
         selectedOption: studentAnswer !== undefined ? studentAnswer : null,
         correctOption: correctAnswer,
-        isCorrect: isCorrect
+        isCorrect: isCorrect,
       });
     });
 
-    const scorePercentage = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+    const scorePercentage =
+      totalQuestions > 0
+        ? Math.round((correctCount / totalQuestions) * 100)
+        : 0;
 
     await purchaseRef.update({
-      status: 'completed',
+      status: "completed",
       lastScore: scorePercentage,
       correctAnswersCount: correctCount,
       totalQuestionsCount: totalQuestions,
       attempts: (purchaseData.attempts || 0) + 1,
       completedAt: new Date().toISOString(),
-      evaluation: evaluationDetails
+      evaluation: evaluationDetails,
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Exam submitted successfully! 🎉',
+      message: "Exam submitted successfully! 🎉",
       score: scorePercentage,
       correctCount,
-      totalQuestions
+      totalQuestions,
     });
-
   } catch (error) {
     console.error("Submit Exam Error:", error);
-    return res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    return res
+      .status(500)
+      .json({ success: false, message: "Server Error", error: error.message });
   }
 };
 
@@ -555,7 +623,7 @@ const getTutorExams = async (req, res) => {
     if (!tutorId) {
       return res.status(401).json({
         success: false,
-        message: 'User not authenticated'
+        message: "User not authenticated",
       });
     }
 
@@ -563,14 +631,14 @@ const getTutorExams = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      exams: examsList
+      exams: examsList,
     });
   } catch (error) {
-    console.error('Get Tutor Exams Error:', error);
+    console.error("Get Tutor Exams Error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Error fetching exams',
-      error: error.message
+      message: "Error fetching exams",
+      error: error.message,
     });
   }
 };
@@ -587,34 +655,107 @@ const getExamById = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      exam: result.exam
+      exam: result.exam,
     });
   } catch (error) {
-    console.error('Get Exam By ID Error:', error);
+    console.error("Get Exam By ID Error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Error fetching exam',
-      error: error.message
+      message: "Error fetching exam",
+      error: error.message,
     });
   }
 };
 
 // =========================================================================
-// 9. Delete Exam (with access control)
+// 9. Delete Exam (soft delete with access control)
 // =========================================================================
 const deleteExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
-    const result = await examServices.deleteExamFromDB(examId, tutorId);
+    const result = await examServices.softDeleteExamFromDB(examId, tutorId);
     return res.status(200).json(result);
   } catch (error) {
-    console.error('Delete Exam Error:', error);
+    console.error("Delete Exam Error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Error deleting exam',
-      error: error.message
+      message: "Error deleting exam",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// Recycle Bin: Get all soft-deleted exams for the logged-in tutor
+// =========================================================================
+const getRecycleBinExams = async (req, res) => {
+  try {
+    const tutorId = req.user?.id || req.user?.uid;
+
+    if (!tutorId) {
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated",
+      });
+    }
+
+    const examsList = await examServices.getDeletedExamsFromDB(tutorId);
+
+    return res.status(200).json({
+      success: true,
+      exams: examsList,
+    });
+  } catch (error) {
+    console.error("Get Recycle Bin Exams Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching recycle bin exams",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// Recycle Bin: Restore a soft-deleted exam
+// =========================================================================
+const restoreExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.restoreExamFromDB(examId, tutorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Restore Exam Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error restoring exam",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// Recycle Bin: Permanently delete an exam
+// =========================================================================
+const permanentDeleteExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const tutorId = req.user?.id || req.user?.uid;
+
+    const result = await examServices.permanentlyDeleteExamFromDB(
+      examId,
+      tutorId,
+    );
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Permanent Delete Exam Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error permanently deleting exam",
+      error: error.message,
     });
   }
 };
@@ -628,21 +769,25 @@ const updateExamStatus = async (req, res) => {
     const { status } = req.body;
     const tutorId = req.user?.id || req.user?.uid;
 
-    if (!status || !['draft', 'published', 'archived'].includes(status)) {
+    if (!status || !["draft", "published", "archived"].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid status. Must be draft, published, or archived.'
+        message: "Invalid status. Must be draft, published, or archived.",
       });
     }
 
-    const result = await examServices.updateExamStatusInDB(examId, status, tutorId);
+    const result = await examServices.updateExamStatusInDB(
+      examId,
+      status,
+      tutorId,
+    );
     return res.status(200).json(result);
   } catch (error) {
-    console.error('Update Exam Status Error:', error);
+    console.error("Update Exam Status Error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Error updating exam status',
-      error: error.message
+      message: "Error updating exam status",
+      error: error.message,
     });
   }
 };
@@ -656,14 +801,18 @@ const updateExamDraft = async (req, res) => {
     const draftData = req.body;
     const tutorId = req.user?.id || req.user?.uid;
 
-    const result = await examServices.updateExamDraftInDB(examId, draftData, tutorId);
+    const result = await examServices.updateExamDraftInDB(
+      examId,
+      draftData,
+      tutorId,
+    );
     return res.status(200).json(result);
   } catch (error) {
-    console.error('Update Exam Draft Error:', error);
+    console.error("Update Exam Draft Error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Error updating exam draft',
-      error: error.message
+      message: "Error updating exam draft",
+      error: error.message,
     });
   }
 };
@@ -680,11 +829,11 @@ const updateExam = async (req, res) => {
     const result = await examServices.updateExamInDB(examId, examData, tutorId);
     return res.status(200).json(result);
   } catch (error) {
-    console.error('Update Exam Error:', error);
+    console.error("Update Exam Error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Error updating exam',
-      error: error.message
+      message: "Error updating exam",
+      error: error.message,
     });
   }
 };
@@ -697,7 +846,7 @@ const uploadAsset = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No file detected in payload repository.'
+        message: "No file detected in payload repository.",
       });
     }
 
@@ -705,68 +854,111 @@ const uploadAsset = async (req, res) => {
     const fileName = req.file.originalname;
     const ext = path.extname(fileName).toLowerCase();
 
-    const audioExtensions = ['.mp3', '.wav', '.mpeg', '.mp4', '.ogg', '.webm', '.flac', '.aac', '.wma', '.m4a'];
-    const audioMimeTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/mp4', 'audio/m4a', 'application/octet-stream'];
+    const audioExtensions = [
+      ".mp3",
+      ".wav",
+      ".mpeg",
+      ".mp4",
+      ".ogg",
+      ".webm",
+      ".flac",
+      ".aac",
+      ".wma",
+      ".m4a",
+    ];
+    const audioMimeTypes = [
+      "audio/mpeg",
+      "audio/mp3",
+      "audio/wav",
+      "audio/webm",
+      "audio/ogg",
+      "audio/flac",
+      "audio/aac",
+      "audio/mp4",
+      "audio/m4a",
+      "application/octet-stream",
+    ];
 
-    const isAudio = audioExtensions.includes(ext) || audioMimeTypes.includes(mimeType);
+    const isAudio =
+      audioExtensions.includes(ext) || audioMimeTypes.includes(mimeType);
 
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.svg', '.bmp', '.tiff'];
-    const imageMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml', 'image/bmp', 'image/tiff'];
+    const imageExtensions = [
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".gif",
+      ".webp",
+      ".avif",
+      ".svg",
+      ".bmp",
+      ".tiff",
+    ];
+    const imageMimeTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "image/avif",
+      "image/svg+xml",
+      "image/bmp",
+      "image/tiff",
+    ];
 
-    const isImage = imageExtensions.includes(ext) || imageMimeTypes.includes(mimeType);
+    const isImage =
+      imageExtensions.includes(ext) || imageMimeTypes.includes(mimeType);
 
     if (isAudio) {
       const cloudinaryStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'langoora/audio',
-          resource_type: 'auto',
-          format: 'mp3',
-          eager: [{ format: 'mp3' }],
-          eager_async: true
+          folder: "langoora/audio",
+          resource_type: "auto",
+          format: "mp3",
+          eager: [{ format: "mp3" }],
+          eager_async: true,
         },
         (error, result) => {
           if (error) {
-            console.error('Cloudinary Audio Stream Error:', error);
+            console.error("Cloudinary Audio Stream Error:", error);
             return res.status(500).json({
               success: false,
-              message: 'Cloudinary Audio streaming failed.',
-              error: error.message
+              message: "Cloudinary Audio streaming failed.",
+              error: error.message,
             });
           }
           return res.status(200).json({
             success: true,
             url: result.secure_url,
             fileUrl: result.secure_url,
-            type: 'audio'
+            type: "audio",
           });
-        }
+        },
       );
 
       return cloudinaryStream.end(req.file.buffer);
     }
 
     if (isImage) {
-      const base64Image = req.file.buffer.toString('base64');
+      const base64Image = req.file.buffer.toString("base64");
       const dataUriString = `data:${mimeType};base64,${base64Image}`;
 
       return res.status(200).json({
         success: true,
         url: dataUriString,
         fileUrl: dataUriString,
-        type: 'image'
+        type: "image",
       });
     }
 
     return res.status(400).json({
       success: false,
-      message: `Unsupported file type: ${mimeType}. Please upload image or audio files.`
+      message: `Unsupported file type: ${mimeType}. Please upload image or audio files.`,
     });
   } catch (error) {
-    console.error('Asset Process Runtime Exception:', error);
+    console.error("Asset Process Runtime Exception:", error);
     return res.status(500).json({
       success: false,
-      message: 'Internal server failed to execute asset controller.',
-      error: error.message
+      message: "Internal server failed to execute asset controller.",
+      error: error.message,
     });
   }
 };
@@ -781,53 +973,127 @@ const deleteAsset = async (req, res) => {
     if (!fileUrl) {
       return res.status(400).json({
         success: false,
-        message: 'File URL is required.'
+        message: "File URL is required.",
       });
     }
 
-    if (fileUrl.startsWith('data:image')) {
+    if (fileUrl.startsWith("data:image")) {
       return res.status(200).json({
         success: true,
-        message: 'Local image string cleared from local context.'
+        message: "Local image string cleared from local context.",
       });
     }
 
-    const urlParts = fileUrl.split('/');
+    const urlParts = fileUrl.split("/");
     const fileWithExtension = urlParts[urlParts.length - 1];
-    const publicIdWithoutExt = fileWithExtension.split('.')[0];
+    const publicIdWithoutExt = fileWithExtension.split(".")[0];
 
-    const isAudio = fileUrl.includes('/audio/');
-    const folderPath = isAudio ? 'langoora/audio' : 'langoora/images';
+    const isAudio = fileUrl.includes("/audio/");
+    const folderPath = isAudio ? "langoora/audio" : "langoora/images";
     const publicId = `${folderPath}/${publicIdWithoutExt}`;
 
-    const resourceType = isAudio ? 'video' : 'image';
+    const resourceType = isAudio ? "video" : "image";
 
     const result = await cloudinary.uploader.destroy(publicId, {
-      resource_type: resourceType
+      resource_type: resourceType,
     });
 
-    if (result.result === 'ok') {
+    if (result.result === "ok") {
       return res.status(200).json({
         success: true,
-        message: 'Audio successfully deleted from Cloudinary.'
+        message: "Audio successfully deleted from Cloudinary.",
       });
     }
 
     return res.status(400).json({
       success: false,
-      message: 'Cloudinary deletion failed or asset already removed.'
+      message: "Cloudinary deletion failed or asset already removed.",
     });
   } catch (error) {
-    console.error('Delete Asset Error:', error);
+    console.error("Delete Asset Error:", error);
     return res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 };
 
 // =========================================================================
-// Export All Controller Functions
+// ✅ NEW: Get pending exams for quality audits (filtered by language)
+// =========================================================================
+const getPendingExams = async (req, res) => {
+  try {
+    const language = req.user?.languageGroup;
+    if (!language) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Validator language group not found. Please update your profile.",
+      });
+    }
+
+    const examsList = await examServices.getPendingExamsByLanguage(language);
+    return res.status(200).json({
+      success: true,
+      exams: examsList,
+    });
+  } catch (error) {
+    console.error("Get Pending Exams Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch pending exams.",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// ✅ NEW: Approve exam
+// =========================================================================
+const approveExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const validatorId = req.user?.uid;
+    if (!validatorId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const result = await examServices.approveExam(examId, validatorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Approve Exam Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to approve exam.",
+    });
+  }
+};
+
+// =========================================================================
+// ❌ NEW: Reject exam with feedback
+// =========================================================================
+const rejectExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { feedback } = req.body;
+    const validatorId = req.user?.uid;
+    if (!validatorId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const result = await examServices.rejectExam(examId, validatorId, feedback);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Reject Exam Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to reject exam.",
+    });
+  }
+};
+
+// =========================================================================
+// ✅ EXPORT ALL FUNCTIONS (fully merged)
 // =========================================================================
 module.exports = {
   createExam,
@@ -840,9 +1106,15 @@ module.exports = {
   getTutorExams,
   getExamById,
   deleteExam,
+  getRecycleBinExams,
+  restoreExam,
+  permanentDeleteExam,
   updateExamStatus,
   updateExamDraft,
   updateExam,
   uploadAsset,
-  deleteAsset
+  deleteAsset,
+  getPendingExams,
+  approveExam,
+  rejectExam,
 };

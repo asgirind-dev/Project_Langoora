@@ -89,6 +89,7 @@ export default function LandingPage() {
     }
   };
 
+  // ✅ Fetch Plans - Simplified (maintenance handled by PublicRoute)
   useEffect(() => {
     const fetchPlans = async () => {
       try {
@@ -103,6 +104,8 @@ export default function LandingPage() {
         setPlans(sortedPlans);
       } catch (error) {
         console.error("Error loading plans:", error);
+        // ✅ Just show empty state if any error (maintenance handled by PublicRoute)
+        setPlans([]);
       } finally {
         setPlansLoading(false);
       }
@@ -110,6 +113,7 @@ export default function LandingPage() {
     fetchPlans();
   }, []);
 
+  // ✅ Fetch Banners - Simplified (maintenance handled by PublicRoute)
   useEffect(() => {
     const getBanners = async () => {
       try {
@@ -120,6 +124,8 @@ export default function LandingPage() {
         }
       } catch (error) {
         console.error("Error loading live banners:", error);
+        // ✅ Use empty banners on error (maintenance handled by PublicRoute)
+        setBannerImages([]);
       } finally {
         setBannersLoading(false);
       }
@@ -174,6 +180,7 @@ export default function LandingPage() {
 
   const activeBanner = bannerImages[currentBannerIndex] || null;
 
+  // ✅ If banners are loading, show spinner
   if (bannersLoading) {
     return <LoadingSpinner message="Loading Langoora..." />;
   }

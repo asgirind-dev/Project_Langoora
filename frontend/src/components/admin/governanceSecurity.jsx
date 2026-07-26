@@ -1,6 +1,7 @@
 // frontend/src/components/admin/governanceSecurity.jsx
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { Shield, RefreshCw, Hourglass, Power } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Shield, RefreshCw, Hourglass, Power, AlertTriangle, CheckCircle, Calendar } from 'lucide-react';
 import GlassCard from '../ui/GlassCard';
 import studentApi from '../../services/examExecutionService';
 
@@ -11,10 +12,43 @@ const GovernanceSecurity = forwardRef((props, ref) => {
     enableAntiCheat: true,
     maxViolationWarnings: 3,
     maintenanceMode: false,
+    maintenanceEstimatedTime: '',  // ✅ Add this
+    maintenanceMessage: '',        // ✅ Add this
     sessionTimeouts: { admin: 15, tutor: 20, student: 45, finance: 10, validator: 15 }
   });
 
-  // Expose methods to parent component
+  // ✅ Calculate estimated time display
+  const getEstimatedTimeDisplay = () => {
+    if (!securityConfig.maintenanceEstimatedTime) return 'Not set';
+    const estimatedDate = new Date(securityConfig.maintenanceEstimatedTime);
+    const now = new Date();
+    const diffMs = estimatedDate - now;
+    
+    if (diffMs <= 0) return 'Any moment now';
+    
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const remainingMins = diffMins % 60;
+    
+    if (diffHours > 0) {
+      return `${diffHours}h ${remainingMins}m remaining`;
+    }
+    return `${diffMins} minutes remaining`;
+  };
+
+  // ✅ Get color based on time remaining
+  const getTimeColor = () => {
+    if (!securityConfig.maintenanceEstimatedTime) return 'text-gray-400';
+    const estimatedDate = new Date(securityConfig.maintenanceEstimatedTime);
+    const now = new Date();
+    const diffMs = estimatedDate - now;
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins <= 0) return 'text-green-400';
+    if (diffMins <= 15) return 'text-amber-400';
+    return 'text-blue-400';
+  };
+
   useImperativeHandle(ref, () => ({
     getSecurityConfig: () => securityConfig,
     setSecurityConfig: (config) => setSecurityConfig(config),
@@ -137,7 +171,7 @@ const GovernanceSecurity = forwardRef((props, ref) => {
         )}
       </GlassCard>
 
-      {/* 3. Global Maintenance Mode Switch */}
+      {/* 3. Global Maintenance Mode Switch - ENHANCED with Time */}
       <GlassCard className="p-6 space-y-6 border-white/10">
         <div className="flex items-center gap-3 border-b border-white/5 pb-4">
           <Power className="text-red-400" size={22} />
@@ -148,17 +182,126 @@ const GovernanceSecurity = forwardRef((props, ref) => {
         </div>
 
         {!isLoading && (
-          <div className={`flex items-center justify-between p-4 rounded-2xl border transition-colors duration-300 ${
-            securityConfig.maintenanceMode ? 'bg-red-500/5 border-red-500/20' : 'bg-white/[0.02] border-white/5'
+          <div className={`flex flex-col gap-4 p-4 rounded-2xl border transition-colors duration-300 ${
+            securityConfig.maintenanceMode ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/5 border-emerald-500/20'
           }`}>
-            <div className="space-y-0.5">
-              <p className="text-sm font-semibold text-white">Activate Platform Maintenance Slate</p>
-              <p className="text-xs text-gray-400">Restrict student execution terminals while allowing dashboard edits</p>
+            {/* Status Indicator */}
+            <div className="flex items-center gap-3">
+              {securityConfig.maintenanceMode ? (
+                <>
+                  <AlertTriangle size={20} className="text-red-400 animate-pulse" />
+                  <span className="text-red-400 font-bold text-sm">MAINTENANCE MODE ACTIVE</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={20} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-bold text-sm">PLATFORM OPERATIONAL</span>
+                </>
+              )}
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" checked={securityConfig.maintenanceMode} onChange={(e) => setSecurityConfig(p => ({ ...p, maintenanceMode: e.target.checked }))} className="sr-only peer"/>
-              <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:bg-white"></div>
-            </label>
+
+            {/* ✅ Estimated Time Display */}
+            {securityConfig.maintenanceMode && securityConfig.maintenanceEstimatedTime && (
+              <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10">
+                <Calendar size={18} className={`${getTimeColor()}`} />
+                <div>
+                  <span className="text-xs text-gray-400">Estimated Completion:</span>
+                  <span className={`ml-2 text-sm font-bold ${getTimeColor()}`}>
+                    {getEstimatedTimeDisplay()}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Toggle Switch */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-white">Activate Platform Maintenance Slate</p>
+                <p className="text-xs text-gray-400">
+                  {securityConfig.maintenanceMode 
+                    ? '⚠️ All non-admin users will see maintenance page. Admin access remains available.' 
+                    : 'Enable to restrict student and tutor access during updates'}
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-4">
+                <input 
+                  type="checkbox" 
+                  checked={securityConfig.maintenanceMode} 
+                  onChange={(e) => {
+                    const newValue = e.target.checked;
+                    if (newValue) {
+                      if (!window.confirm('⚠️ Enabling maintenance mode will restrict access for all non-admin users. Are you sure?')) {
+                        e.target.checked = !newValue;
+                        return;
+                      }
+                    }
+                    setSecurityConfig(p => ({ ...p, maintenanceMode: newValue }));
+                  }} 
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:bg-white"></div>
+              </label>
+            </div>
+
+            {/* ✅ Estimated Time Input - Only show when maintenance is ON */}
+            {securityConfig.maintenanceMode && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="space-y-3 pt-3 border-t border-white/10"
+              >
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Estimated Completion Time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={securityConfig.maintenanceEstimatedTime || ''}
+                    onChange={(e) => setSecurityConfig(p => ({ 
+                      ...p, 
+                      maintenanceEstimatedTime: e.target.value 
+                    }))}
+                    className="w-full bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Set the expected completion time. Users will see a countdown on the maintenance page.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Custom Message (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={securityConfig.maintenanceMessage || ''}
+                    onChange={(e) => setSecurityConfig(p => ({ 
+                      ...p, 
+                      maintenanceMessage: e.target.value 
+                    }))}
+                    placeholder="e.g., We're updating our servers..."
+                    className="w-full bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                  />
+                </div>
+              </motion.div>
+            )}
+
+            {/* Warning Message when enabled */}
+            {securityConfig.maintenanceMode && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl"
+              >
+                <p className="text-xs text-red-400 flex items-start gap-2">
+                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Warning:</strong> Maintenance mode is currently <strong>ENABLED</strong>. 
+                    All non-admin users will see a maintenance page. Click "Save Configuration" to apply changes.
+                  </span>
+                </p>
+              </motion.div>
+            )}
           </div>
         )}
       </GlassCard>
