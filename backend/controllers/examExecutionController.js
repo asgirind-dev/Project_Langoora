@@ -1,3 +1,4 @@
+// backend/controllers/examExecutionController.js
 const examExecutionService = require('../services/examExecutionService');
 
 /**
@@ -118,7 +119,7 @@ const results = async (req, res) => {
 };
 
 /**
- * 💬 Submit student feedback with ratings
+ * 💬 Submit student feedback with ratings - ✅ UPDATED with student details
  * POST /api/exam-execution/:attemptId/feedback
  */
 const submitFeedback = async (req, res) => {
@@ -133,7 +134,13 @@ const submitFeedback = async (req, res) => {
       comments, 
       wantsFollowUp,
       wouldRecommend,
-      timeSpent
+      timeSpent,
+      examId: frontendExamId,
+      examTitle: frontendExamTitle,
+      tutorId: frontendTutorId,
+      tutorName: frontendTutorName,
+      percentage: frontendPercentage,
+      passed: frontendPassed
     } = req.body;
     
     const studentId = req.user?.id || req.user?.uid;
@@ -142,34 +149,84 @@ const submitFeedback = async (req, res) => {
       return res.status(401).json({ success: false, message: 'User not authenticated' });
     }
 
-    // Validate rating
     if (!rating || rating < 1 || rating > 5) {
       return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
     }
 
-    // Get attempt details for additional context
-    const attemptDoc = await require('../config/firebase').db
+    const db = require('../config/firebase').db;
+
+    // ✅ Get student details from users collection
+    let studentName = 'Anonymous';
+    let studentAvatar = null;
+    
+    try {
+      const userDoc = await db.collection('users').doc(studentId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        studentName = userData.name || userData.displayName || 'Anonymous';
+        studentAvatar = userData.avatar || userData.profilePic || userData.profilePicUrl || null;
+        console.log(`👤 Student found: ${studentName}`);
+      } else {
+        console.warn(`⚠️ User document not found for studentId: ${studentId}`);
+      }
+    } catch (userError) {
+      console.warn('⚠️ Could not fetch user details:', userError.message);
+    }
+
+    // ✅ Get attempt details
+    const attemptDoc = await db
       .collection('student_exams')
       .doc(attemptId)
       .get();
     
-    let examId = null;
-    let examTitle = null;
-    let percentage = 0;
+    let examId = frontendExamId || null;
+    let examTitle = frontendExamTitle || 'Language Examination';
+    let percentage = frontendPercentage || 0;
+    let passed = frontendPassed || false;
+    let tutorId = frontendTutorId || null;
+    let tutorName = frontendTutorName || 'Expert Tutor';
     
     if (attemptDoc.exists) {
       const attemptData = attemptDoc.data();
-      examId = attemptData.examId;
-      examTitle = attemptData.title || 'Language Examination';
-      percentage = attemptData.percentage || 0;
+      examId = examId || attemptData.examId;
+      examTitle = examTitle || attemptData.title || 'Language Examination';
+      percentage = percentage || attemptData.percentage || 0;
+      passed = passed || attemptData.passed || false;
+      tutorId = tutorId || attemptData.tutor_id || null;
+      tutorName = tutorName || attemptData.tutor_name || 'Expert Tutor';
     }
+
+    // ✅ LOG: Check what we're saving
+    console.log('📝 Saving feedback with:', {
+      attemptId,
+      studentId,
+      studentName,
+      studentAvatar,
+      examId,
+      examTitle,
+      tutorId,
+      tutorName,
+      rating,
+      difficulty,
+      nps,
+      comments: comments ? comments.substring(0, 50) : 'No comments'
+    });
+
+    // ✅ Ensure tutorId is never null
+    const finalTutorId = tutorId || 'unknown_tutor';
+    const finalTutorName = tutorName || 'Expert Tutor';
 
     const feedbackData = {
       attemptId,
       studentId,
-      examId,
-      examTitle,
-      percentage,
+      studentName: studentName || 'Anonymous',
+      studentAvatar: studentAvatar || null,
+      examId: examId || 'unknown_exam',
+      examTitle: examTitle || 'Language Examination',
+      tutorId: finalTutorId,
+      tutorName: finalTutorName,
+      percentage: percentage || 0,
+      passed: passed || false,
       rating: Number(rating),
       difficulty: difficulty || null,
       nps: nps || null,
@@ -183,24 +240,58 @@ const submitFeedback = async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    // Save to feedback collection
-    const db = require('../config/firebase').db;
+    // ✅ Save feedback to Firestore
     const feedbackRef = db.collection('exam_feedback').doc();
     await feedbackRef.set(feedbackData);
-
-    // Also update the submission record with feedback reference
-    const submissionSnapshot = await db.collection('submissions')
-      .where('attempt_id', '==', attemptId)
-      .get();
     
-    if (!submissionSnapshot.empty) {
-      const submissionDoc = submissionSnapshot.docs[0];
-      await submissionDoc.ref.update({
-        feedbackId: feedbackRef.id,
-        feedbackSubmitted: true,
-        feedbackRating: rating,
-        feedbackUpdatedAt: new Date().toISOString()
-      });
+    console.log(`✅ Feedback saved with ID: ${feedbackRef.id}`);
+
+    // ✅ Update exam aggregated ratings (with error handling)
+    try {
+      if (examId && examId !== 'unknown_exam') {
+        await examExecutionService.updateExamAggregatedRatings(
+          examId, 
+          rating, 
+          difficulty, 
+          nps, 
+          wouldRecommend
+        );
+        console.log('✅ Exam ratings updated');
+      } else {
+        console.warn('⚠️ Skipping exam ratings update - no valid examId');
+      }
+    } catch (updateError) {
+      console.warn('⚠️ Could not update exam ratings:', updateError.message);
+    }
+
+    // ✅ Update tutor aggregated ratings (with error handling)
+    if (finalTutorId && finalTutorId !== 'unknown_tutor') {
+      try {
+        await examExecutionService.updateTutorAggregatedRatings(finalTutorId, rating, difficulty);
+        console.log('✅ Tutor ratings updated');
+      } catch (updateError) {
+        console.warn('⚠️ Could not update tutor ratings:', updateError.message);
+      }
+    }
+
+    // ✅ Update submission record with feedback
+    try {
+      const submissionSnapshot = await db.collection('submissions')
+        .where('attempt_id', '==', attemptId)
+        .get();
+      
+      if (!submissionSnapshot.empty) {
+        const submissionDoc = submissionSnapshot.docs[0];
+        await submissionDoc.ref.update({
+          feedbackId: feedbackRef.id,
+          feedbackSubmitted: true,
+          feedbackRating: rating,
+          feedbackUpdatedAt: new Date().toISOString()
+        });
+        console.log('✅ Submission record updated with feedback');
+      }
+    } catch (subError) {
+      console.warn('⚠️ Could not update submission:', subError.message);
     }
 
     return res.status(201).json({ 
@@ -211,8 +302,12 @@ const submitFeedback = async (req, res) => {
       } 
     });
   } catch (error) {
-    console.error('Submit feedback error:', error.message);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('❌ Submit feedback error:', error);
+    console.error('❌ Stack:', error.stack);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to submit feedback' 
+    });
   }
 };
 

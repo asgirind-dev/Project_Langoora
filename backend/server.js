@@ -32,7 +32,9 @@ const emailLogRoutes = require('./routes/emailLogRoutes');
 const planRoutes = require('./routes/planRoutes');
 const creditValuationRoutes = require('./routes/creditValuationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
-const subscriptionRoutes = require('./routes/subscriptionRoutes'); // 👈 Correct import
+const subscriptionRoutes = require('./routes/subscriptionRoutes'); 
+const tutorReviewRoutes = require('./routes/tutorReviewRoutes');
+const auditRoutes = require('./routes/auditRoutes');
 
 // ✅ Import maintenance middleware
 const { maintenanceMiddleware } = require('./middleware/maintenanceMiddleware');
@@ -68,6 +70,9 @@ app.use('/api/subscription-plans', planRoutes);
 app.use('/api/credit-values', creditValuationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/finance', payoutRoutes);
+app.use('/api/tutor-reviews', tutorReviewRoutes);
+app.use('/api/audit', auditRoutes);
+
 
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
