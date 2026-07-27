@@ -1,126 +1,247 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { protect, authorizeRoles } = require('../middleware/authMiddleware');
-const upload = require('../middleware/uploadMiddleware');
+
+// 🔌 Controllers Import
 const {
   createExam,
   getTutorExams,
-  getStudentExams,
   getExamById,
   deleteExam,
+  getRecycleBinExams,
+  restoreExam,
+  permanentDeleteExam,
   updateExamStatus,
   updateExamDraft,
   updateExam,
   getAllExams,
   getAllExamsDev,
+  getStudentExams,
   deleteStudentExam,
+  purchaseExam,
+  submitExamResult,
   uploadAsset,
-  deleteAsset
-} = require('../controllers/examController');
+  deleteAsset,
+  getPendingExams, // ✅ Quality Audits
+  approveExam, // ✅ Quality Audits
+  rejectExam, // ✅ Quality Audits
+} = require("../controllers/examController");
+
+// 🛡️ Middlewares
+const { protect, authorizeRoles } = require("../middleware/authMiddleware");
+const upload = require("../middleware/uploadMiddleware");
 
 // ============================================================
-//  IMPORTANT: literal routes MUST be declared before the
-//  dynamic '/:examId' routes. Express matches routes in
-//  registration order, so '/available' or '/student-exams'
-//  would otherwise be swallowed by GET/DELETE '/:examId'
-//  (examId === "available"), causing student-facing endpoints
-//  to 401/404 behind tutor-only auth. This was a real bug in
-//  the previous version of this file.
-// ============================================================
-
-// ============================================================
-//  PUBLIC ENDPOINTS (No authentication required)
+// 🌐 1. PUBLIC ENDPOINTS (No authentication required)
 // ============================================================
 
 /**
- * 📚 Get all published exams for students to browse
- * GET /api/exams/available
+ * 📚 Get all published exams for marketplace
+ * GET /api/exams/all OR /api/exams/available
  */
-router.get('/available', getAllExams);
+router.get("/all", getAllExams);
+router.get("/available", getAllExams);
 
 /**
- * 🛠️ DEV: Get ALL exams from Firestore (NO AUTH)
+ * 🛠️ DEV: Get ALL exams from Firestore (FOR DEV ONLY)
  * GET /api/exams/dev/all
- * ⚠️ FOR DEVELOPMENT ONLY - Remove in production!
  */
-router.get('/dev/all', getAllExamsDev);
+router.get("/dev/all", getAllExamsDev);
 
 // ============================================================
-//  TUTOR / ADMIN ENDPOINTS (protected)
+// 🎓 2. STUDENT PROTECTED ENDPOINTS (Literal Paths First!)
 // ============================================================
 
 /**
- * 🎵 📷 Upload exam asset
+ * 🛒 Purchase an Exam
+ * POST /api/exams/purchase
+ */
+router.post("/purchase", protect, purchaseExam);
+
+/**
+ * 🔌 Get student's purchased exams
+ * GET /api/exams/my-exams OR /api/exams/student-exams
+ */
+router.get("/my-exams", protect, getStudentExams);
+router.get("/student-exams", protect, getStudentExams);
+
+/**
+ * 🗑️ Remove purchased exam from dashboard
+ * DELETE /api/exams/my-exams/:id OR /api/exams/student-exams/:id
+ */
+router.delete("/my-exams/:id", protect, deleteStudentExam);
+router.delete("/student-exams/:id", protect, deleteStudentExam);
+
+/**
+ * 📝 Submit exam results
+ * POST /api/exams/submit/:purchaseId
+ */
+router.post("/submit/:purchaseId", protect, submitExamResult);
+
+// ============================================================
+// 👨‍🏫 3. TUTOR / ADMIN PROTECTED ENDPOINTS
+// ============================================================
+
+/**
+ * 🎵 📷 Upload asset for exam
  * POST /api/exams/upload-asset
  */
-router.post('/upload-asset', protect, authorizeRoles('tutor', 'admin'), upload.single('file'), uploadAsset);
+router.post(
+  "/upload-asset",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  upload.single("file"),
+  uploadAsset,
+);
 
 /**
- * Delete exam asset
+ * 🗑️ Delete asset
  * POST /api/exams/delete-asset
  */
-router.post('/delete-asset', protect, authorizeRoles('tutor', 'admin'), deleteAsset);
+router.post(
+  "/delete-asset",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  deleteAsset,
+);
 
 /**
- * Get tutor exams
+ * 📚 Get exams created by tutor
  * GET /api/exams/tutor-exams
  */
-router.get('/tutor-exams', protect, authorizeRoles('tutor', 'admin'), getTutorExams);
+router.get(
+  "/tutor-exams",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  getTutorExams,
+);
 
 /**
- * Create a new exam with questions
+ * ➕ Create new exam
  * POST /api/exams/create
  */
-router.post('/create', protect, authorizeRoles('tutor', 'admin'), createExam);
+router.post("/create", protect, authorizeRoles("tutor", "admin"), createExam);
 
 // ============================================================
-//  STUDENT EXAM ATTEMPTS MANAGEMENT (literal paths, before '/:examId')
+// ♻️ 4. RECYCLE BIN (Literal paths - must come before dynamic /:examId)
 // ============================================================
 
 /**
- * Get all student exam attempts
- * GET /api/exams/student-exams
+ * ♻️ Get all soft-deleted exams for the logged-in tutor
+ * GET /api/exams/recycle-bin
  */
-router.get('/student-exams', protect, getStudentExams);
-
-/**
- * Delete a student exam attempt
- * DELETE /api/exams/student-exams/:id
- */
-router.delete('/student-exams/:id', protect, deleteStudentExam);
+router.get(
+  "/recycle-bin",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  getRecycleBinExams,
+);
 
 // ============================================================
-//  TUTOR / ADMIN ENDPOINTS using ':examId' (must come LAST)
+// ⚠️ 5. DYNAMIC ROUTES (/:examId) - MUST ALWAYS BE AT THE END
 // ============================================================
 
 /**
- * Get exam by ID
+ * Get exam details by ID
  * GET /api/exams/:examId
  */
-router.get('/:examId', protect, authorizeRoles('tutor', 'admin'), getExamById);
+router.get("/:examId", protect, authorizeRoles("tutor", "admin"), getExamById);
 
 /**
  * Delete exam
  * DELETE /api/exams/:examId
  */
-router.delete('/:examId', protect, authorizeRoles('tutor', 'admin'), deleteExam);
+router.delete(
+  "/:examId",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  deleteExam,
+);
+
+/**
+ * ♻️ Restore a soft-deleted exam
+ * PUT /api/exams/:examId/restore
+ */
+router.put(
+  "/:examId/restore",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  restoreExam,
+);
+
+/**
+ * 🗑️ Permanently delete an exam
+ * DELETE /api/exams/:examId/permanent
+ */
+router.delete(
+  "/:examId/permanent",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  permanentDeleteExam,
+);
 
 /**
  * Update exam status
  * PUT /api/exams/:examId/status
  */
-router.put('/:examId/status', protect, authorizeRoles('tutor', 'admin'), updateExamStatus);
+router.put(
+  "/:examId/status",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  updateExamStatus,
+);
 
 /**
  * Update exam draft (auto-save)
  * PUT /api/exams/:examId/draft
  */
-router.put('/:examId/draft', protect, authorizeRoles('tutor', 'admin'), updateExamDraft);
+router.put(
+  "/:examId/draft",
+  protect,
+  authorizeRoles("tutor", "admin"),
+  updateExamDraft,
+);
 
 /**
- * Update exam (Full Update)
+ * Update exam details (Full Update)
  * PUT /api/exams/:examId
  */
-router.put('/:examId', protect, authorizeRoles('tutor', 'admin'), updateExam);
+router.put("/:examId", protect, authorizeRoles("tutor", "admin"), updateExam);
+
+// ============================================================
+// ✅ 6. QUALITY AUDITS (Validator only)
+// ============================================================
+
+/**
+ * 📋 Get pending exams (filtered by validator's language)
+ * GET /api/exams/quality/pending
+ */
+router.get(
+  "/quality/pending",
+  protect,
+  authorizeRoles("validator"),
+  getPendingExams,
+);
+
+/**
+ * ✅ Approve an exam
+ * POST /api/exams/quality/approve/:examId
+ */
+router.post(
+  "/quality/approve/:examId",
+  protect,
+  authorizeRoles("validator"),
+  approveExam,
+);
+
+/**
+ * ❌ Reject an exam with feedback
+ * POST /api/exams/quality/reject/:examId
+ */
+router.post(
+  "/quality/reject/:examId",
+  protect,
+  authorizeRoles("validator"),
+  rejectExam,
+);
 
 module.exports = router;

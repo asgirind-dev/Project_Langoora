@@ -1,4 +1,6 @@
+// backend/controllers/userController.js
 const { db, auth } = require('../config/firebase');
+const auditLogService = require('../services/auditLogService');
 
 // ----------------------------------------------------------------------
 // 1. Fetch All Registered Users & Pre-Authorized Staff Nodes
@@ -102,7 +104,6 @@ const provisionStaffNode = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email already exists in terminal records.' });
     }
 
-    // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
     const newStaffNode = {
       name,
       email: formattedEmail,
@@ -115,6 +116,18 @@ const provisionStaffNode = async (req, res) => {
     };
 
     await db.collection('pre_authorized_staff').doc(formattedEmail).set(newStaffNode);
+
+    // ✅ Log the provisioning action
+    await auditLogService.logUserLifecycle({
+      userId: formattedEmail,
+      userEmail: formattedEmail,
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      action: 'provisioned',
+      reason: `Staff provisioned with role: ${roleData.name}`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
 
     return res.status(201).json({
       success: true,
@@ -133,15 +146,35 @@ const provisionStaffNode = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 3. Toggle Suspension or Revoke Invitations
+// 3. Toggle Suspension or Revoke Invitations (WITH AUDIT LOG)
 // ----------------------------------------------------------------------
 const toggleUserLifecycle = async (req, res) => {
   try {
     const { uid } = req.params;
     const { currentStatus, email } = req.body;
+    const actorId = req.user.uid;
+    const actorEmail = req.user.email;
+    const actorRole = req.user.role;
+
+    // Get user details for logging
+    let userEmail = email || '';
+    let userDoc = null;
 
     if (currentStatus === 'invited') {
       await db.collection('pre_authorized_staff').doc(email).delete();
+      
+      // ✅ Log the revocation
+      await auditLogService.logUserLifecycle({
+        userId: uid,
+        userEmail: email,
+        actorId: actorId,
+        actorEmail: actorEmail,
+        action: 'revoked',
+        reason: 'Staff invitation revoked',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+      
       return res.status(200).json({ success: true, action: 'revoked' });
     }
 
@@ -154,6 +187,24 @@ const toggleUserLifecycle = async (req, res) => {
       console.warn(`Auth disabled state sync omitted: ${authErr.message}`);
     }
 
+    // Get user email for logging
+    userDoc = await db.collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      userEmail = userDoc.data().email || email;
+    }
+
+    // ✅ Log the lifecycle change
+    await auditLogService.logUserLifecycle({
+      userId: uid,
+      userEmail: userEmail,
+      actorId: actorId,
+      actorEmail: actorEmail,
+      action: targetStatus === 'suspended' ? 'suspended' : 'activated',
+      reason: `User ${targetStatus === 'suspended' ? 'suspended' : 'activated'} by ${actorRole || 'admin'}`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, action: 'toggled', targetStatus });
   } catch (error) {
     console.error('Lifecycle adjustment failed:', error.message);
@@ -162,12 +213,36 @@ const toggleUserLifecycle = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 4. Commit Capabilities & Privileges Governance Configurations
+// 4. Commit Capabilities & Privileges Governance Configurations (WITH AUDIT LOG)
 // ----------------------------------------------------------------------
 const updatePrivileges = async (req, res) => {
   try {
     const { uid } = req.params;
-    const { privileges, languageScope, status, email } = req.body;
+    const { privileges, languageScope, status, email, reason } = req.body;
+    const actorId = req.user.uid;
+    const actorEmail = req.user.email;
+    const actorRole = req.user.role;
+
+    // Get old privileges first
+    let oldPrivileges = [];
+    let userEmail = email || '';
+    let userDocData = {};
+
+    if (status === 'invited') {
+      const doc = await db.collection('pre_authorized_staff').doc(email).get();
+      if (doc.exists) {
+        oldPrivileges = doc.data().privileges || [];
+        userEmail = email;
+        userDocData = doc.data();
+      }
+    } else {
+      const doc = await db.collection('users').doc(uid).get();
+      if (doc.exists) {
+        oldPrivileges = doc.data().privileges || [];
+        userEmail = doc.data().email || email;
+        userDocData = doc.data();
+      }
+    }
 
     const updateData = { privileges, languageScope };
 
@@ -177,7 +252,40 @@ const updatePrivileges = async (req, res) => {
       await db.collection('users').doc(uid).update(updateData);
     }
 
-    return res.status(200).json({ success: true, message: 'Governance configuration committed.' });
+    // ✅ Calculate changes for audit log
+    const added = privileges.filter(p => !oldPrivileges.includes(p));
+    const removed = oldPrivileges.filter(p => !privileges.includes(p));
+    
+    let actionType = 'updated';
+    if (added.length > 0 && removed.length === 0) actionType = 'added';
+    else if (added.length === 0 && removed.length > 0) actionType = 'removed';
+    else if (added.length > 0 && removed.length > 0) actionType = 'updated';
+
+    // ✅ Log the privilege change
+    await auditLogService.logPrivilegeChange({
+      userId: uid,
+      userEmail: userEmail,
+      actorId: actorId,
+      actorEmail: actorEmail,
+      role: actorRole,
+      action: actionType,
+      changes: {
+        added,
+        removed,
+        languageScope,
+        old: oldPrivileges,
+        new: privileges
+      },
+      reason: reason || `Privileges ${actionType} by ${actorRole || 'admin'}`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Governance configuration committed.',
+      changes: { old: oldPrivileges, new: privileges }
+    });
   } catch (error) {
     console.error('Privilege dynamic commit failed:', error.message);
     return res.status(500).json({ success: false, message: 'Server configuration error.' });
@@ -191,10 +299,32 @@ const deleteUserNode = async (req, res) => {
   try {
     const { uid } = req.params;
     const { email, currentStatus } = req.body;
+    const actorId = req.user.uid;
+    const actorEmail = req.user.email;
 
     if (currentStatus === 'invited') {
       await db.collection('pre_authorized_staff').doc(email).delete();
+      
+      // ✅ Log the deletion
+      await auditLogService.logUserLifecycle({
+        userId: uid,
+        userEmail: email,
+        actorId: actorId,
+        actorEmail: actorEmail,
+        action: 'deleted',
+        reason: 'Invitation permanently deleted',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+      
       return res.status(200).json({ success: true, message: "Invitation deleted cleanly from staging area." });
+    }
+
+    // Get user email before deletion
+    let userEmail = email || '';
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      userEmail = userDoc.data().email || email;
     }
 
     await db.collection('users').doc(uid).delete();
@@ -205,10 +335,62 @@ const deleteUserNode = async (req, res) => {
       console.warn(`Auth deletion deferred or user didn't register: ${authErr.message}`);
     }
 
+    // ✅ Log the deletion
+    await auditLogService.logUserLifecycle({
+      userId: uid,
+      userEmail: userEmail,
+      actorId: actorId,
+      actorEmail: actorEmail,
+      action: 'deleted',
+      reason: 'User account permanently deleted',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, message: "User account dropped cleanly from database layers." });
   } catch (error) {
     console.error('Purge transaction failure:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to drop user node from database servers.' });
+  }
+};
+
+/**
+ * 6. 👤 GET LOGGED IN STUDENT PROFILE (For Checkout Auto-fill)
+ */
+const getStudentProfile = async (req, res) => {
+  try {
+    const studentId = req.user?.uid || req.user?.id;
+
+    console.log("=== DEBUG: REQUESTED STUDENT ID ===", studentId);
+
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const userDoc = await db.collection('users').doc(studentId).get();
+
+    console.log(`=== DEBUG: DOES DOC EXIST FOR ${studentId}? ===`, userDoc.exists);
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+
+    const userData = userDoc.data();
+    
+    console.log("=== DEBUG: FIRESTORE USER DATA ===", userData);
+
+    return res.status(200).json({
+      success: true,
+      name: userData.name || 'Verified Student',
+      email: userData.email,
+      bankName: userData.bankName || null,
+      accountNo: userData.accountNo || null,
+      accountHolder: userData.accountHolder || userData.name || 'Verified Student'
+    });
+
+  } catch (error) {
+    console.error('Error fetching student profile:', error.message);
+    return res.status(500).json({ success: false, message: 'Server error fetching profile registry.' });
   }
 };
 
@@ -217,7 +399,7 @@ const deleteUserNode = async (req, res) => {
 // ======================================================================
 
 // ----------------------------------------------------------------------
-// 6. Get all roles (for admin UI)
+// 7. Get all roles (for admin UI)
 // ----------------------------------------------------------------------
 const getRoles = async (req, res) => {
   try {
@@ -232,7 +414,7 @@ const getRoles = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 7. Create a new role (Super Admin only)
+// 8. Create a new role (Super Admin only) - WITH AUDIT LOG
 // ----------------------------------------------------------------------
 const createRole = async (req, res) => {
   try {
@@ -265,6 +447,25 @@ const createRole = async (req, res) => {
       createdBy: req.user.uid
     };
     const docRef = await db.collection('roles').add(newRole);
+    
+    // ✅ Log role creation
+    await auditLogService.logPrivilegeChange({
+      userId: 'system',
+      userEmail: 'system',
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      role: req.user.role,
+      action: 'created_role',
+      changes: {
+        roleName: name,
+        level: level,
+        permissions: permissions
+      },
+      reason: `Role "${name}" created`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(201).json({ success: true, role: { id: docRef.id, ...newRole } });
   } catch (error) {
     console.error('Create role error:', error.message);
@@ -273,7 +474,7 @@ const createRole = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 8. Update a role (Super Admin only)
+// 9. Update a role (Super Admin only) - WITH AUDIT LOG
 // ----------------------------------------------------------------------
 const updateRole = async (req, res) => {
   try {
@@ -310,12 +511,42 @@ const updateRole = async (req, res) => {
     }
 
     const updateData = {};
-    if (name !== undefined) updateData.name = name;
-    if (level !== undefined) updateData.level = level;
-    if (permissions !== undefined) updateData.permissions = permissions;
+    const changes = {};
+    if (name !== undefined && name !== targetRoleData.name) {
+      updateData.name = name;
+      changes.name = { old: targetRoleData.name, new: name };
+    }
+    if (level !== undefined && level !== targetRoleData.level) {
+      updateData.level = level;
+      changes.level = { old: targetRoleData.level, new: level };
+    }
+    if (permissions !== undefined) {
+      const oldPerms = targetRoleData.permissions || {};
+      const newPerms = permissions;
+      const added = Object.keys(newPerms).filter(k => newPerms[k] && !oldPerms[k]);
+      const removed = Object.keys(oldPerms).filter(k => oldPerms[k] && !newPerms[k]);
+      if (added.length > 0 || removed.length > 0) {
+        updateData.permissions = permissions;
+        changes.permissions = { added, removed };
+      }
+    }
     updateData.updatedAt = new Date().toISOString();
 
     await db.collection('roles').doc(roleId).update(updateData);
+
+    // ✅ Log role update
+    await auditLogService.logPrivilegeChange({
+      userId: 'system',
+      userEmail: 'system',
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      role: req.user.role,
+      action: 'updated_role',
+      changes: changes,
+      reason: `Role "${name || targetRoleData.name}" updated`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
 
     const updatedDoc = await db.collection('roles').doc(roleId).get();
     return res.status(200).json({ success: true, role: { id: roleId, ...updatedDoc.data() } });
@@ -326,7 +557,7 @@ const updateRole = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 9. Delete a role (Super Admin only)
+// 10. Delete a role (Super Admin only) - WITH AUDIT LOG
 // ----------------------------------------------------------------------
 const deleteRole = async (req, res) => {
   try {
@@ -361,7 +592,27 @@ const deleteRole = async (req, res) => {
       });
     }
 
+    const roleName = targetRoleData.name;
     await db.collection('roles').doc(roleId).delete();
+
+    // ✅ Log role deletion
+    await auditLogService.logPrivilegeChange({
+      userId: 'system',
+      userEmail: 'system',
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      role: req.user.role,
+      action: 'deleted_role',
+      changes: {
+        roleName: roleName,
+        level: targetRoleData.level,
+        permissions: targetRoleData.permissions || {}
+      },
+      reason: `Role "${roleName}" deleted`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, message: 'Role deleted successfully.' });
   } catch (error) {
     console.error('Delete role error:', error.message);
@@ -379,6 +630,7 @@ module.exports = {
   toggleUserLifecycle,
   updatePrivileges,
   deleteUserNode,
+  getStudentProfile,
   getRoles,
   createRole,
   updateRole,

@@ -54,13 +54,25 @@ class SystemSettingsController {
 
   async saveSecuritySettings(req, res) {
     try {
-      const { enableAntiCheat, maxViolationWarnings, maintenanceMode, sessionTimeouts } = req.body;
+      // ✅ Include maintenanceEstimatedTime and maintenanceMessage
+      const { 
+        enableAntiCheat, 
+        maxViolationWarnings, 
+        maintenanceMode, 
+        maintenanceEstimatedTime,  // ✅ Add this
+        maintenanceMessage,        // ✅ Add this
+        sessionTimeouts 
+      } = req.body;
+      
       const updatedPolicies = await systemSettingsService.updateSecurityPolicies({
         enableAntiCheat,
         maxViolationWarnings,
         maintenanceMode,
+        maintenanceEstimatedTime,   // ✅ Add this
+        maintenanceMessage,         // ✅ Add this
         sessionTimeouts
       });
+      
       return res.status(200).json({
         success: true,
         message: 'Security policies committed successfully.',
@@ -140,7 +152,7 @@ class SystemSettingsController {
         });
       }
 
-      // ✅ FIX: Use the helper function instead of this.isValidEmail
+      // Validate Email
       if (senderEmail && !isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
@@ -196,7 +208,6 @@ class SystemSettingsController {
    */
   async getRates(req, res) {
     try {
-      // ⭐ admin.firestore() වෙනුවට db use කරන්න
       const docRef = db.collection('system_settings').doc('global_config');
       const docSnap = await docRef.get();
 
@@ -419,7 +430,6 @@ class SystemSettingsController {
         });
       }
 
-      // ✅ FIX: Use the helper function instead of this.isValidEmail
       if (!isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,

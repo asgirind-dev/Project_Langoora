@@ -57,7 +57,7 @@ class SystemSettingsService {
   }
 
   // =============================================
-  // 2. GOVERNANCE & SECURITY
+  // 2. GOVERNANCE & SECURITY - ✅ FIXED
   // =============================================
 
   async getSecurityPolicies() {
@@ -68,7 +68,17 @@ class SystemSettingsService {
           enableAntiCheat: true,
           maxViolationWarnings: 3,
           maintenanceMode: false,
-          sessionTimeouts: { admin: 15, tutor: 20, student: 45, finance: 10, validator: 15 }
+          maintenanceEstimatedTime: null,       
+          maintenanceMessage: '',                 
+          sessionTimeouts: { 
+            admin: 15, 
+            super_admin: 15,      // ✅ Added
+            finance_admin: 10,    // ✅ Added
+            finance: 10, 
+            validator: 15, 
+            tutor: 20, 
+            student: 45 
+          }
         };
       }
       return doc.data();
@@ -81,13 +91,26 @@ class SystemSettingsService {
   async updateSecurityPolicies(policyData) {
     try {
       const docRef = db.collection('system_settings').doc('security_governance');
+      
+      // ✅ Build payload with all session timeouts
       const payload = {
         enableAntiCheat: Boolean(policyData.enableAntiCheat),
         maxViolationWarnings: Number(policyData.maxViolationWarnings || 3),
         maintenanceMode: Boolean(policyData.maintenanceMode),
-        sessionTimeouts: policyData.sessionTimeouts || { admin: 15, tutor: 20, student: 45, finance: 10, validator: 15 },
+        maintenanceEstimatedTime: policyData.maintenanceEstimatedTime || null,  
+        maintenanceMessage: policyData.maintenanceMessage || '',              
+        sessionTimeouts: policyData.sessionTimeouts || { 
+          admin: 15, 
+          super_admin: 15,      // ✅ Added
+          finance_admin: 10,    // ✅ Added
+          finance: 10, 
+          validator: 15, 
+          tutor: 20, 
+          student: 45 
+        },
         updatedAt: new Date().toISOString()
       };
+      
       await docRef.set(payload, { merge: true });
       return payload;
     } catch (error) {

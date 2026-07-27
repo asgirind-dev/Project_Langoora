@@ -1,6 +1,9 @@
+// frontend/src/router/routes.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "../context/AuthContext";
 import ProtectedRoute from "./ProtectedRoute";
+import { useAuth } from "../context/AuthContext";
+import MaintenancePage from "../components/common/MaintenancePage";
 
 // Layouts
 import PublicLayout from "../layouts/PublicLayout";
@@ -43,6 +46,7 @@ import TutorEarningsPage from "../pages/tutor/TutorEarningsPage";
 import TutorProfilePage from "../pages/tutor/TutorProfilePage";
 import TutorAnalyticsPage from "../pages/tutor/TutorAnalyticsPage";
 import TutorReviewsPage from "../pages/tutor/TutorReviewsPage";
+import RecycleBinPage from "../pages/tutor/RecycleBinPage";
 
 // Academic Validator Pages
 import AcademicValidatorDashboard from "../pages/validator/AcademicValidatorDashboard";
@@ -62,19 +66,38 @@ import PerformancePage from "../pages/student/PerformancePage";
 import StudentProfilePage from '../pages/student/StudentProfilePage';
 import SettingsPage from '../pages/student/SettingsPage';
 import StudyPlannerPage from '../pages/student/StudyPlannerPage';
+import PaymentSuccess from '../pages/student/PaymentSuccess';
 
-// Finance Admin Pages (🎯 Updated Imports)
+// Finance Admin Layout & Pages
+
+// Finance Admin Pages
 import FinanceDashboard from "../pages/finance_admin/FinanceDashboard";
 import SubscriptionPlans from "../pages/finance_admin/SubscriptionPlans";
 import ExamCreditValuation from "../pages/finance_admin/ExamCreditValuation";
 import TutorPayoutsPage from "../pages/finance_admin/TutorPayoutsPage";
 import TransactionLedger from "../pages/finance_admin/TransactionLedger";
 
+// ✅ Public Route Wrapper with Maintenance Check
+function PublicRoute({ children }) {
+  const { isMaintenance, canAccessDuringMaintenance } = useAuth();
+  const sessionRole = localStorage.getItem('userRole');
+
+  // If maintenance is ON and user is not admin, show maintenance page
+  if (isMaintenance && !canAccessDuringMaintenance()) {
+    return <MaintenancePage />;
+  }
+
+  return children;
+}
+
 export default function AppRoutes() {
   return (
     <AuthProvider>
       <div className="min-h-screen bg-[#060b13] text-white">
         <Routes>
+
+          {/* ✅ Maintenance Route - Public */}
+          <Route path="/maintenance" element={<MaintenancePage />} />
           
           {/* 1. Isolation Staff Entry Terminal Gateway */}
           <Route path="/portal/admin/gateway" element={<StaffLoginPage />} />
@@ -116,6 +139,31 @@ export default function AppRoutes() {
             }
           />
 
+          {/* 3. Student Segment Workspace */}
+          {/* 3. Student Segment Workspace */}
+{/* 💡 Sidebar/Navbar තියෙන සාමාන්‍ය Dashboard Pages */}
+<Route path="/student" element={<ProtectedRoute allowedRoles={['student']}><StudentLayout /></ProtectedRoute>}>
+  <Route index element={<StudentDashboard />} />
+  <Route path="exams" element={<MyExamsPage />} />
+  <Route path="planner" element={<StudyPlannerPage />} />
+  <Route path="performance" element={<PerformancePage />} />
+  <Route path="subscription" element={<SubscriptionPage />} />
+  <Route path="marketplace" element={<MarketplacePage />} />
+  <Route path="profile" element={<StudentProfilePage />} />
+  <Route path="settings" element={<SettingsPage />} />
+  <Route path="*" element={<Navigate to="/student" replace />} />
+  <Route path="/student/exam-results/:id" element={<ExamResultsPage />} />
+</Route>
+
+{/* 💡 ඩාෂ්බෝඩ් Layout එකෙන් පිටත ස්වාධීනව වැඩ කරන Secure Success Route එක (Flicker එක සදහටම ඉවරයි!) */}
+<Route
+  path="/student/payment-success"
+  element={
+    <ProtectedRoute allowedRoles={['student']}>
+      <PaymentSuccess />
+    </ProtectedRoute>
+  }
+/>
           {/* 4. Student Segment Workspace */}
           <Route path="/student" element={<ProtectedRoute allowedRoles={['student']}><StudentLayout /></ProtectedRoute>}>
             <Route index element={<StudentDashboard />} />
@@ -139,6 +187,8 @@ export default function AppRoutes() {
             
             {/* ✅ Edit Exam Route - Pass examId as query parameter */}
             <Route path="edit" element={<CreateExamPage />} />
+            {/* ✅ Recycle Bin Route */}
+            <Route path="recycle-bin" element={<RecycleBinPage />} />
             
             <Route path="earnings" element={<TutorEarningsPage />} />
             <Route path="analytics" element={<TutorAnalyticsPage />} />
@@ -189,14 +239,12 @@ export default function AppRoutes() {
           <Route path="/finance-admin" element={<ProtectedRoute allowedRoles={['finance_admin', 'finance']}><FinanceAdminLayout /></ProtectedRoute>}>
             <Route index element={<FinanceDashboard />} />
             
-            {/* 🎯 Updated Subscription Plans Route */}
             <Route path="subscriptions" element={
               <ProtectedRoute requiredPrivilege="manage_subscriptions">
                 <SubscriptionPlans />
               </ProtectedRoute>
             } />
 
-            {/* 🎯 Added New Exam Credit Rates Route */}
             <Route path="exam-credits" element={
               <ProtectedRoute requiredPrivilege="manage_subscriptions">
                 <ExamCreditValuation />
@@ -218,15 +266,43 @@ export default function AppRoutes() {
             <Route path="*" element={<Navigate to="/finance-admin" replace />} />
           </Route>
 
-          {/* 9. Public Facing Content & Common Views */}
+          {/* 9. Public Facing Content & Common Views - ✅ Wrapped with PublicRoute */}
           <Route element={<PublicLayout />}>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/pricing" element={<PricingPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/services" element={<ServicesPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/marketplace" element={<MarketplacePage />} />
-            <Route path="/exam/:id/preview" element={<ExamPreviewPage />} />
+            <Route path="/" element={
+              <PublicRoute>
+                <LandingPage />
+              </PublicRoute>
+            } />
+            <Route path="/pricing" element={
+              <PublicRoute>
+                <PricingPage />
+              </PublicRoute>
+            } />
+            <Route path="/about" element={
+              <PublicRoute>
+                <AboutPage />
+              </PublicRoute>
+            } />
+            <Route path="/services" element={
+              <PublicRoute>
+                <ServicesPage />
+              </PublicRoute>
+            } />
+            <Route path="/contact" element={
+              <PublicRoute>
+                <ContactPage />
+              </PublicRoute>
+            } />
+            <Route path="/marketplace" element={
+              <PublicRoute>
+                <MarketplacePage />
+              </PublicRoute>
+            } />
+            <Route path="/exam/:id/preview" element={
+              <PublicRoute>
+                <ExamPreviewPage />
+              </PublicRoute>
+            } />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
 

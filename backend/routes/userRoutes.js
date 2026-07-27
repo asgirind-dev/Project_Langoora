@@ -1,3 +1,4 @@
+// backend/routes/userRoutes.js
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
@@ -10,12 +11,11 @@ const {
 const { db, admin } = require('../config/firebase');
 
 // ======================================================================
-// 🔓 PUBLIC ROUTE - Pre-authorization check (NO authentication required)
+// 🔓 1. PUBLIC ROUTES (Login වීම අවශ්‍ය නැත / Authentication NOT required)
 // ======================================================================
 
 /**
  * ✅ Check if an email is pre-authorized for staff registration
- * This route is PUBLIC so users can check before registering
  * GET /api/users/preauth-check?email=user@example.com
  */
 router.get('/preauth-check', async (req, res) => {
@@ -29,7 +29,6 @@ router.get('/preauth-check', async (req, res) => {
       });
     }
 
-    // Validate email format
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ 
@@ -39,19 +38,14 @@ router.get('/preauth-check', async (req, res) => {
     }
 
     const formattedEmail = email.toLowerCase().trim();
-    
-    // Check if email exists in pre_authorized_staff collection
     const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
 
     if (preAuthDoc.exists) {
       const data = preAuthDoc.data();
-      
-      // Check if this pre-auth record is still valid (not expired)
       const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
       const now = new Date();
       
       if (expiresAt && expiresAt < now) {
-        // Pre-authorization has expired
         return res.status(200).json({
           success: true,
           isPreAuthorized: false,
@@ -60,7 +54,6 @@ router.get('/preauth-check', async (req, res) => {
         });
       }
 
-      // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
       return res.status(200).json({
         success: true,
         isPreAuthorized: true,
@@ -73,7 +66,6 @@ router.get('/preauth-check', async (req, res) => {
       });
     }
 
-    // Not pre-authorized
     return res.status(200).json({
       success: true,
       isPreAuthorized: false
@@ -90,31 +82,38 @@ router.get('/preauth-check', async (req, res) => {
 });
 
 // ======================================================================
-// 🔒 ALL ROUTES BELOW ARE PROTECTED (require authentication)
+// 🔒 2. PROTECTED ROUTES (මෙතැනින් පහළ සියලුම Routes සඳහා Auth Token එකක් අවශ්‍ය වේ)
 // ======================================================================
-
-// All routes are protected by authentication
 router.use(protect);
 
-// ======================================================================
-// STUDENT PROFILE ROUTES (No admin permissions required)
-// ======================================================================
+// ----------------------------------------------------------------------
+// 👤 STUDENT / USER PROFILE ENDPOINTS
+// ----------------------------------------------------------------------
 
-// 🔄 Get student profile
 router.get('/profile', async (req, res) => {
   try {
     const { uid } = req.query;
     if (!uid) return res.status(400).json({ success: false, message: "User ID (uid) is required" });
-    const doc = await db.collection('students').doc(uid).get();
-    if (!doc.exists) return res.status(200).json({ success: true, data: {} });
-    res.status(200).json({ success: true, data: doc.data() });
+    
+    let doc = await db.collection('users').doc(uid).get();
+    
+    if (!doc.exists) {
+      doc = await db.collection('students').doc(uid).get();
+    }
+    
+    if (!doc.exists) {
+      return res.status(200).json({ success: true, data: {} });
+    }
+    
+    res.status(200).json({ success: true, data: { id: doc.id, ...doc.data() } });
   } catch (error) {
     console.error("Backend Fetch Profile Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// 🔄 Update student profile
+router.get('/checkout-profile', userController.getStudentProfile);
+
 router.put('/profile/update', async (req, res) => {
   try {
     const { uid, name, phone, dob, city, targetExam, targetDate } = req.body;
@@ -130,7 +129,6 @@ router.put('/profile/update', async (req, res) => {
   }
 });
 
-// 🔄 Update language settings
 router.put('/settings/language', async (req, res) => {
   try {
     const { uid, language } = req.body;
@@ -144,7 +142,6 @@ router.put('/settings/language', async (req, res) => {
   }
 });
 
-// 🔄 Update password
 router.put('/settings/password', async (req, res) => {
   try {
     const { uid, newPassword } = req.body;
@@ -157,58 +154,307 @@ router.put('/settings/password', async (req, res) => {
 });
 
 // ======================================================================
-// ADMIN ROUTES – require specific permissions
+// 🛡️ 3. ADMIN PRIVILEGED ROUTES (Admin හට පමණක් සීමා වේ)
 // ======================================================================
+// ✅ FIX: Include both admin and super_admin
+router.use(authorizeRoles('admin', 'super_admin'));
 
 // ---- User Management ----
-// GET all users (requires 'manage_users' permission)
+// ✅ FIXED: GET /users with role-based fallback
 router.get(
   '/',
-  requirePermission('manage_users'),
-  userController.getAllUsers
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const permissions = user?.permissions || {};
+      const userRole = user?.role;
+      
+      const hasPermission = permissions.manage_users === true;
+      const isAuthorized = hasPermission || userRole === 'super_admin' || userRole === 'admin';
+      
+      if (!isAuthorized) {
+        console.log(`❌ User ${user?.email} not authorized for user management`);
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to manage users.',
+        });
+      }
+      
+      console.log(`✅ User ${user?.email} authorized for user management`);
+      
+      const usersSnapshot = await db.collection('users').get();
+      const registeredUsers = [];
+      for (const doc of usersSnapshot.docs) {
+        const userData = doc.data();
+        let roleName = userData.role || 'student';
+        if (userData.roleId) {
+          const roleDoc = await db.collection('roles').doc(userData.roleId).get();
+          if (roleDoc.exists) {
+            roleName = roleDoc.data().name;
+          }
+        }
+        registeredUsers.push({
+          id: doc.id,
+          ...userData,
+          role: roleName,
+          roleName
+        });
+      }
+
+      const preAuthSnapshot = await db.collection('pre_authorized_staff').get();
+      const preAuthUsers = [];
+      preAuthSnapshot.forEach(doc => {
+        const data = doc.data();
+        preAuthUsers.push({
+          id: doc.id,
+          ...data,
+          status: 'invited',
+          activityCount: 0,
+          roleName: data.role || 'unknown'
+        });
+      });
+
+      const combinedUsers = [...preAuthUsers, ...registeredUsers].sort((a, b) => {
+        const dateA = a.joined ? new Date(a.joined) : new Date(0);
+        const dateB = b.joined ? new Date(b.joined) : new Date(0);
+        return dateB - dateA;
+      });
+
+      return res.status(200).json({ success: true, users: combinedUsers });
+      
+    } catch (error) {
+      console.error('Error fetching users:', error.message);
+      return res.status(500).json({ success: false, message: 'Failed to fetch users.' });
+    }
+  }
 );
 
-// Provision a new staff member (requires 'manage_users')
+// ✅ FIXED: POST /provision with role-based fallback
 router.post(
   '/provision',
-  requirePermission('manage_users'),
-  userController.provisionStaffNode
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const permissions = user?.permissions || {};
+      const userRole = user?.role;
+      
+      const hasPermission = permissions.manage_users === true;
+      const isAuthorized = hasPermission || userRole === 'super_admin' || userRole === 'admin';
+      
+      if (!isAuthorized) {
+        console.log(`❌ User ${user?.email} not authorized for provisioning`);
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to provision users.',
+        });
+      }
+
+      const {
+        name,
+        email,
+        roleId,
+        institution,
+        languageScope,
+        privileges
+      } = req.body;
+      const formattedEmail = email.toLowerCase().trim();
+
+      if (!name || !formattedEmail || !roleId) {
+        return res.status(400).json({ success: false, message: 'Name, email, and roleId are mandatory.' });
+      }
+
+      const roleDoc = await db.collection('roles').doc(roleId).get();
+      if (!roleDoc.exists) {
+        return res.status(400).json({ success: false, message: 'Invalid roleId.' });
+      }
+      const roleData = roleDoc.data();
+
+      const userDoc = await db.collection('users').doc(formattedEmail).get();
+      const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
+      if (userDoc.exists || preAuthDoc.exists) {
+        return res.status(400).json({ success: false, message: 'Email already exists in terminal records.' });
+      }
+
+      const newStaffNode = {
+        name,
+        email: formattedEmail,
+        roleId,
+        joined: new Date().toISOString().split('T')[0],
+        institution: institution || 'Langoora',
+        languageScope: roleData.name === 'finance' ? 'All' : languageScope,
+        privileges: privileges || [],
+        status: 'invited'
+      };
+
+      await db.collection('pre_authorized_staff').doc(formattedEmail).set(newStaffNode);
+
+      const auditLogService = require('../services/auditLogService');
+      await auditLogService.logUserLifecycle({
+        userId: formattedEmail,
+        userEmail: formattedEmail,
+        actorId: req.user.uid,
+        actorEmail: req.user.email,
+        action: 'provisioned',
+        reason: `Staff provisioned with role: ${roleData.name}`,
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+
+      return res.status(201).json({
+        success: true,
+        user: {
+          id: formattedEmail,
+          ...newStaffNode,
+          status: 'invited',
+          activityCount: 0,
+          roleName: roleData.name
+        }
+      });
+    } catch (error) {
+      console.error('Provisioning failed:', error.message);
+      return res.status(500).json({ success: false, message: 'Database connectivity failed during node provisioning.' });
+    }
+  }
 );
 
-// Update user privileges (requires 'manage_users')
+// ✅ FIXED: PUT /:uid/privileges with role-based fallback
 router.put(
   '/:uid/privileges',
-  requirePermission('manage_users'),
-  userController.updatePrivileges
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const permissions = user?.permissions || {};
+      const userRole = user?.role;
+      
+      const hasPermission = permissions.manage_users === true;
+      const isAuthorized = hasPermission || userRole === 'super_admin' || userRole === 'admin';
+      
+      if (!isAuthorized) {
+        console.log(`❌ User ${user?.email} not authorized for privilege updates`);
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to update user privileges.',
+        });
+      }
+
+      console.log(`✅ User ${user?.email} authorized for privilege updates`);
+      
+      // ✅ Call the controller
+      await userController.updatePrivileges(req, res);
+      
+    } catch (error) {
+      console.error('Error updating privileges:', error.message);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to update user privileges.' 
+      });
+    }
+  }
 );
 
-// Toggle user lifecycle (suspend/activate) – requires 'manage_users'
+// ✅ FIXED: PUT /:uid/lifecycle with role-based fallback
 router.put(
   '/:uid/lifecycle',
-  requirePermission('manage_users'),
-  userController.toggleUserLifecycle
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const permissions = user?.permissions || {};
+      const userRole = user?.role;
+      
+      const hasPermission = permissions.manage_users === true;
+      const isAuthorized = hasPermission || userRole === 'super_admin' || userRole === 'admin';
+      
+      if (!isAuthorized) {
+        console.log(`❌ User ${user?.email} not authorized for lifecycle updates`);
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to update user lifecycle.',
+        });
+      }
+
+      console.log(`✅ User ${user?.email} authorized for lifecycle updates`);
+      
+      await userController.toggleUserLifecycle(req, res);
+      
+    } catch (error) {
+      console.error('Error updating lifecycle:', error.message);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to update user lifecycle.' 
+      });
+    }
+  }
 );
 
-// Delete a user – requires 'manage_users'
+// ✅ FIXED: DELETE /:uid with role-based fallback
 router.delete(
   '/:uid',
-  requirePermission('manage_users'),
-  userController.deleteUserNode
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const permissions = user?.permissions || {};
+      const userRole = user?.role;
+      
+      const hasPermission = permissions.manage_users === true;
+      const isAuthorized = hasPermission || userRole === 'super_admin' || userRole === 'admin';
+      
+      if (!isAuthorized) {
+        console.log(`❌ User ${user?.email} not authorized for user deletion`);
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to delete users.',
+        });
+      }
+
+      console.log(`✅ User ${user?.email} authorized for user deletion`);
+      
+      await userController.deleteUserNode(req, res);
+      
+    } catch (error) {
+      console.error('Error deleting user:', error.message);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to delete user.' 
+      });
+    }
+  }
 );
 
-// ======================================================================
-// ROLE MANAGEMENT – only for users with 'manage_roles' permission
-// We also require level < 2 (Super Admin) to enforce hierarchy
-// ======================================================================
-
-// Get all roles (view)
+// ---- Role Management ----
+// ✅ FIXED: GET /roles with role-based fallback
 router.get(
   '/roles',
-  requirePermission('manage_roles'),
-  userController.getRoles
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const permissions = user?.permissions || {};
+      const userRole = user?.role;
+      
+      const hasPermission = permissions.manage_roles === true;
+      const isAuthorized = hasPermission || userRole === 'super_admin';
+      
+      if (!isAuthorized) {
+        console.log(`❌ User ${user?.email} not authorized for role management`);
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to manage roles.',
+        });
+      }
+      
+      console.log(`✅ User ${user?.email} authorized for role management`);
+      
+      const snapshot = await db.collection('roles').get();
+      const roles = [];
+      snapshot.forEach(doc => roles.push({ id: doc.id, ...doc.data() }));
+      return res.status(200).json({ success: true, roles });
+      
+    } catch (error) {
+      console.error('Error fetching roles:', error.message);
+      return res.status(500).json({ success: false, message: 'Failed to fetch roles.' });
+    }
+  }
 );
 
-// Create a new role (Super Admin only)
 router.post(
   '/roles',
   requirePermission('manage_roles'),
@@ -216,7 +462,6 @@ router.post(
   userController.createRole
 );
 
-// Update a role (Super Admin only)
 router.put(
   '/roles/:roleId',
   requirePermission('manage_roles'),
@@ -224,7 +469,6 @@ router.put(
   userController.updateRole
 );
 
-// Delete a role (Super Admin only)
 router.delete(
   '/roles/:roleId',
   requirePermission('manage_roles'),
@@ -232,11 +476,7 @@ router.delete(
   userController.deleteRole
 );
 
-// ======================================================================
-// BULK PRE-AUTHORIZATION CHECK (Admin only)
-// ======================================================================
-
-// ✅ Check multiple emails for pre-authorization (admin only)
+// ---- Bulk Pre-authorization Check ----
 router.post(
   '/preauth-bulk-check',
   requirePermission('manage_users'),
@@ -259,7 +499,6 @@ router.post(
         
         if (preAuthDoc.exists) {
           const data = preAuthDoc.data();
-          // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
           results.push({
             email: formattedEmail,
             isPreAuthorized: true,

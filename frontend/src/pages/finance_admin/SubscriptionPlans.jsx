@@ -5,7 +5,7 @@ import {
   RefreshCw, Rocket, Layers, X, Loader2, Zap
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
-import PlanService from "../../services/PlanService"; // 👈 නිවැරදි PlanService Import එක
+import PlanService from "../../services/PlanService";
 
 const normalizeFeatures = (features) => {
   if (!features) return [];
@@ -40,7 +40,6 @@ function SubscriptionPlans() {
   const fetchPlans = async () => {
     setLoading(true);
     try {
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
       const data = await PlanService.getAllPlans();
       const normalizedPlans = (data || []).map(plan => ({
         ...plan,
@@ -76,8 +75,8 @@ function SubscriptionPlans() {
         active: true
       };
 
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      const res = await PlanService.createNewPlan(payload);
+      // ✅ Fixed: Use createPlan instead of createNewPlan
+      const res = await PlanService.createPlan(payload);
       setPlans([...plans, { ...res, id: res.id || res._id, features: normalizeFeatures(res.features), active: true, popular: Boolean(formData.popular) }]);
       alert("✅ New Subscription Plan Created!");
       resetForm();
@@ -101,8 +100,8 @@ function SubscriptionPlans() {
         popular: Boolean(formData.popular)
       };
 
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      await PlanService.updateExistingPlan(targetId, payload);
+      // ✅ Fixed: Use updatePlan instead of updateExistingPlan
+      await PlanService.updatePlan(targetId, payload);
       setPlans(plans.map(p => (p.id === targetId || p._id === targetId) ? { ...p, ...payload } : p));
       alert("✅ Plan Updated Successfully!");
       resetForm();
@@ -116,8 +115,8 @@ function SubscriptionPlans() {
   const deletePlan = async (id) => {
     if (!window.confirm("Are you sure you want to permanently delete this plan?")) return;
     try {
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      await PlanService.deleteExistingPlan(id);
+      // ✅ Fixed: Use deletePlan instead of deleteExistingPlan
+      await PlanService.deletePlan(id);
       setPlans(plans.filter(p => p.id !== id && p._id !== id));
       alert("✅ Plan deleted successfully!");
     } catch (error) {
@@ -140,8 +139,8 @@ function SubscriptionPlans() {
         active: nextStatus 
       };
 
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      await PlanService.updateExistingPlan(planId, payload);
+      // ✅ Fixed: Use updatePlan instead of updateExistingPlan
+      await PlanService.updatePlan(planId, payload);
       setPlans(plans.map(p => (p.id === planId || p._id === planId) ? { ...p, active: nextStatus } : p));
     } catch (error) {
       alert("❌ Status update failed.");

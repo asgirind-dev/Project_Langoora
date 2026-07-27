@@ -8,7 +8,6 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import GlassCard from '../../components/ui/GlassCard';
-import axios from 'axios';
 import FinanceService from '../../services/financeService';
 
 export default function TransactionLedger() {
@@ -23,17 +22,76 @@ export default function TransactionLedger() {
   const [copied, setCopied] = useState(false);
 
   // ============================================
-  // ⭐ FETCH TRANSACTIONS FROM FIRESTORE
+  // ⭐ FETCH TRANSACTIONS FROM SERVICE
   // ============================================
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        setLoading(true);
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        
+        const response = await axios.get(`${API_URL}/api/finance/transactions`);
+        console.log('📊 Transactions Response:', response.data);
+        
+        if (response.data && Array.isArray(response.data)) {
+          const transformedLogs = response.data.map(tx => ({
+            ref: tx.id || tx.transactionId || `TXN-${Date.now()}`,
+            student: tx.student_name || tx.userName || tx.user || 'Unknown Student',
+            tier: tx.plan || tx.subscriptionType || 'Standard Plan',
+            amount: tx.amount || 0,
+            gateway: tx.gateway || tx.paymentMethod || 'Stripe',
+            status: tx.status || 'Pending',
+            timestamp: tx.created_at || tx.createdAt || new Date().toISOString(),
+            email: tx.email || tx.student_email || '',
+            plan: tx.plan || tx.subscriptionType || 'Standard Plan',
+            credits: tx.credits || 0,
+            transactionId: tx.id,
+            paymentMethod: tx.paymentMethod || tx.gateway || 'Stripe'
+          }));
+          
+          setLogs(transformedLogs);
+        } else {
+          console.log('⚠️ No transactions found');
+          setLogs([]);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching transactions:', error);
+        setLogs([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchTransactions();
+  }, []);
+
+  // 🎯 Fetch Real Database Transactions
   const fetchLedgerData = async () => {
     setLoading(true);
     try {
       const data = await FinanceService.getAllTransactions();
-      setLogs(Array.isArray(data) ? data : []);
+      const rawLogs = Array.isArray(data) ? data : [];
+      
+      // Transform & Normalize data structure
+      const transformedLogs = rawLogs.map(tx => ({
+        ref: tx.id || tx.transactionId || tx.ref || `TXN-${Date.now()}`,
+        student: tx.student_name || tx.userName || tx.student || tx.user || 'Unknown Student',
+        tier: tx.plan || tx.subscriptionType || 'Standard Plan',
+        amount: Number(tx.amount || 0),
+        gateway: tx.gateway || tx.paymentMethod || 'Stripe',
+        status: tx.status || 'Pending',
+        timestamp: tx.created_at || tx.createdAt || tx.timestamp || new Date().toISOString(),
+        email: tx.email || tx.student_email || 'N/A',
+        plan: tx.plan || tx.subscriptionType || 'Standard Plan',
+        credits: tx.credits || 0,
+        transactionId: tx.id || tx.transactionId
+      }));
+
+      setLogs(transformedLogs);
     } catch (error) {
       console.error("Failed to load transaction audit logs:", error);
       setLogs([]);
-    } finally {
+    } fontFinally: {
       setLoading(false);
     }
   };
@@ -42,14 +100,14 @@ export default function TransactionLedger() {
     fetchLedgerData();
   }, []);
 
-  // Summary Stats Calculations from Real Data
+  // ✅ SUMMARY STATS - FIXED (Only ONE declaration of each)
   const totalTransactions = logs.length;
   const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? Number(log.amount || 0) : 0), 0);
   const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
   const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : '0.0';
-  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined' || l.status === 'Error').length;
+  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
 
-  // Search & Filters
+  // ✅ SEARCH & FILTERS - FIXED (removed duplicate conditions)
   const filteredLogs = logs.filter(log => {
     const matchSearch = (log.student || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                        (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -113,7 +171,6 @@ export default function TransactionLedger() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Format date
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     try {
@@ -130,7 +187,7 @@ export default function TransactionLedger() {
     }
   };
 
-  // 🎯 PDF Export Handler (Finance Dashboard Style)
+  // 🎯 PDF Export Handler
   const handleExportPDF = () => {
     if (filteredLogs.length === 0) return alert("No transaction records available to export.");
 
@@ -139,11 +196,9 @@ export default function TransactionLedger() {
       const doc = new jsPDF();
       const timestamp = new Date().toLocaleString();
 
-      // Dark Blue Header Banner
       doc.setFillColor(15, 22, 41);
       doc.rect(0, 0, 210, 42, 'F');
 
-      // Title & Subtitle
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
@@ -171,7 +226,6 @@ export default function TransactionLedger() {
       doc.text(`Successful Sales: ${successfulTxs.length}`, 80, 56);
       doc.text(`Total Revenue: LKR ${filteredRev.toLocaleString()}`, 140, 56);
 
-      // Table Rows Preparation
       const tableRows = filteredLogs.map(l => [
         l.ref || 'N/A',
         l.student || 'Unknown',
@@ -180,7 +234,7 @@ export default function TransactionLedger() {
         `+${l.credits || 0} c`,
         l.gateway || 'Card',
         l.status || 'Pending',
-        l.timestamp || 'N/A'
+        formatDate(l.timestamp)
       ]);
 
       autoTable(doc, {
@@ -213,7 +267,7 @@ export default function TransactionLedger() {
             if (data.cell.raw === 'Success' || data.cell.raw === 'Completed') {
               data.cell.styles.textColor = [16, 185, 129];
               data.cell.styles.fontStyle = 'bold';
-            } else if (data.cell.raw === 'Failed' || data.cell.raw === 'Declined' || data.cell.raw === 'Error') {
+            } else if (data.cell.raw === 'Failed' || data.cell.raw === 'Declined') {
               data.cell.styles.textColor = [239, 68, 68];
               data.cell.styles.fontStyle = 'bold';
             } else {
@@ -223,7 +277,6 @@ export default function TransactionLedger() {
         }
       });
 
-      // Footer
       doc.setFontSize(8);
       doc.setTextColor(156, 163, 175);
       doc.text('Confidential Document - Internal Finance Administration Langoora Platform', 14, 285);
