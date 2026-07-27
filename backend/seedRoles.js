@@ -1,121 +1,150 @@
 // backend/seedRoles.js
+// Run: node backend/seedRoles.js
+
 const { db } = require('./config/firebase');
 
-// ----- Define default roles (matching the recommended RBAC structure) -----
-const defaultRoles = [
-  {
-    id: 'super_admin',
+// ================================================================
+// ✅ ROLES CONFIGURATION - UPDATED (Matches your requirements)
+// ================================================================
+const ROLES_CONFIG = {
+  super_admin: {
     name: 'Super Admin',
     level: 1,
     permissions: {
       manage_users: true,
       manage_roles: true,
-      approve_tutors: true,
+      manage_system: true,
+      view_audit_logs: true,
       view_reports: true,
+      approve_tutors: true,
       manage_exams: true,
       manage_finance: true,
-      manage_system: true
+      view_own_profile: true
     }
   },
-  {
-    id: 'admin',
+  admin: {
     name: 'Admin',
     level: 2,
     permissions: {
       manage_users: true,
-      manage_roles: false,
-      approve_tutors: false,
+      manage_system: true,
+      view_audit_logs: true,
       view_reports: true,
-      manage_exams: true,
-      manage_finance: true,
-      manage_system: false
+      approve_tutors: true,
+      view_own_profile: true
     }
   },
-  {
-    id: 'sub_admin',
+  sub_admin: {
     name: 'Sub Admin',
     level: 3,
     permissions: {
       manage_users: true,
-      manage_roles: false,
-      approve_tutors: false,
       view_reports: true,
-      manage_exams: false,
-      manage_finance: false,
-      manage_system: false
+      view_own_profile: true
     }
   },
-  {
-    id: 'validator',
+  validator: {
     name: 'Validator',
     level: 4,
     permissions: {
-      approve_tutors: true,
-      manage_exams: false,
-      manage_finance: false,
-      manage_system: false
+      verify_tutors: true,
+      audit_exams: true,
+      view_own_profile: true
     }
   },
-  {
-    id: 'finance',
+  finance: {
     name: 'Finance Admin',
     level: 4,
     permissions: {
-      manage_finance: true,
-      manage_system: false
+      manage_subscriptions: true,
+      manage_credits: true,
+      approve_payouts: true,
+      view_reports: true,
+      view_own_profile: true
     }
   },
-  {
-    id: 'tutor',
+  tutor: {
     name: 'Tutor',
     level: 5,
-    permissions: {}
+    permissions: {
+      create_exams: true,
+      manage_own_content: true,
+      view_student_progress: true,
+      view_reports: true,
+      view_own_profile: true
+    }
   },
-  {
-    id: 'student',
+  student: {
     name: 'Student',
     level: 5,
-    permissions: {}
-  }
-];
-
-// ----- Seed function -----
-const seedRoles = async () => {
-  try {
-    console.log('🔍 Checking if roles already exist...');
-
-    // Check if any role document exists
-    const snapshot = await db.collection('roles').limit(1).get();
-    if (!snapshot.empty) {
-      console.log('⚠️ Roles already exist in Firestore. Skipping seeding.');
-      console.log('📋 To force re‑seed, delete the "roles" collection first.');
-      return;
+    permissions: {
+      view_own_profile: true
     }
-
-    console.log('📝 Creating default roles...');
-    const batch = db.batch();
-
-    for (const role of defaultRoles) {
-      const { id, ...roleData } = role; // Remove 'id' from data (it becomes the document ID)
-      roleData.createdAt = new Date().toISOString();
-      roleData.createdBy = 'system'; // System-created roles
-      const docRef = db.collection('roles').doc(id);
-      batch.set(docRef, roleData);
-    }
-
-    await batch.commit();
-    console.log('✅ Default roles created successfully!');
-
-    // Optional: List all created roles
-    const created = await db.collection('roles').get();
-    console.log('\n📋 Created roles:');
-    created.forEach(doc => {
-      console.log(`  - ${doc.id}: ${doc.data().name} (level ${doc.data().level})`);
-    });
-  } catch (error) {
-    console.error('❌ Error seeding roles:', error);
   }
 };
 
-// Run the seeder
+// ================================================================
+// ✅ SEED FUNCTION
+// ================================================================
+const seedRoles = async () => {
+  console.log('🔄 Starting roles seed...');
+  console.log('📋 Roles to seed:', Object.keys(ROLES_CONFIG).length);
+
+  try {
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const [roleId, roleData] of Object.entries(ROLES_CONFIG)) {
+      const roleRef = db.collection('roles').doc(roleId);
+      const roleDoc = await roleRef.get();
+
+      const payload = {
+        name: roleData.name,
+        level: roleData.level,
+        permissions: roleData.permissions,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (roleDoc.exists) {
+        // ✅ Update existing role
+        await roleRef.update(payload);
+        updatedCount++;
+        console.log(`✅ Updated role: ${roleId} (${roleData.name})`);
+      } else {
+        // ✅ Create new role
+        payload.createdAt = new Date().toISOString();
+        payload.createdBy = 'system';
+        await roleRef.set(payload);
+        createdCount++;
+        console.log(`✅ Created role: ${roleId} (${roleData.name})`);
+      }
+
+      // ✅ Log permissions
+      const permKeys = Object.keys(roleData.permissions).filter(k => roleData.permissions[k] === true);
+      console.log(`   📋 Permissions (${permKeys.length}): ${permKeys.join(', ') || 'none'}`);
+      console.log('');
+    }
+
+    console.log('✅ Seed completed successfully!');
+    console.log(`📊 Created: ${createdCount}, Updated: ${updatedCount}`);
+
+    // ✅ List all roles after seed
+    console.log('\n📋 All roles in Firestore:');
+    const snapshot = await db.collection('roles').get();
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const permCount = Object.keys(data.permissions || {}).filter(k => data.permissions[k] === true).length;
+      console.log(`  - ${doc.id}: ${data.name} (level ${data.level}, ${permCount} permissions)`);
+    });
+
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error seeding roles:', error);
+    process.exit(1);
+  }
+};
+
+// ================================================================
+// ✅ RUN SEED
+// ================================================================
 seedRoles();

@@ -1,7 +1,16 @@
+// backend/controllers/payoutController.js
 const { db } = require('../config/firebase');
 
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
+
 // ============================================
-// 1. CREATE PAYOUT REQUEST
+// 1. CREATE PAYOUT REQUEST - WITH AUDIT LOG
 // ============================================
 exports.createPayoutRequest = async (req, res) => {
     try {
@@ -19,12 +28,43 @@ exports.createPayoutRequest = async (req, res) => {
         };
         
         await db.collection('tutor_payouts').add(payoutData);
+
+        // ✅ FINANCIAL AUDIT LOG - PAYOUT REQUEST CREATED
+        logAudit(auditLogService.logFinancial, {
+            userId: tutorId,
+            userEmail: req.user?.email || 'unknown',
+            actorId: tutorId,
+            actorEmail: req.user?.email || 'unknown',
+            action: 'payout',
+            entityType: 'payout',
+            amount: totalAmount,
+            credits: tokens,
+            status: 'pending',
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
+
         res.status(201).json({ 
             success: true,
             message: "Payout request created successfully!" 
         });
     } catch (error) {
         console.error("Error in createPayoutRequest:", error);
+        
+        // ✅ FINANCIAL AUDIT LOG - FAILED PAYOUT REQUEST
+        logAudit(auditLogService.logFinancial, {
+            userId: req.body.tutorId || 'unknown',
+            userEmail: req.user?.email || 'unknown',
+            actorId: req.body.tutorId || 'unknown',
+            actorEmail: req.user?.email || 'unknown',
+            action: 'payout',
+            entityType: 'payout',
+            status: 'failed',
+            error: error.message,
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
+
         res.status(500).json({ 
             success: false,
             error: error.message 
@@ -33,21 +73,18 @@ exports.createPayoutRequest = async (req, res) => {
 };
 
 // ============================================
-// 2. GET ALL PAYOUTS (සංශෝධිත)
+// 2. GET ALL PAYOUTS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getAllPayouts = async (req, res) => {
     try {
-        // 1. Tutor Payouts සියල්ල ගන්න
         const payoutSnapshot = await db.collection('tutor_payouts').get();
         const payouts = payoutSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
         }));
 
-        // 2. Settled Payouts (transactionCreated === true)
         const settledPayouts = payouts.filter(p => p.status === 'Settled' && p.transactionCreated === true);
 
-        // 3. Total Credits ගණනය කරන්න (සියලුම completed Payout transactions වලින්)
         const transactionSnapshot = await db.collection('transactions')
             .where('status', '==', 'completed')
             .where('type', '==', 'Payout')
@@ -84,7 +121,7 @@ exports.getAllPayouts = async (req, res) => {
 };
 
 // ============================================
-// 3. GET SETTLED PAYOUTS
+// 3. GET SETTLED PAYOUTS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getSettledPayouts = async (req, res) => {
     try {
@@ -113,7 +150,7 @@ exports.getSettledPayouts = async (req, res) => {
 };
 
 // ============================================
-// 4. GET TOTAL USED CREDITS
+// 4. GET TOTAL USED CREDITS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getTotalUsedCredits = async (req, res) => {
     try {
@@ -151,7 +188,7 @@ exports.getTotalUsedCredits = async (req, res) => {
 };
 
 // ============================================
-// 5. UPDATE PAYOUT STATUS (SETTLE PAYOUT - ප්‍රධාන ක්‍රියාවලිය)
+// 5. UPDATE PAYOUT STATUS (SETTLE PAYOUT) - WITH AUDIT LOG
 // ============================================
 exports.updatePayoutStatus = async (req, res) => {
     try {
@@ -202,7 +239,7 @@ exports.updatePayoutStatus = async (req, res) => {
                 updatedAt: new Date().toISOString()
             });
 
-            // D. Tutor ගේ credits ගණනය කර update කරන්න (පවතින credits වලින් අඩු කරන්න)
+            // D. Tutor ගේ credits ගණනය කර update කරන්න
             const tutorDoc = await db.collection('users').doc(payoutData.tutorId).get();
             if (tutorDoc.exists) {
                 const tutorData = tutorDoc.data();
@@ -217,7 +254,23 @@ exports.updatePayoutStatus = async (req, res) => {
                 console.log(`✅ Tutor credits updated: ${currentCredits} -> ${Math.max(0, newCredits)}`);
             }
 
-            // E. Success response
+            // ✅ FINANCIAL AUDIT LOG - PAYOUT SETTLED
+            logAudit(auditLogService.logFinancial, {
+                userId: payoutData.tutorId,
+                userEmail: req.user?.email || 'unknown',
+                actorId: req.user?.uid || 'system',
+                actorEmail: req.user?.email || 'system@langoora.com',
+                action: 'payout',
+                entityType: 'payout',
+                entityId: id,
+                amount: payoutData.totalAmount,
+                credits: payoutData.totalTokens,
+                status: 'completed',
+                paymentMethod: 'Bank Transfer',
+                ip: req.ip || req.connection.remoteAddress,
+                userAgent: req.headers['user-agent'] || 'unknown'
+            });
+
             return res.status(200).json({
                 success: true,
                 message: "Payout settled successfully! Transaction created and added to card.",
@@ -239,6 +292,22 @@ exports.updatePayoutStatus = async (req, res) => {
                 status: 'Declined',
                 declinedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
+            });
+
+            // ✅ FINANCIAL AUDIT LOG - PAYOUT DECLINED
+            logAudit(auditLogService.logFinancial, {
+                userId: payoutData.tutorId,
+                userEmail: req.user?.email || 'unknown',
+                actorId: req.user?.uid || 'system',
+                actorEmail: req.user?.email || 'system@langoora.com',
+                action: 'payout',
+                entityType: 'payout',
+                entityId: id,
+                amount: payoutData.totalAmount,
+                credits: payoutData.totalTokens,
+                status: 'declined',
+                ip: req.ip || req.connection.remoteAddress,
+                userAgent: req.headers['user-agent'] || 'unknown'
             });
 
             return res.status(200).json({
@@ -270,10 +339,7 @@ exports.updatePayoutStatus = async (req, res) => {
 };
 
 // ============================================
-// 6. GET ACTIVE TUTORS FOR PAYOUTS
-// ============================================
-// ============================================
-// 6. GET ACTIVE TUTORS FOR PAYOUTS (With Bank Cards from Sub-collection)
+// 6. GET ACTIVE TUTORS FOR PAYOUTS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getActiveTutorsPayouts = async (req, res) => {
     try {
@@ -299,12 +365,10 @@ exports.getActiveTutorsPayouts = async (req, res) => {
 
         const tutors = [];
         
-        // ⭐ Loop through each tutor to get bank cards from sub-collection
         for (const doc of snapshot.docs) {
             const data = doc.data();
             console.log(`📝 Tutor document: ${doc.id}`, data);
             
-            // ⭐ Get bank cards from sub-collection
             let bankName = "Not Specified";
             let bankAccount = "N/A";
             
@@ -368,7 +432,7 @@ exports.getActiveTutorsPayouts = async (req, res) => {
 };
 
 // ============================================
-// 7. GET SINGLE TUTOR DETAILS
+// 7. GET SINGLE TUTOR DETAILS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getTutorDetails = async (req, res) => {
     try {
@@ -400,16 +464,35 @@ exports.getTutorDetails = async (req, res) => {
 };
 
 // ============================================
-// 8. UPDATE TUTOR CREDITS
+// 8. UPDATE TUTOR CREDITS - WITH AUDIT LOG
 // ============================================
 exports.updateTutorCredits = async (req, res) => {
     try {
         const { id } = req.params;
         const { credits } = req.body;
+
+        // Get old credits before update
+        const tutorDoc = await db.collection('users').doc(id).get();
+        const oldCredits = tutorDoc.exists ? tutorDoc.data().credits || 0 : 0;
         
         await db.collection('users').doc(id).update({
             credits: credits,
             updatedAt: new Date().toISOString()
+        });
+
+        // ✅ FINANCIAL AUDIT LOG - CREDITS UPDATED
+        logAudit(auditLogService.logFinancial, {
+            userId: id,
+            userEmail: req.user?.email || 'unknown',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'credit_update',
+            entityType: 'tutor_credits',
+            entityId: id,
+            credits: credits,
+            changes: { oldCredits, newCredits: credits },
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
         });
         
         res.status(200).json({
@@ -425,9 +508,8 @@ exports.updateTutorCredits = async (req, res) => {
     }
 };
 
-
 // ============================================
-// 9. GET DECLINED PAYOUTS
+// 9. GET DECLINED PAYOUTS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getDeclinedPayouts = async (req, res) => {
     try {
@@ -455,13 +537,12 @@ exports.getDeclinedPayouts = async (req, res) => {
 };
 
 // ============================================
-// 10. DELETE PAYOUT (Declined only)
+// 10. DELETE PAYOUT (Declined only) - WITH AUDIT LOG
 // ============================================
 exports.deletePayout = async (req, res) => {
     try {
         const { id } = req.params;
         
-        // 1. Payout document එක ගන්න
         const payoutDoc = await db.collection('tutor_payouts').doc(id).get();
         if (!payoutDoc.exists) {
             return res.status(404).json({
@@ -472,7 +553,6 @@ exports.deletePayout = async (req, res) => {
         
         const payoutData = payoutDoc.data();
         
-        // 2. Declined payouts පමණක් delete කළ හැක
         if (payoutData.status !== 'Declined') {
             return res.status(400).json({
                 success: false,
@@ -480,14 +560,28 @@ exports.deletePayout = async (req, res) => {
             });
         }
         
-        // 3. Transaction එකක් තිබේ නම් එයත් delete කරන්න
         if (payoutData.transactionId) {
             await db.collection('transactions').doc(payoutData.transactionId).delete();
             console.log(`✅ Transaction ${payoutData.transactionId} deleted`);
         }
         
-        // 4. Payout document එක delete කරන්න
         await db.collection('tutor_payouts').doc(id).delete();
+
+        // ✅ FINANCIAL AUDIT LOG - PAYOUT DELETED
+        logAudit(auditLogService.logFinancial, {
+            userId: payoutData.tutorId || 'unknown',
+            userEmail: req.user?.email || 'unknown',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'payout',
+            entityType: 'payout',
+            entityId: id,
+            amount: payoutData.totalAmount || 0,
+            credits: payoutData.totalTokens || 0,
+            status: 'deleted',
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
         
         res.status(200).json({
             success: true,
@@ -503,11 +597,10 @@ exports.deletePayout = async (req, res) => {
 };
 
 // ============================================
-// 11. DELETE ALL DECLINED PAYOUTS
+// 11. DELETE ALL DECLINED PAYOUTS - WITH AUDIT LOG
 // ============================================
 exports.deleteAllDeclinedPayouts = async (req, res) => {
     try {
-        // 1. All declined payouts ගන්න
         const snapshot = await db.collection('tutor_payouts')
             .where('status', '==', 'Declined')
             .get();
@@ -522,21 +615,41 @@ exports.deleteAllDeclinedPayouts = async (req, res) => {
         
         let deletedCount = 0;
         let deletedTransactions = 0;
+        const deletedPayouts = [];
         
-        // 2. Each payout එක delete කරන්න
         for (const doc of snapshot.docs) {
             const data = doc.data();
+            deletedPayouts.push({
+                id: doc.id,
+                tutorId: data.tutorId,
+                totalTokens: data.totalTokens || 0,
+                totalAmount: data.totalAmount || 0
+            });
             
-            // Transaction තිබේ නම් delete කරන්න
             if (data.transactionId) {
                 await db.collection('transactions').doc(data.transactionId).delete();
                 deletedTransactions++;
             }
             
-            // Payout document එක delete කරන්න
             await db.collection('tutor_payouts').doc(doc.id).delete();
             deletedCount++;
         }
+
+        // ✅ FINANCIAL AUDIT LOG - BULK PAYOUT DELETE
+        logAudit(auditLogService.logFinancial, {
+            userId: 'system',
+            userEmail: req.user?.email || 'system@langoora.com',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'payout',
+            entityType: 'payout',
+            action: 'bulk_delete',
+            entityId: 'bulk',
+            status: 'deleted',
+            changes: { count: deletedCount, payouts: deletedPayouts },
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
         
         res.status(200).json({
             success: true,
@@ -554,7 +667,7 @@ exports.deleteAllDeclinedPayouts = async (req, res) => {
 };
 
 // ============================================
-// 12. GET PENDING PAYOUTS
+// 12. GET PENDING PAYOUTS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getPendingPayouts = async (req, res) => {
     try {
@@ -582,7 +695,7 @@ exports.getPendingPayouts = async (req, res) => {
 };
 
 // ============================================
-// 13. GET PAYOUT BY ID
+// 13. GET PAYOUT BY ID (NO AUDIT - READ ONLY)
 // ============================================
 exports.getPayoutById = async (req, res) => {
     try {
@@ -598,7 +711,6 @@ exports.getPayoutById = async (req, res) => {
         
         const data = payoutDoc.data();
         
-        // Transaction details ගන්න (ඇත්නම්)
         let transaction = null;
         if (data.transactionId) {
             const transactionDoc = await db.collection('transactions').doc(data.transactionId).get();
@@ -628,7 +740,7 @@ exports.getPayoutById = async (req, res) => {
 };
 
 // ============================================
-// 14. BULK UPDATE PAYOUT STATUS
+// 14. BULK UPDATE PAYOUT STATUS - WITH AUDIT LOG
 // ============================================
 exports.bulkUpdatePayoutStatus = async (req, res) => {
     try {
@@ -642,20 +754,48 @@ exports.bulkUpdatePayoutStatus = async (req, res) => {
         }
         
         const results = [];
+        const updatedPayouts = [];
+        
         for (const id of payoutIds) {
             try {
-                // Update කරන්න
+                // Get payout details before update
+                const payoutDoc = await db.collection('tutor_payouts').doc(id).get();
+                const payoutData = payoutDoc.exists ? payoutDoc.data() : null;
+                
                 await db.collection('tutor_payouts').doc(id).update({
                     status: status,
                     updatedAt: new Date().toISOString(),
                     ...(status === 'Settled' ? { settledAt: new Date().toISOString() } : {}),
                     ...(status === 'Declined' ? { declinedAt: new Date().toISOString() } : {})
                 });
+                
                 results.push({ id, success: true });
+                if (payoutData) {
+                    updatedPayouts.push({
+                        id,
+                        tutorId: payoutData.tutorId,
+                        totalAmount: payoutData.totalAmount || 0,
+                        totalTokens: payoutData.totalTokens || 0
+                    });
+                }
             } catch (error) {
                 results.push({ id, success: false, error: error.message });
             }
         }
+
+        // ✅ FINANCIAL AUDIT LOG - BULK STATUS UPDATE
+        logAudit(auditLogService.logFinancial, {
+            userId: 'system',
+            userEmail: req.user?.email || 'system@langoora.com',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'bulk_update',
+            entityType: 'payout',
+            status: status,
+            changes: { count: results.filter(r => r.success).length, payouts: updatedPayouts },
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
         
         res.status(200).json({
             success: true,
@@ -672,15 +812,13 @@ exports.bulkUpdatePayoutStatus = async (req, res) => {
 };
 
 // ============================================
-// 15. GET PAYOUT STATISTICS DASHBOARD
+// 15. GET PAYOUT STATISTICS (NO AUDIT - READ ONLY)
 // ============================================
 exports.getPayoutStatistics = async (req, res) => {
     try {
-        // Total payouts
         const totalSnapshot = await db.collection('tutor_payouts').get();
         const totalPayouts = totalSnapshot.size;
         
-        // By status
         const pendingSnapshot = await db.collection('tutor_payouts')
             .where('status', '==', 'Pending')
             .get();
@@ -696,7 +834,6 @@ exports.getPayoutStatistics = async (req, res) => {
             .get();
         const declinedCount = declinedSnapshot.size;
         
-        // Total amounts
         let totalAmount = 0;
         let totalTutorShare = 0;
         let totalPlatformShare = 0;
@@ -707,7 +844,6 @@ exports.getPayoutStatistics = async (req, res) => {
             totalPlatformShare += data.platformShare || 0;
         });
         
-        // Total credits from transactions
         const transactionSnapshot = await db.collection('transactions')
             .where('status', '==', 'completed')
             .where('type', '==', 'Payout')
@@ -743,13 +879,12 @@ exports.getPayoutStatistics = async (req, res) => {
 };
 
 // ============================================
-// 16. REVERT SETTLED PAYOUT (Admin only)
+// 16. REVERT SETTLED PAYOUT (Admin only) - WITH AUDIT LOG
 // ============================================
 exports.revertSettledPayout = async (req, res) => {
     try {
         const { id } = req.params;
         
-        // Payout document එක ගන්න
         const payoutDoc = await db.collection('tutor_payouts').doc(id).get();
         if (!payoutDoc.exists) {
             return res.status(404).json({
@@ -760,7 +895,6 @@ exports.revertSettledPayout = async (req, res) => {
         
         const payoutData = payoutDoc.data();
         
-        // Settled payouts පමණක් revert කළ හැක
         if (payoutData.status !== 'Settled') {
             return res.status(400).json({
                 success: false,
@@ -768,13 +902,11 @@ exports.revertSettledPayout = async (req, res) => {
             });
         }
         
-        // Transaction එක delete කරන්න
         if (payoutData.transactionId) {
             await db.collection('transactions').doc(payoutData.transactionId).delete();
             console.log(`✅ Transaction ${payoutData.transactionId} deleted`);
         }
         
-        // Tutor credits ආපසු add කරන්න
         const tutorDoc = await db.collection('users').doc(payoutData.tutorId).get();
         if (tutorDoc.exists) {
             const tutorData = tutorDoc.data();
@@ -788,13 +920,28 @@ exports.revertSettledPayout = async (req, res) => {
             console.log(`✅ Tutor credits reverted: ${currentCredits} -> ${newCredits}`);
         }
         
-        // Payout status එක Pending ලෙස update කරන්න
         await db.collection('tutor_payouts').doc(id).update({
             status: 'Pending',
             transactionId: null,
             transactionCreated: false,
             settledAt: null,
             updatedAt: new Date().toISOString()
+        });
+
+        // ✅ FINANCIAL AUDIT LOG - PAYOUT REVERTED
+        logAudit(auditLogService.logFinancial, {
+            userId: payoutData.tutorId || 'unknown',
+            userEmail: req.user?.email || 'unknown',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'refund',
+            entityType: 'payout',
+            entityId: id,
+            amount: payoutData.totalAmount || 0,
+            credits: payoutData.totalTokens || 0,
+            status: 'reverted',
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
         });
         
         res.status(200).json({

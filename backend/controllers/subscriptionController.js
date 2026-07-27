@@ -1,6 +1,15 @@
+// backend/controllers/subscriptionController.js
 const crypto = require('crypto');
 const subscriptionService = require('../services/SubscriptionService');
-const { db } = require('../config/firebase'); 
+const { db } = require('../config/firebase');
+
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
 
 // ==========================================
 // 🔒 HELPER FUNCTION: PayHere Hash Generator
@@ -15,6 +24,8 @@ function generatePayhereHash(merchantId, orderId, amount, currency, merchantSecr
 // ==========================================
 // 1. SUBSCRIPTION PLANS CONTROLLER
 // ==========================================
+
+// GET PLANS (NO AUDIT - READ ONLY)
 exports.getPlans = async (req, res) => {
   try {
     const plans = await subscriptionService.getAllPlans();
@@ -25,32 +36,103 @@ exports.getPlans = async (req, res) => {
   }
 };
 
+// CREATE PLAN - WITH AUDIT LOG
 exports.createPlan = async (req, res) => {
   try {
     if (!req.body.name || req.body.price === undefined) {
       return res.status(400).json({ message: "Name and Price are required" });
     }
     const newPlan = await subscriptionService.createNewPlan(req.body);
+
+    // ✅ FINANCIAL AUDIT LOG - PLAN CREATED
+    logAudit(auditLogService.logFinancial, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'subscription',
+      entityType: 'plan',
+      entityId: newPlan.id,
+      amount: newPlan.price || 0,
+      credits: newPlan.credits || 0,
+      status: 'created',
+      paymentMethod: 'N/A',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(201).json(newPlan);
   } catch (error) {
     return res.status(500).json({ message: "Plan creation error", error: error.message });
   }
 };
 
+// UPDATE PLAN - WITH AUDIT LOG
 exports.updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Get old plan data before update
+    const oldPlanDoc = await db.collection('subscription_plans').doc(id).get();
+    const oldPlanData = oldPlanDoc.exists ? oldPlanDoc.data() : null;
+
     await subscriptionService.updateExistingPlan(id, req.body);
+
+    // ✅ FINANCIAL AUDIT LOG - PLAN UPDATED
+    const changes = {};
+    const fieldsToTrack = ['name', 'price', 'credits', 'features', 'popular', 'active'];
+    fieldsToTrack.forEach(field => {
+      if (oldPlanData && oldPlanData[field] !== req.body[field]) {
+        changes[field] = { old: oldPlanData[field], new: req.body[field] };
+      }
+    });
+
+    logAudit(auditLogService.logFinancial, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'subscription',
+      entityType: 'plan',
+      entityId: id,
+      changes: changes,
+      status: 'updated',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ message: "Plan updated successfully", id });
   } catch (error) {
     return res.status(500).json({ message: "Plan update error", error: error.message });
   }
 };
 
+// DELETE PLAN - WITH AUDIT LOG
 exports.deletePlan = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Get plan data before deletion
+    const planDoc = await db.collection('subscription_plans').doc(id).get();
+    const planData = planDoc.exists ? planDoc.data() : null;
+
     await subscriptionService.deleteExistingPlan(id);
+
+    // ✅ FINANCIAL AUDIT LOG - PLAN DELETED
+    logAudit(auditLogService.logFinancial, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'subscription',
+      entityType: 'plan',
+      entityId: id,
+      entityName: planData?.name || id,
+      status: 'deleted',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ message: "Plan deleted successfully", id });
   } catch (error) {
     return res.status(500).json({ message: "Plan deletion error", error: error.message });
@@ -120,6 +202,24 @@ exports.upgradeSubscription = async (req, res) => {
 
     console.log(`✅ Transaction Created Successfully: ${orderId}`);
 
+    // ✅ FINANCIAL AUDIT LOG - SUBSCRIPTION INITIATED
+    logAudit(auditLogService.logFinancial, {
+      userId: studentId,
+      userEmail: userData?.email || 'unknown',
+      actorId: studentId,
+      actorEmail: userData?.email || 'unknown',
+      action: 'subscription',
+      entityType: 'plan',
+      entityId: planId,
+      entityName: planData.name,
+      amount: Number(amount),
+      credits: planData.credits || 0,
+      status: 'pending',
+      paymentMethod: 'PayHere',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({
       success: true,
       payhereData: {
@@ -181,6 +281,12 @@ exports.handlePayhereNotification = async (req, res) => {
     if (localMd5sig === md5sig && status_code === "2") {
       const transactionRef = db.collection('transactions').doc(order_id);
 
+      let studentId = null;
+      let planId = null;
+      let planName = null;
+      let creditsAdded = 0;
+      let amountPaid = 0;
+
       // Execute transaction to prevent concurrent modification issues
       await db.runTransaction(async (transaction) => {
         const txnDoc = await transaction.get(transactionRef);
@@ -196,14 +302,19 @@ exports.handlePayhereNotification = async (req, res) => {
           return;
         }
 
-        const studentId = txnData.student_id;
+        studentId = txnData.student_id;
+        planId = txnData.plan_id;
+        planName = txnData.plan_name;
+        creditsAdded = txnData.credits_added || 0;
+        amountPaid = Number(payhere_amount);
+
         const userRef = db.collection('users').doc(studentId);
         const userDoc = await transaction.get(userRef);
 
         // 1. Update Transaction Status
         transaction.update(transactionRef, {
           status: 'completed',
-          amount_paid: Number(payhere_amount),
+          amount_paid: amountPaid,
           currency: payhere_currency,
           payhere_payment_id: req.body.payment_id || null,
           updated_at: new Date().toISOString()
@@ -213,17 +324,17 @@ exports.handlePayhereNotification = async (req, res) => {
         if (userDoc.exists) {
           const userData = userDoc.data() || {};
           const currentBalance = userData.wallet_balance || userData.credits || 0;
-          const newBalance = currentBalance + (txnData.credits_added || 0);
+          const newBalance = currentBalance + creditsAdded;
 
           const expiryDate = new Date();
           expiryDate.setDate(expiryDate.getDate() + 30);
 
           transaction.update(userRef, {
             wallet_balance: newBalance,
-            credits: newBalance, // Sync with credits field if used across application
+            credits: newBalance,
             subscription: {
-              plan_id: txnData.plan_id || 'default_plan',
-              plan_name: txnData.plan_name || 'Standard Plan',
+              plan_id: planId || 'default_plan',
+              plan_name: planName || 'Standard Plan',
               status: 'active',
               expires_at: expiryDate.toISOString()
             }
@@ -232,12 +343,62 @@ exports.handlePayhereNotification = async (req, res) => {
       });
 
       console.log(`✅ Success! Updated Firestore for Order: ${order_id}`);
+
+      // ✅ FINANCIAL AUDIT LOG - SUBSCRIPTION COMPLETED (Payment Success)
+      logAudit(auditLogService.logFinancial, {
+        userId: studentId,
+        userEmail: req.body?.email || 'unknown',
+        actorId: studentId,
+        actorEmail: req.body?.email || 'unknown',
+        action: 'subscription',
+        entityType: 'plan',
+        entityId: planId,
+        entityName: planName,
+        amount: amountPaid,
+        credits: creditsAdded,
+        status: 'completed',
+        paymentMethod: 'PayHere',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+    } else {
+      // ✅ LOG: Webhook validation failed
+      console.log(`⚠️ Webhook validation failed for Order: ${order_id}`);
+      logAudit(auditLogService.logFinancial, {
+        userId: 'system',
+        userEmail: 'system@langoora.com',
+        actorId: 'system',
+        actorEmail: 'system@langoora.com',
+        action: 'subscription',
+        entityType: 'webhook',
+        entityId: order_id || 'unknown',
+        status: 'failed',
+        error: 'Webhook validation failed - invalid signature or status code',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
     }
 
     return res.status(200).send("Notification Processed");
 
   } catch (error) {
     console.error("PayHere Webhook Notification Error:", error);
+
+    // ✅ LOG: Webhook processing error
+    logAudit(auditLogService.logFinancial, {
+      userId: 'system',
+      userEmail: 'system@langoora.com',
+      actorId: 'system',
+      actorEmail: 'system@langoora.com',
+      action: 'subscription',
+      entityType: 'webhook',
+      entityId: req.body?.order_id || 'unknown',
+      status: 'failed',
+      error: error.message,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(500).send(error.message);
   }
 };
@@ -245,6 +406,8 @@ exports.handlePayhereNotification = async (req, res) => {
 // ==========================================
 // 4. EXAM CATEGORY CONTROLLER
 // ==========================================
+
+// GET CATEGORIES (NO AUDIT - READ ONLY)
 exports.getCategories = async (req, res) => {
   try {
     const categories = await subscriptionService.getAllCategories();
@@ -254,32 +417,103 @@ exports.getCategories = async (req, res) => {
   }
 };
 
+// CREATE CATEGORY - WITH AUDIT LOG
 exports.createCategory = async (req, res) => {
   try {
     if (!req.body.name || req.body.credits === undefined) {
       return res.status(400).json({ message: "Category Name and Credits are required" });
     }
     const newCategory = await subscriptionService.createNewCategory(req.body);
+
+    // ✅ FINANCIAL AUDIT LOG - CATEGORY CREATED
+    logAudit(auditLogService.logFinancial, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'subscription',
+      entityType: 'category',
+      entityId: newCategory.id,
+      entityName: req.body.name,
+      credits: req.body.credits || 0,
+      status: 'created',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(201).json(newCategory);
   } catch (error) {
     return res.status(500).json({ message: "Category creation error", error: error.message });
   }
 };
 
+// UPDATE CATEGORY - WITH AUDIT LOG
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Get old category data before update
+    const oldCategoryDoc = await db.collection('exam_categories').doc(id).get();
+    const oldCategoryData = oldCategoryDoc.exists ? oldCategoryDoc.data() : null;
+
     await subscriptionService.updateExistingCategory(id, req.body);
+
+    // ✅ FINANCIAL AUDIT LOG - CATEGORY UPDATED
+    const changes = {};
+    const fieldsToTrack = ['name', 'credits', 'exams', 'status'];
+    fieldsToTrack.forEach(field => {
+      if (oldCategoryData && oldCategoryData[field] !== req.body[field]) {
+        changes[field] = { old: oldCategoryData[field], new: req.body[field] };
+      }
+    });
+
+    logAudit(auditLogService.logFinancial, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'subscription',
+      entityType: 'category',
+      entityId: id,
+      entityName: req.body.name || oldCategoryData?.name || id,
+      changes: changes,
+      status: 'updated',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ message: "Category updated successfully", id });
   } catch (error) {
     return res.status(500).json({ message: "Category update error", error: error.message });
   }
 };
 
+// DELETE CATEGORY - WITH AUDIT LOG
 exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Get category data before deletion
+    const categoryDoc = await db.collection('exam_categories').doc(id).get();
+    const categoryData = categoryDoc.exists ? categoryDoc.data() : null;
+
     await subscriptionService.deleteExistingCategory(id);
+
+    // ✅ FINANCIAL AUDIT LOG - CATEGORY DELETED
+    logAudit(auditLogService.logFinancial, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'subscription',
+      entityType: 'category',
+      entityId: id,
+      entityName: categoryData?.name || id,
+      status: 'deleted',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ message: "Category deleted successfully", id });
   } catch (error) {
     return res.status(500).json({ message: "Category deletion error", error: error.message });

@@ -30,8 +30,16 @@ const SUPER_ADMIN_PERMISSIONS = {
   view_own_profile: true
 };
 
+// ✅ Finance Admin permissions - ONLY these 3
+const FINANCE_ADMIN_PERMISSIONS = {
+  manage_subscriptions: true,
+  manage_credits: true,
+  approve_payouts: true
+};
+
 /**
  * 1. Authentication Middleware - COMPLETE FIX
+ * ✅ FIX 3: CORRECT ROLE DETECTION using roleId
  */
 const protect = async (req, res, next) => {
   let token;
@@ -64,19 +72,31 @@ const protect = async (req, res, next) => {
 
       fullUserData = userDoc.data();
       
+      // ✅✅✅ CRITICAL FIX: Use roleId if available, fallback to role
+      const userRole = fullUserData.roleId || fullUserData.role || "student";
+      
       console.log(`🔍 User found: ${fullUserData.email}`);
       console.log(`🔍 Role: ${fullUserData.role}`);
       console.log(`🔍 RoleId: ${fullUserData.roleId}`);
+      console.log(`🔍 Final User Role: ${userRole}`);
 
       let permissions = {};
 
       // ✅ STEP 1: Check if user is SUPER_ADMIN
-      if (fullUserData.role === 'super_admin' || fullUserData.roleId === 'super_admin') {
+      if (userRole === 'super_admin') {
         // ✅ Super Admin gets ALL permissions
         permissions = { ...SUPER_ADMIN_PERMISSIONS };
         console.log(`✅ Super Admin detected - ALL permissions granted to ${fullUserData.email}`);
-      } else {
-        // ✅ STEP 2: Load from permissions array
+      } 
+      // ✅ STEP 2: Check if user is FINANCE_ADMIN
+      else if (userRole === 'finance' || userRole === 'finance_admin') {
+        // ✅ Finance Admin gets ONLY 3 permissions
+        permissions = { ...FINANCE_ADMIN_PERMISSIONS };
+        console.log(`✅ Finance Admin detected - ${Object.keys(permissions).length} permissions granted to ${fullUserData.email}`);
+        console.log(`📋 Finance permissions:`, Object.keys(permissions));
+      } 
+      else {
+        // ✅ STEP 3: Load from permissions array
         if (fullUserData.permissions && Array.isArray(fullUserData.permissions)) {
           fullUserData.permissions.forEach(p => {
             if (typeof p === 'string') {
@@ -86,7 +106,7 @@ const protect = async (req, res, next) => {
           console.log(`✅ Loaded permissions for ${fullUserData.email}:`, Object.keys(permissions));
         }
         
-        // ✅ STEP 3: Load from privileges array (legacy)
+        // ✅ STEP 4: Load from privileges array (legacy)
         if (fullUserData.privileges && Array.isArray(fullUserData.privileges)) {
           fullUserData.privileges.forEach(p => {
             if (typeof p === 'string') {
@@ -96,8 +116,8 @@ const protect = async (req, res, next) => {
           console.log(`✅ Loaded privileges for ${fullUserData.email}:`, fullUserData.privileges);
         }
         
-        // ✅ STEP 4: If admin role, ensure admin permissions
-        if (fullUserData.role === 'admin' || fullUserData.roleId === 'admin') {
+        // ✅ STEP 5: If admin role, ensure admin permissions
+        if (userRole === 'admin') {
           const adminPerms = {
             manage_users: true,
             manage_system: true,
@@ -110,18 +130,18 @@ const protect = async (req, res, next) => {
         }
       }
 
-      // ✅ Attach everything to req.user
+      // ✅ Attach everything to req.user with CORRECT role
       req.user = {
         uid: decodedUID,
         id: decodedUID,
         email: fullUserData.email || "",
-        role: fullUserData.role || "student",
-        roleId: fullUserData.roleId || null,
+        role: userRole,  // ✅ "finance" විදියට set වෙනවා, "validator" නෙවෙයි
+        roleId: fullUserData.roleId || userRole,
         permissions: permissions,
         ...fullUserData
       };
 
-      console.log(`✅ User authenticated: ${fullUserData.email}`);
+      console.log(`✅ User authenticated: ${fullUserData.email} with role: ${userRole}`);
       console.log(`📋 Final permissions:`, Object.keys(permissions).filter(k => permissions[k]));
 
       return next();
@@ -144,11 +164,13 @@ const protect = async (req, res, next) => {
 
 /**
  * 2. Role-Based Authorization Middleware
+ * ✅ FIXED: Use roleId if available
  */
 const authorizeRoles = (...allowedRoles) => {
   return async (req, res, next) => {
     try {
-      const userRole = req.user && req.user.role;
+      // ✅ Use roleId if available, fallback to role
+      const userRole = req.user?.roleId || req.user?.role;
 
       if (!userRole || !allowedRoles.includes(userRole)) {
         console.log(`❌ Role '${userRole}' not in allowed: ${allowedRoles}`);
