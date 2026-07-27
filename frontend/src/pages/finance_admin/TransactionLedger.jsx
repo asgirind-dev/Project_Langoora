@@ -153,6 +153,13 @@ export default function TransactionLedger() {
         text: 'text-amber-400',
         icon: Clock,
         label: 'Pending'
+      },
+      'Error': { 
+        bg: 'bg-red-500/10', 
+        border: 'border-red-500/20',
+        text: 'text-red-400',
+        icon: XCircle,
+        label: 'Error'
       }
     };
     return statusMap[status] || statusMap['Pending'];
@@ -374,6 +381,7 @@ export default function TransactionLedger() {
               <option value="failed">Failed</option>
               <option value="declined">Declined</option>
               <option value="pending">Pending</option>
+              <option value="error">Error</option>
             </select>
             
             <select
@@ -618,6 +626,7 @@ export default function TransactionLedger() {
                         {selectedLog.status === 'Failed' && <XCircle size={14} className="text-red-400" />}
                         {selectedLog.status === 'Declined' && <XCircle size={14} className="text-red-400" />}
                         {selectedLog.status === 'Pending' && <Clock size={14} className="text-amber-400" />}
+                        {selectedLog.status === 'Error' && <XCircle size={14} className="text-red-400" />}
                         <span className={`text-sm font-bold ${getStatusConfig(selectedLog.status).text}`}>{selectedLog.status || 'Pending'}</span>
                       </span>
                     </div>
