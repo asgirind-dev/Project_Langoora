@@ -634,7 +634,15 @@ const permanentDeleteExam = async (req, res) => {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
+    // Firestore documents/sub-collections first (access-checked inside the
+    // service). Only after that succeeds do we cascade-delete the paper's
+    // Cloudinary folder — deleting media for a paper that failed to be
+    // removed from the DB (e.g. permission error) would orphan Firestore
+    // data with no way to re-attach fresh media.
     const result = await examServices.permanentlyDeleteExamFromDB(examId, tutorId);
+
+    await deleteCloudinaryPaperFolder(examId);
+
     return res.status(200).json(result);
   } catch (error) {
     console.error('Permanent Delete Exam Error:', error);
@@ -717,7 +725,63 @@ const updateExam = async (req, res) => {
 };
 
 // =========================================================================
-// 13. Upload Asset (Audio to Cloudinary | Images to Base64)
+// 🎯 Helper: build the per-paper Cloudinary folder.
+// Every asset (audio AND images) belonging to a given paper is stored
+// under the SAME folder: langoora/papers/{paper_id}. This is what makes
+// the cascade delete (see permanentDeleteExam below) able to wipe out
+// every asset for a paper with a single folder-level Cloudinary call.
+// If a tutor uploads media before the paper has been persisted yet (no
+// paper_id issued), assets fall back to a per-tutor "unassigned" bucket
+// instead of silently disappearing — the frontend forces an early
+// draft-save so a paper_id exists before this fallback is hit in normal
+// usage (see ensureExamId in CreateExamPage.jsx).
+// =========================================================================
+const buildPaperFolder = (paperId, tutorId) => {
+  if (paperId) {
+    return `langoora/papers/${paperId}`;
+  }
+  return `langoora/papers/_unassigned/${tutorId || 'unknown_tutor'}`;
+};
+
+// =========================================================================
+// 🗑️ Cascade Delete: wipe out every image AND audio asset belonging to a
+// paper by deleting its entire Cloudinary folder in one go, whenever that
+// paper is permanently removed. Cloudinary requires resources to be
+// deleted by resource_type before the (now-empty) folder itself can be
+// removed, so both 'image' and 'video' (audio is delivered as a video
+// resource type on Cloudinary) prefixes are cleared first.
+// =========================================================================
+const deleteCloudinaryPaperFolder = async (paperId) => {
+  if (!paperId) return;
+
+  const folderPath = `langoora/papers/${paperId}`;
+
+  try {
+    await cloudinary.api.delete_resources_by_prefix(folderPath, { resource_type: 'image' });
+  } catch (err) {
+    console.error(`Cloudinary: failed clearing image assets for ${folderPath}:`, err.message);
+  }
+
+  try {
+    await cloudinary.api.delete_resources_by_prefix(folderPath, { resource_type: 'video' });
+  } catch (err) {
+    console.error(`Cloudinary: failed clearing audio assets for ${folderPath}:`, err.message);
+  }
+
+  try {
+    await cloudinary.api.delete_folder(folderPath);
+  } catch (err) {
+    // Folder may already be gone, or contain no assets (nothing was ever
+    // uploaded for this paper) — either way this isn't a failure worth
+    // surfacing to the caller.
+    console.warn(`Cloudinary: could not remove folder ${folderPath}:`, err.message);
+  }
+};
+
+// =========================================================================
+// 13. Upload Asset (Audio AND Images -> Cloudinary, identical logic, same
+// per-paper folder). Base64 image handling has been removed: images now
+// behave exactly like audio always did.
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -732,6 +796,11 @@ const uploadAsset = async (req, res) => {
     const fileName = req.file.originalname;
     const ext = path.extname(fileName).toLowerCase();
 
+    // paper_id travels as a normal text field alongside the file in the
+    // multipart form; multer populates req.body for non-file fields too.
+    const paperId = req.body?.paper_id || req.body?.paperId || req.body?.examId || null;
+    const tutorId = req.user?.id || req.user?.uid;
+
     const audioExtensions = ['.mp3', '.wav', '.mpeg', '.mp4', '.ogg', '.webm', '.flac', '.aac', '.wma', '.m4a'];
     const audioMimeTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/mp4', 'audio/m4a', 'application/octet-stream'];
 
@@ -742,52 +811,50 @@ const uploadAsset = async (req, res) => {
 
     const isImage = imageExtensions.includes(ext) || imageMimeTypes.includes(mimeType);
 
-    if (isAudio) {
-      const cloudinaryStream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'langoora/audio',
+    if (!isAudio && !isImage) {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported file type: ${mimeType}. Please upload image or audio files.`
+      });
+    }
+
+    const folder = buildPaperFolder(paperId, tutorId);
+
+    const uploadOptions = isAudio
+      ? {
+          folder,
           resource_type: 'auto',
           format: 'mp3',
           eager: [{ format: 'mp3' }],
           eager_async: true
-        },
-        (error, result) => {
-          if (error) {
-            console.error('Cloudinary Audio Stream Error:', error);
-            return res.status(500).json({
-              success: false,
-              message: 'Cloudinary Audio streaming failed.',
-              error: error.message
-            });
-          }
-          return res.status(200).json({
-            success: true,
-            url: result.secure_url,
-            fileUrl: result.secure_url,
-            type: 'audio'
+        }
+      : {
+          folder,
+          resource_type: 'image'
+        };
+
+    const cloudinaryStream = cloudinary.uploader.upload_stream(
+      uploadOptions,
+      (error, result) => {
+        if (error) {
+          console.error('Cloudinary Stream Error:', error);
+          return res.status(500).json({
+            success: false,
+            message: `Cloudinary ${isAudio ? 'audio' : 'image'} streaming failed.`,
+            error: error.message
           });
         }
-      );
+        return res.status(200).json({
+          success: true,
+          url: result.secure_url,
+          fileUrl: result.secure_url,
+          public_id: result.public_id,
+          type: isAudio ? 'audio' : 'image'
+        });
+      }
+    );
 
-      return cloudinaryStream.end(req.file.buffer);
-    }
-
-    if (isImage) {
-      const base64Image = req.file.buffer.toString('base64');
-      const dataUriString = `data:${mimeType};base64,${base64Image}`;
-
-      return res.status(200).json({
-        success: true,
-        url: dataUriString,
-        fileUrl: dataUriString,
-        type: 'image'
-      });
-    }
-
-    return res.status(400).json({
-      success: false,
-      message: `Unsupported file type: ${mimeType}. Please upload image or audio files.`
-    });
+    return cloudinaryStream.end(req.file.buffer);
   } catch (error) {
     console.error('Asset Process Runtime Exception:', error);
     return res.status(500).json({
@@ -812,6 +879,8 @@ const deleteAsset = async (req, res) => {
       });
     }
 
+    // Legacy data: some older drafts stored images as raw base64 data URIs
+    // instead of a Cloudinary URL. Nothing to delete remotely in that case.
     if (fileUrl.startsWith('data:image')) {
       return res.status(200).json({
         success: true,
@@ -819,14 +888,27 @@ const deleteAsset = async (req, res) => {
       });
     }
 
-    const urlParts = fileUrl.split('/');
-    const fileWithExtension = urlParts[urlParts.length - 1];
-    const publicIdWithoutExt = fileWithExtension.split('.')[0];
+    // 🎯 Derive the Cloudinary public_id directly from the URL path rather
+    // than assuming a fixed folder name. This is required now that assets
+    // live under nested per-paper folders (langoora/papers/{paper_id}/...)
+    // instead of the old flat langoora/audio / langoora/images buckets.
+    // A Cloudinary delivery URL looks like:
+    //   https://res.cloudinary.com/<cloud>/<resource_type>/upload/v169.../langoora/papers/exam_123/abc123.jpg
+    // Everything between "/upload/v<version>/" and the file extension is
+    // the public_id.
+    const uploadMatch = fileUrl.match(/\/upload\/(?:v\d+\/)?(.+)$/);
 
-    const isAudio = fileUrl.includes('/audio/');
-    const folderPath = isAudio ? 'langoora/audio' : 'langoora/images';
-    const publicId = `${folderPath}/${publicIdWithoutExt}`;
+    if (!uploadMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not parse a Cloudinary public_id from the given URL.'
+      });
+    }
 
+    const pathWithExt = uploadMatch[1];
+    const publicId = pathWithExt.replace(/\.[a-zA-Z0-9]+$/, '');
+
+    const isAudio = fileUrl.includes('/video/upload/') || publicId.includes('/audio');
     const resourceType = isAudio ? 'video' : 'image';
 
     const result = await cloudinary.uploader.destroy(publicId, {
@@ -836,7 +918,7 @@ const deleteAsset = async (req, res) => {
     if (result.result === 'ok') {
       return res.status(200).json({
         success: true,
-        message: 'Audio successfully deleted from Cloudinary.'
+        message: `${isAudio ? 'Audio' : 'Image'} successfully deleted from Cloudinary.`
       });
     }
 

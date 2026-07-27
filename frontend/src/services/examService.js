@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api/exams';
+export const API_URL = 'http://localhost:5000/api/exams';
 
 /**
  * 🔐 Helper: Get fresh token from Firebase
@@ -43,21 +43,80 @@ const getAuthConfig = async () => {
 };
 
 /**
+ * 🎯 Dedicated axios instance for the JSON exam endpoints (create, read,
+ * update, draft, status, delete). authMiddleware.js returns 401 with
+ * `{ success: false, message: 'Not authorized, token validation failed.' }`
+ * for an expired/invalid token — this response interceptor catches that
+ * (and any other 401/403), silently refreshes the Firebase ID token via
+ * `getIdToken(true)`, and retries the original request exactly once.
+ *
+ * If the refresh itself fails (e.g. the Firebase session is fully gone,
+ * not just the short-lived ID token), the rejected error is tagged with
+ * `isAuthExpired: true` so callers — specifically CreateExamPage.jsx's
+ * save handlers — can trigger the session-expired safety net instead of
+ * treating it as a generic failure.
+ *
+ * NOTE: uploadExamAsset() below intentionally does NOT use this instance.
+ * It already has its own working 401-retry path, and touching it risks
+ * the Cloudinary upload logic, which must stay exactly as-is.
+ */
+const apiClient = axios.create();
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    const status = error.response?.status;
+    const isAuthError = status === 401 || status === 403;
+
+    if (isAuthError && originalRequest && !originalRequest._retriedAfterRefresh) {
+      originalRequest._retriedAfterRefresh = true;
+      try {
+        const freshToken = await getFreshToken();
+        originalRequest.headers = {
+          ...originalRequest.headers,
+          Authorization: `Bearer ${freshToken}`
+        };
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        error.isAuthExpired = true;
+        return Promise.reject(error);
+      }
+    }
+
+    if (isAuthError) {
+      // Already retried once (via the branch above) and still failing.
+      error.isAuthExpired = true;
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+/**
+ * 🔐 Helper: fold `error.isAuthExpired` (set by the interceptor above)
+ * into whatever payload a catch block is about to throw, without
+ * changing the shape callers already rely on (`.success`, `.message`).
+ */
+const toServiceError = (error, fallback) => ({
+  ...(error.response?.data || fallback),
+  isAuthExpired: !!error.isAuthExpired
+});
+
+/**
  * 💾 1. Create New Exam
  */
 export const createTutorExam = async (examPayload) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.post(
+    const response = await apiClient.post(
       `${API_URL}/create`, 
       examPayload, 
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to commit exam blueprint layer.' 
-    };
+    throw toServiceError(error, { message: 'Failed to commit exam blueprint layer.' });
   }
 };
 
@@ -67,15 +126,13 @@ export const createTutorExam = async (examPayload) => {
 export const getTutorExams = async () => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.get(
+    const response = await apiClient.get(
       `${API_URL}/tutor-exams`,
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to fetch tutor exams.' 
-    };
+    throw toServiceError(error, { message: 'Failed to fetch tutor exams.' });
   }
 };
 
@@ -85,15 +142,13 @@ export const getTutorExams = async () => {
 export const getExamById = async (examId) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.get(
+    const response = await apiClient.get(
       `${API_URL}/${examId}`,
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to fetch exam details.' 
-    };
+    throw toServiceError(error, { message: 'Failed to fetch exam details.' });
   }
 };
 
@@ -103,15 +158,13 @@ export const getExamById = async (examId) => {
 export const deleteExam = async (examId) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.delete(
+    const response = await apiClient.delete(
       `${API_URL}/${examId}`,
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to delete exam.' 
-    };
+    throw toServiceError(error, { message: 'Failed to delete exam.' });
   }
 };
 
@@ -121,15 +174,13 @@ export const deleteExam = async (examId) => {
 export const getRecycleBinExams = async () => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.get(
+    const response = await apiClient.get(
       `${API_URL}/recycle-bin`,
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || {
-      message: 'Failed to fetch recycle bin exams.'
-    };
+    throw toServiceError(error, { message: 'Failed to fetch recycle bin exams.' });
   }
 };
 
@@ -139,16 +190,14 @@ export const getRecycleBinExams = async () => {
 export const restoreExam = async (examId) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}/restore`,
       {},
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || {
-      message: 'Failed to restore exam.'
-    };
+    throw toServiceError(error, { message: 'Failed to restore exam.' });
   }
 };
 
@@ -158,15 +207,13 @@ export const restoreExam = async (examId) => {
 export const permanentDeleteExam = async (examId) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.delete(
+    const response = await apiClient.delete(
       `${API_URL}/${examId}/permanent`,
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || {
-      message: 'Failed to permanently delete exam.'
-    };
+    throw toServiceError(error, { message: 'Failed to permanently delete exam.' });
   }
 };
 
@@ -176,16 +223,14 @@ export const permanentDeleteExam = async (examId) => {
 export const updateExamStatus = async (examId, status) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}/status`,
       { status },
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to update exam status.' 
-    };
+    throw toServiceError(error, { message: 'Failed to update exam status.' });
   }
 };
 
@@ -195,7 +240,7 @@ export const updateExamStatus = async (examId, status) => {
 export const updateExamDraft = async (examId, draftData) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}/draft`,
       draftData,
       config
@@ -203,9 +248,7 @@ export const updateExamDraft = async (examId, draftData) => {
     return response.data;
   } catch (error) {
     console.error('Update Exam Draft Error:', error.response?.data || error.message);
-    throw error.response?.data || { 
-      message: 'Failed to update exam draft.' 
-    };
+    throw toServiceError(error, { message: 'Failed to update exam draft.' });
   }
 };
 
@@ -215,7 +258,7 @@ export const updateExamDraft = async (examId, draftData) => {
 export const updateExam = async (examId, examPayload) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}`,
       examPayload,
       config
@@ -223,16 +266,14 @@ export const updateExam = async (examId, examPayload) => {
     return response.data;
   } catch (error) {
     console.error('Update Exam Error:', error.response?.data || error.message);
-    throw error.response?.data || { 
-      message: 'Failed to update exam.' 
-    };
+    throw toServiceError(error, { message: 'Failed to update exam.' });
   }
 };
 
 /**
  * 🎵 📷 8. Upload Asset
  */
-export const uploadExamAsset = async (fileBlob) => {
+export const uploadExamAsset = async (fileBlob, paperId = null) => {
   try {
     let token = localStorage.getItem('token');
     
@@ -253,6 +294,12 @@ export const uploadExamAsset = async (fileBlob) => {
 
     const formData = new FormData();
     formData.append('file', fileBlob);
+    // 🎯 paper_id tells the backend which Cloudinary folder (per-paper)
+    // this asset belongs to. Omitted only if the paper hasn't been saved
+    // yet, in which case the backend falls back to an "unassigned" bucket.
+    if (paperId) {
+      formData.append('paper_id', paperId);
+    }
 
     const response = await axios.post(`${API_URL}/upload-asset`, formData, {
       headers: {
@@ -271,6 +318,9 @@ export const uploadExamAsset = async (fileBlob) => {
         const token = await getFreshToken();
         const formData = new FormData();
         formData.append('file', fileBlob);
+        if (paperId) {
+          formData.append('paper_id', paperId);
+        }
         
         const response = await axios.post(`${API_URL}/upload-asset`, formData, {
           headers: {
@@ -298,15 +348,13 @@ export const uploadExamAsset = async (fileBlob) => {
 export const deleteExamAsset = async (fileUrl) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.post(
+    const response = await apiClient.post(
       `${API_URL}/delete-asset`,
       { fileUrl },
       config
     );
     return response.data;
   } catch (error) {
-    throw error.response?.data || { 
-      message: 'Failed to delete asset from cloud.' 
-    };
+    throw toServiceError(error, { message: 'Failed to delete asset from cloud.' });
   }
 };
