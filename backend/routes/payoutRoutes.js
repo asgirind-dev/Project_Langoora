@@ -1,64 +1,201 @@
-// routes/payoutRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const { db } = require('../config/firebase');
 const payoutController = require('../controllers/payoutController');
+const { manualSettlement, startTestSettlement } = require('../services/autoSettleService');
 
 // ============================================
 // PAYOUT ROUTES
 // ============================================
 
-// Create a new payout request
-router.post('/request', payoutController.createPayoutRequest);
-
-// Get all payouts with statistics
-router.get('/get-all', payoutController.getAllPayouts);
-
-// Get settled payouts only
-router.get('/settled', payoutController.getSettledPayouts);
-
-// Get declined payouts only
-router.get('/declined', payoutController.getDeclinedPayouts);
-
-// Get pending payouts only
-router.get('/pending', payoutController.getPendingPayouts);
-
-// Get total credits from all transactions
-router.get('/total-credits', payoutController.getTotalUsedCredits);
-
-// Update payout status (Settle/Decline)
-router.patch('/update-status/:id', payoutController.updatePayoutStatus);
-
-// Get active tutors for payouts
+// 1. Active tutors ගන්න (purchased exams තියෙන අය විතරයි)
 router.get('/active-tutors', payoutController.getActiveTutorsPayouts);
 
-// Get single tutor details
-router.get('/tutor/:id', payoutController.getTutorDetails);
+// 2. Payout request එකක් create කරන්න
+router.post('/request', payoutController.createPayoutRequest);
 
-// Update tutor credits
-router.put('/tutor/:id/credits', payoutController.updateTutorCredits);
+// 3. All payouts ගන්න
+router.get('/get-all', payoutController.getAllPayouts);
 
-// Get payout statistics dashboard
-router.get('/statistics/dashboard', payoutController.getPayoutStatistics);
+// 4. Settled payouts ගන්න
+router.get('/settled', payoutController.getSettledPayouts);
 
-// 🗑️ Delete all declined payouts (MUST come before /:id)
-router.delete('/declined/all', payoutController.deleteAllDeclinedPayouts);
+// 5. Pending payouts ගන්න
+router.get('/pending', payoutController.getPendingPayouts);
 
-// Get payout by ID with transaction details
+// 6. Declined payouts ගන්න
+router.get('/declined', payoutController.getDeclinedPayouts);
+
+// 7. Total credits ගන්න
+router.get('/total-credits', payoutController.getTotalUsedCredits);
+
+// 8. Payout status update කරන්න (Settle/Decline)
+router.patch('/update-status/:id', payoutController.updatePayoutStatus);
+
+// 9. Payout by ID ගන්න
 router.get('/:id', payoutController.getPayoutById);
 
-// 🗑️ Delete payout (Declined only)
+// 10. Delete payout (Declined only)
 router.delete('/:id', payoutController.deletePayout);
 
-// Bulk update payout status
-router.patch('/bulk-update', payoutController.bulkUpdatePayoutStatus);
+// 11. Delete all declined payouts
+router.delete('/declined/all', payoutController.deleteAllDeclinedPayouts);
 
-// Revert settled payout (Admin only)
+// 12. Payout statistics
+router.get('/statistics/dashboard', payoutController.getPayoutStatistics);
+
+// 13. Revert settled payout
 router.post('/revert/:id', payoutController.revertSettledPayout);
 
+// 14. Bulk update payout status
+router.patch('/bulk-update', payoutController.bulkUpdatePayoutStatus);
+
+// 15. Tutors tokens (purchased exams වලින් පමණයි)
+router.get('/tutors-tokens', payoutController.getTutorsTokens);
+
+// 16. Single tutor details
+router.get('/tutor/:id', payoutController.getTutorDetails);
+
+// 17. Update tutor credits (Auto-sync included)
+router.put('/tutor/:id/credits', payoutController.updateTutorCredits);
+
 // ============================================
-// UPDATE PAYOUT STATUS (Alternative route - Keep for backward compatibility)
+// 🔥 ROUTE: Add Tutor Payout (Auto-create Collection)
+// ============================================
+router.post('/add-payout', payoutController.addTutorPayout);
+
+// ============================================
+// 🔥 AUTO SYNC ROUTES
+// ============================================
+
+// 18. Auto-sync specific tutor - User update එකෙන් පස්සේ call කරන්න
+router.post('/auto-sync/:tutorId', payoutController.autoSyncUser);
+
+// 19. Sync all tutors - හැම tutor ගේම payouts sync කරන්න
+router.post('/sync-all-tutors', payoutController.syncAllTutors);
+
+// 20. Manual sync specific tutor (GET method - browser එකෙන් test කරන්න)
+router.get('/sync/:tutorId', payoutController.autoSyncUser);
+
+// ============================================
+// 🔥 WEBHOOK: User update auto-sync endpoint
+// ============================================
+router.post('/webhook/user-update', async (req, res) => {
+    try {
+        const { tutorId, updatedFields } = req.body;
+        
+        console.log(`📨 Webhook received for tutor: ${tutorId}`);
+        console.log(`📊 Updated fields:`, updatedFields);
+        
+        if (!tutorId) {
+            return res.status(400).json({
+                success: false,
+                message: "tutorId is required"
+            });
+        }
+        
+        const result = await payoutController.autoSyncUserInternal(tutorId);
+        
+        res.status(200).json({
+            success: true,
+            message: `Synced ${result.updated} payout(s)`,
+            data: result
+        });
+        
+    } catch (error) {
+        console.error("❌ Webhook error:", error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// 🔥 AUTO SETTLE ROUTES (NEW)
+// ============================================
+
+// 21. Manual settlement trigger - Admin එකෙන් call කරන්න
+// POST /api/payouts/manual-settle
+router.post('/manual-settle', async (req, res) => {
+    try {
+        console.log('📝 Manual settlement triggered by admin');
+        
+        // Check if user is admin (optional - add your auth check)
+        // if (req.user.role !== 'admin') {
+        //     return res.status(403).json({ success: false, message: 'Admin access required' });
+        // }
+        
+        const result = await manualSettlement();
+        
+        res.status(200).json({
+            success: true,
+            message: 'Manual settlement completed',
+            data: result
+        });
+    } catch (error) {
+        console.error('❌ Manual settlement error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 22. Start test mode - හැම මිනිත්තුවකම settlement run වෙන්න (Development only)
+// POST /api/payouts/start-test
+router.post('/start-test', async (req, res) => {
+    try {
+        console.log('🧪 Test mode started - settlement runs every minute');
+        startTestSettlement();
+        
+        res.status(200).json({
+            success: true,
+            message: 'Test mode started - settlement runs every minute'
+        });
+    } catch (error) {
+        console.error('❌ Start test error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 23. Check settlement status
+// GET /api/payouts/settlement-status
+router.get('/settlement-status', async (req, res) => {
+    try {
+        // Get pending count
+        const pendingSnapshot = await db.collection('tutor_payouts')
+            .where('status', '==', 'Pending')
+            .get();
+        
+        // Get settled count
+        const settledSnapshot = await db.collection('tutor_payouts')
+            .where('status', '==', 'Settled')
+            .get();
+        
+        res.status(200).json({
+            success: true,
+            data: {
+                pending: pendingSnapshot.size,
+                settled: settledSnapshot.size,
+                total: pendingSnapshot.size + settledSnapshot.size,
+                nextSettlement: 'Every 25th at 12:00 AM'
+            }
+        });
+    } catch (error) {
+        console.error('❌ Settlement status error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// Alternative update route
 // ============================================
 router.put('/update/:id', async (req, res) => {
     const { id } = req.params;

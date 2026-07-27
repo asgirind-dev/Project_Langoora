@@ -1,5 +1,3 @@
-// server.js
-
 const express = require('express');
 const cors = require('cors');
 const path = require('path'); 
@@ -32,7 +30,17 @@ const emailLogRoutes = require('./routes/emailLogRoutes');
 const planRoutes = require('./routes/planRoutes');
 const creditValuationRoutes = require('./routes/creditValuationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
-const subscriptionRoutes = require('./routes/subscriptionRoutes'); // 👈 Correct import
+const subscriptionRoutes = require('./routes/subscriptionRoutes'); 
+const tutorReviewRoutes = require('./routes/tutorReviewRoutes');
+const auditRoutes = require('./routes/auditRoutes');
+
+// ✅ Import maintenance middleware
+const { maintenanceMiddleware } = require('./middleware/maintenanceMiddleware');
+
+// ============================================
+// 🔥 Auto-Settle Service
+// ============================================
+const { scheduleMonthlySettlement } = require('./services/autoSettleService');
 
 const app = express();
 
@@ -40,6 +48,11 @@ const app = express();
 app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// ✅ Apply maintenance middleware FIRST (before routes)
+// This will check maintenance status for ALL requests
+// But skip paths that don't need it (like auth)
+app.use(maintenanceMiddleware);
 
 // Routing Middleware 
 app.use('/api/exams', examRoutes); 
@@ -57,14 +70,28 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/exam-execution', examExecutionRoutes);
 app.use('/api/email-logs', emailLogRoutes);
 app.use('/api/subscription-plans', planRoutes);
-app.use('/api/exam-credits', creditValuationRoutes);
+app.use('/api/credit-values', creditValuationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/finance', payoutRoutes);
+app.use('/api/tutor-reviews', tutorReviewRoutes);
+app.use('/api/audit', auditRoutes);
+
 
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const PORT = process.env.PORT || 5000;
+
+// ============================================
+// 🚀 Start Server & Schedule Auto-Settle
+// ============================================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📍 Test: http://localhost:${PORT}/api/payouts/active-tutors`);
+  
+  // ✅ Start monthly settlement schedule (හැම මාසේම 25 වෙනිදා)
+  scheduleMonthlySettlement();
+  console.log('📅 Auto-settle scheduled for every 25th at 12:00 AM');
+  console.log('📍 Manual trigger: POST /api/payouts/manual-settle');
+  console.log('📍 Test mode: POST /api/payouts/start-test');
 });

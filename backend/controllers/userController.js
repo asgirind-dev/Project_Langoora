@@ -1,8 +1,11 @@
+// backend/controllers/userController.js
 const { db, auth } = require('../config/firebase');
+const auditLogService = require('../services/auditLogService');
 
 // ----------------------------------------------------------------------
 // 1. Fetch All Registered Users & Pre-Authorized Staff Nodes
 //    (Includes role data from the roles collection)
+// ✅ FIXED: Keep original role for filtering, add roleName for display
 // ----------------------------------------------------------------------
 const getAllUsers = async (req, res) => {
   try {
@@ -21,8 +24,11 @@ const getAllUsers = async (req, res) => {
       registeredUsers.push({
         id: doc.id,
         ...userData,
-        role: roleName, // Keep for backward compatibility
-        roleName
+        // ✅ CRITICAL FIX: Keep original role for filtering, don't overwrite
+        role: userData.role || userData.roleId || 'student',
+        roleId: userData.roleId || userData.role || 'student',
+        roleName: roleName, // Display name for UI
+        displayRole: roleName // For UI display
       });
     }
 
@@ -35,6 +41,9 @@ const getAllUsers = async (req, res) => {
         ...data,
         status: 'invited',
         activityCount: 0,
+        // ✅ Keep original role for filtering
+        role: data.roleId || data.role || 'unknown',
+        roleId: data.roleId || data.role || 'unknown',
         roleName: data.role || 'unknown'
       });
     });
@@ -54,6 +63,8 @@ const getAllUsers = async (req, res) => {
 
 // ----------------------------------------------------------------------
 // 2. Provision Internal System Staff Node (Pre-Authorize) with RBAC
+// ✅ FIXED: Properly save privileges, organization for Finance Admin
+// ✅ FIXED: Remove institution and languageScope for Finance Admin
 // ----------------------------------------------------------------------
 const provisionStaffNode = async (req, res) => {
   try {
@@ -62,10 +73,21 @@ const provisionStaffNode = async (req, res) => {
       email,
       roleId,
       institution,
+      organization,  // ✅ New field for Finance Admin
       languageScope,
       privileges
     } = req.body;
     const formattedEmail = email.toLowerCase().trim();
+
+    console.log('📋 ===== PROVISION REQUEST =====');
+    console.log('📋 Full request body:', req.body);
+    console.log('📋 Name:', name);
+    console.log('📋 Email:', formattedEmail);
+    console.log('📋 RoleId:', roleId);
+    console.log('📋 Organization:', organization);
+    console.log('📋 Institution:', institution);
+    console.log('📋 Language Scope:', languageScope);
+    console.log('📋 Privileges received:', privileges);
 
     if (!name || !formattedEmail || !roleId) {
       return res.status(400).json({ success: false, message: 'Name, email, and roleId are mandatory.' });
@@ -74,47 +96,92 @@ const provisionStaffNode = async (req, res) => {
     // Verify that the role exists
     const roleDoc = await db.collection('roles').doc(roleId).get();
     if (!roleDoc.exists) {
-      return res.status(400).json({ success: false, message: 'Invalid roleId.' });
+      console.log(`❌ Role not found: ${roleId}`);
+      return res.status(400).json({ success: false, message: 'Invalid roleId. Please select a valid role.' });
     }
     const roleData = roleDoc.data();
+    console.log(`✅ Role found: ${roleData.name} (${roleId})`);
+    console.log(`📋 Role level: ${roleData.level}`);
 
     // Security: Check that the actor has permission to assign this role
     const actorRoleId = req.user.roleId;
     if (!actorRoleId) {
+      console.log('❌ Actor has no roleId');
       return res.status(403).json({ success: false, message: 'Your role does not allow assigning roles.' });
     }
     const actorRoleDoc = await db.collection('roles').doc(actorRoleId).get();
     if (!actorRoleDoc.exists) {
+      console.log(`❌ Actor role not found: ${actorRoleId}`);
       return res.status(403).json({ success: false, message: 'Your role not found.' });
     }
     const actorRoleData = actorRoleDoc.data();
-    if (actorRoleData.level >= roleData.level) {
-      return res.status(403).json({
-        success: false,
-        message: `Cannot assign role '${roleData.name}' – your privilege level (${actorRoleData.level}) is not sufficient.`
-      });
+    console.log(`🔍 Actor role: ${actorRoleData.name} (level: ${actorRoleData.level})`);
+    console.log(`🔍 Target role: ${roleData.name} (level: ${roleData.level})`);
+
+    // ✅ FIXED: Level check with undefined handling
+    if (actorRoleData.level !== undefined && roleData.level !== undefined) {
+      if (actorRoleData.level >= roleData.level) {
+        console.log(`❌ Insufficient level: Actor ${actorRoleData.level} >= Target ${roleData.level}`);
+        return res.status(403).json({
+          success: false,
+          message: `Cannot assign role '${roleData.name}' – your privilege level (${actorRoleData.level}) is not sufficient.`
+        });
+      }
+    } else {
+      console.log('⚠️ Role level missing, skipping level check');
     }
 
     // Check if user already exists in users or pre_authorized_staff
     const userDoc = await db.collection('users').doc(formattedEmail).get();
     const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
     if (userDoc.exists || preAuthDoc.exists) {
+      console.log(`❌ Email already exists: ${formattedEmail}`);
       return res.status(400).json({ success: false, message: 'Email already exists in terminal records.' });
     }
 
-    // ✅ FIX: Changed default institution from "LNBTI" to "Langoora"
+    // ✅ IMPORTANT: Ensure privileges is an array
+    const finalPrivileges = Array.isArray(privileges) ? privileges : [];
+    console.log(`📋 Final privileges to save: ${finalPrivileges.length} items`, finalPrivileges);
+
+    // ✅✅✅ CRITICAL FIX: Use roleId as the role field, NOT roleData.name
+    const finalRole = roleId;
+
+    // ✅ Check if this is a Finance Admin
+    const isFinance = roleId === 'finance';
+
+    // ✅ Build staff node with CORRECT role and fields
     const newStaffNode = {
       name,
       email: formattedEmail,
-      roleId,
+      roleId: roleId,
       joined: new Date().toISOString().split('T')[0],
-      institution: institution || 'Langoora',
-      languageScope: roleData.name === 'finance' ? 'All' : languageScope,
-      privileges: privileges || [],
-      status: 'invited'
+      // ✅ Finance Admin: use organization, no institution/languageScope
+      organization: isFinance ? (organization || 'Novacore Solutions') : '',
+      institution: isFinance ? '' : (institution || 'Langoora'),
+      languageScope: isFinance ? '' : (languageScope || 'All'),
+      privileges: finalPrivileges,
+      status: 'invited',
+      role: finalRole
     };
 
+    console.log('📝 Creating staff node:', JSON.stringify(newStaffNode, null, 2));
+
     await db.collection('pre_authorized_staff').doc(formattedEmail).set(newStaffNode);
+
+    // ✅ Log the provisioning action
+    await auditLogService.logUserLifecycle({
+      userId: formattedEmail,
+      userEmail: formattedEmail,
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      action: 'provisioned',
+      reason: `Staff provisioned with role: ${finalRole} (${roleId}) and ${finalPrivileges.length} privileges`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    console.log(`✅ Staff provisioned successfully: ${formattedEmail} with role ${finalRole}`);
+    console.log(`✅ Privileges saved: ${finalPrivileges.length} items`);
 
     return res.status(201).json({
       success: true,
@@ -123,25 +190,46 @@ const provisionStaffNode = async (req, res) => {
         ...newStaffNode,
         status: 'invited',
         activityCount: 0,
-        roleName: roleData.name
+        roleName: finalRole,
+        privileges: finalPrivileges
       }
     });
   } catch (error) {
-    console.error('Provisioning failed:', error.message);
+    console.error('❌ Provisioning failed:', error.message);
     return res.status(500).json({ success: false, message: 'Database connectivity failed during node provisioning.' });
   }
 };
 
 // ----------------------------------------------------------------------
-// 3. Toggle Suspension or Revoke Invitations
+// 3. Toggle Suspension or Revoke Invitations (WITH AUDIT LOG)
 // ----------------------------------------------------------------------
 const toggleUserLifecycle = async (req, res) => {
   try {
     const { uid } = req.params;
     const { currentStatus, email } = req.body;
+    const actorId = req.user.uid;
+    const actorEmail = req.user.email;
+    const actorRole = req.user.role;
+
+    // Get user details for logging
+    let userEmail = email || '';
+    let userDoc = null;
 
     if (currentStatus === 'invited') {
       await db.collection('pre_authorized_staff').doc(email).delete();
+      
+      // ✅ Log the revocation
+      await auditLogService.logUserLifecycle({
+        userId: uid,
+        userEmail: email,
+        actorId: actorId,
+        actorEmail: actorEmail,
+        action: 'revoked',
+        reason: 'Staff invitation revoked',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+      
       return res.status(200).json({ success: true, action: 'revoked' });
     }
 
@@ -154,6 +242,24 @@ const toggleUserLifecycle = async (req, res) => {
       console.warn(`Auth disabled state sync omitted: ${authErr.message}`);
     }
 
+    // Get user email for logging
+    userDoc = await db.collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      userEmail = userDoc.data().email || email;
+    }
+
+    // ✅ Log the lifecycle change
+    await auditLogService.logUserLifecycle({
+      userId: uid,
+      userEmail: userEmail,
+      actorId: actorId,
+      actorEmail: actorEmail,
+      action: targetStatus === 'suspended' ? 'suspended' : 'activated',
+      reason: `User ${targetStatus === 'suspended' ? 'suspended' : 'activated'} by ${actorRole || 'admin'}`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, action: 'toggled', targetStatus });
   } catch (error) {
     console.error('Lifecycle adjustment failed:', error.message);
@@ -162,14 +268,47 @@ const toggleUserLifecycle = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 4. Commit Capabilities & Privileges Governance Configurations
+// 4. Commit Capabilities & Privileges Governance Configurations (WITH AUDIT LOG)
 // ----------------------------------------------------------------------
 const updatePrivileges = async (req, res) => {
   try {
     const { uid } = req.params;
-    const { privileges, languageScope, status, email } = req.body;
+    const { privileges, languageScope, status, email, reason } = req.body;
+    const actorId = req.user.uid;
+    const actorEmail = req.user.email;
+    const actorRole = req.user.role;
 
-    const updateData = { privileges, languageScope };
+    console.log('📋 Updating privileges for user:', uid);
+    console.log('📋 New privileges:', privileges);
+    console.log('📋 Language scope:', languageScope);
+
+    // Get old privileges first
+    let oldPrivileges = [];
+    let userEmail = email || '';
+    let userDocData = {};
+
+    if (status === 'invited') {
+      const doc = await db.collection('pre_authorized_staff').doc(email).get();
+      if (doc.exists) {
+        oldPrivileges = doc.data().privileges || [];
+        userEmail = email;
+        userDocData = doc.data();
+      }
+    } else {
+      const doc = await db.collection('users').doc(uid).get();
+      if (doc.exists) {
+        oldPrivileges = doc.data().privileges || [];
+        userEmail = doc.data().email || email;
+        userDocData = doc.data();
+      }
+    }
+
+    console.log('📋 Old privileges:', oldPrivileges);
+
+    const updateData = { 
+      privileges: Array.isArray(privileges) ? privileges : [],
+      languageScope 
+    };
 
     if (status === 'invited') {
       await db.collection('pre_authorized_staff').doc(email).update(updateData);
@@ -177,7 +316,42 @@ const updatePrivileges = async (req, res) => {
       await db.collection('users').doc(uid).update(updateData);
     }
 
-    return res.status(200).json({ success: true, message: 'Governance configuration committed.' });
+    // ✅ Calculate changes for audit log
+    const added = privileges.filter(p => !oldPrivileges.includes(p));
+    const removed = oldPrivileges.filter(p => !privileges.includes(p));
+    
+    let actionType = 'updated';
+    if (added.length > 0 && removed.length === 0) actionType = 'added';
+    else if (added.length === 0 && removed.length > 0) actionType = 'removed';
+    else if (added.length > 0 && removed.length > 0) actionType = 'updated';
+
+    // ✅ Log the privilege change
+    await auditLogService.logPrivilegeChange({
+      userId: uid,
+      userEmail: userEmail,
+      actorId: actorId,
+      actorEmail: actorEmail,
+      role: actorRole,
+      action: actionType,
+      changes: {
+        added,
+        removed,
+        languageScope,
+        old: oldPrivileges,
+        new: privileges
+      },
+      reason: reason || `Privileges ${actionType} by ${actorRole || 'admin'}`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    console.log('✅ Privileges updated successfully');
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Governance configuration committed.',
+      changes: { old: oldPrivileges, new: privileges }
+    });
   } catch (error) {
     console.error('Privilege dynamic commit failed:', error.message);
     return res.status(500).json({ success: false, message: 'Server configuration error.' });
@@ -191,10 +365,32 @@ const deleteUserNode = async (req, res) => {
   try {
     const { uid } = req.params;
     const { email, currentStatus } = req.body;
+    const actorId = req.user.uid;
+    const actorEmail = req.user.email;
 
     if (currentStatus === 'invited') {
       await db.collection('pre_authorized_staff').doc(email).delete();
+      
+      // ✅ Log the deletion
+      await auditLogService.logUserLifecycle({
+        userId: uid,
+        userEmail: email,
+        actorId: actorId,
+        actorEmail: actorEmail,
+        action: 'deleted',
+        reason: 'Invitation permanently deleted',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+      
       return res.status(200).json({ success: true, message: "Invitation deleted cleanly from staging area." });
+    }
+
+    // Get user email before deletion
+    let userEmail = email || '';
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      userEmail = userDoc.data().email || email;
     }
 
     await db.collection('users').doc(uid).delete();
@@ -204,6 +400,18 @@ const deleteUserNode = async (req, res) => {
     } catch (authErr) {
       console.warn(`Auth deletion deferred or user didn't register: ${authErr.message}`);
     }
+
+    // ✅ Log the deletion
+    await auditLogService.logUserLifecycle({
+      userId: uid,
+      userEmail: userEmail,
+      actorId: actorId,
+      actorEmail: actorEmail,
+      action: 'deleted',
+      reason: 'User account permanently deleted',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
 
     return res.status(200).json({ success: true, message: "User account dropped cleanly from database layers." });
   } catch (error) {
@@ -219,7 +427,6 @@ const getStudentProfile = async (req, res) => {
   try {
     const studentId = req.user?.uid || req.user?.id;
 
-    // 🔍 1. ලොග් වෙලා ඉන්න යූසර්ගේ ID එක backend එකට එන්නේ මොකක්ද කියලා බලන්න
     console.log("=== DEBUG: REQUESTED STUDENT ID ===", studentId);
 
     if (!studentId) {
@@ -228,7 +435,6 @@ const getStudentProfile = async (req, res) => {
 
     const userDoc = await db.collection('users').doc(studentId).get();
 
-    // 🔍 2. Firestore එකේ ඒ ID එකෙන් document එකක් තියෙනවද කියලා බලන්න
     console.log(`=== DEBUG: DOES DOC EXIST FOR ${studentId}? ===`, userDoc.exists);
 
     if (!userDoc.exists) {
@@ -237,7 +443,6 @@ const getStudentProfile = async (req, res) => {
 
     const userData = userDoc.data();
     
-    // 🔍 3. Firestore එකෙන් ඇත්තටම ඇදලා ගන්නා මුළු ඩේටා ටික terminal එකේ පෙන්වන්න
     console.log("=== DEBUG: FIRESTORE USER DATA ===", userData);
 
     return res.status(200).json({
@@ -260,7 +465,7 @@ const getStudentProfile = async (req, res) => {
 // ======================================================================
 
 // ----------------------------------------------------------------------
-// 6. Get all roles (for admin UI)
+// 7. Get all roles (for admin UI)
 // ----------------------------------------------------------------------
 const getRoles = async (req, res) => {
   try {
@@ -275,7 +480,7 @@ const getRoles = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 7. Create a new role (Super Admin only)
+// 8. Create a new role (Super Admin only) - WITH AUDIT LOG
 // ----------------------------------------------------------------------
 const createRole = async (req, res) => {
   try {
@@ -308,6 +513,25 @@ const createRole = async (req, res) => {
       createdBy: req.user.uid
     };
     const docRef = await db.collection('roles').add(newRole);
+    
+    // ✅ Log role creation
+    await auditLogService.logPrivilegeChange({
+      userId: 'system',
+      userEmail: 'system',
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      role: req.user.role,
+      action: 'created_role',
+      changes: {
+        roleName: name,
+        level: level,
+        permissions: permissions
+      },
+      reason: `Role "${name}" created`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(201).json({ success: true, role: { id: docRef.id, ...newRole } });
   } catch (error) {
     console.error('Create role error:', error.message);
@@ -316,7 +540,7 @@ const createRole = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 8. Update a role (Super Admin only)
+// 9. Update a role (Super Admin only) - WITH AUDIT LOG
 // ----------------------------------------------------------------------
 const updateRole = async (req, res) => {
   try {
@@ -353,12 +577,42 @@ const updateRole = async (req, res) => {
     }
 
     const updateData = {};
-    if (name !== undefined) updateData.name = name;
-    if (level !== undefined) updateData.level = level;
-    if (permissions !== undefined) updateData.permissions = permissions;
+    const changes = {};
+    if (name !== undefined && name !== targetRoleData.name) {
+      updateData.name = name;
+      changes.name = { old: targetRoleData.name, new: name };
+    }
+    if (level !== undefined && level !== targetRoleData.level) {
+      updateData.level = level;
+      changes.level = { old: targetRoleData.level, new: level };
+    }
+    if (permissions !== undefined) {
+      const oldPerms = targetRoleData.permissions || {};
+      const newPerms = permissions;
+      const added = Object.keys(newPerms).filter(k => newPerms[k] && !oldPerms[k]);
+      const removed = Object.keys(oldPerms).filter(k => oldPerms[k] && !newPerms[k]);
+      if (added.length > 0 || removed.length > 0) {
+        updateData.permissions = permissions;
+        changes.permissions = { added, removed };
+      }
+    }
     updateData.updatedAt = new Date().toISOString();
 
     await db.collection('roles').doc(roleId).update(updateData);
+
+    // ✅ Log role update
+    await auditLogService.logPrivilegeChange({
+      userId: 'system',
+      userEmail: 'system',
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      role: req.user.role,
+      action: 'updated_role',
+      changes: changes,
+      reason: `Role "${name || targetRoleData.name}" updated`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
 
     const updatedDoc = await db.collection('roles').doc(roleId).get();
     return res.status(200).json({ success: true, role: { id: roleId, ...updatedDoc.data() } });
@@ -369,7 +623,7 @@ const updateRole = async (req, res) => {
 };
 
 // ----------------------------------------------------------------------
-// 9. Delete a role (Super Admin only)
+// 10. Delete a role (Super Admin only) - WITH AUDIT LOG
 // ----------------------------------------------------------------------
 const deleteRole = async (req, res) => {
   try {
@@ -404,7 +658,27 @@ const deleteRole = async (req, res) => {
       });
     }
 
+    const roleName = targetRoleData.name;
     await db.collection('roles').doc(roleId).delete();
+
+    // ✅ Log role deletion
+    await auditLogService.logPrivilegeChange({
+      userId: 'system',
+      userEmail: 'system',
+      actorId: req.user.uid,
+      actorEmail: req.user.email,
+      role: req.user.role,
+      action: 'deleted_role',
+      changes: {
+        roleName: roleName,
+        level: targetRoleData.level,
+        permissions: targetRoleData.permissions || {}
+      },
+      reason: `Role "${roleName}" deleted`,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, message: 'Role deleted successfully.' });
   } catch (error) {
     console.error('Delete role error:', error.message);

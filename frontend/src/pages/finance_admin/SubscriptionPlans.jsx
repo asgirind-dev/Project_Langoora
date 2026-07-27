@@ -5,8 +5,12 @@ import {
   RefreshCw, Rocket, Layers, X, Loader2, Zap
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
-import PlanService from "../../services/PlanService"; // 👈 නිවැරදි PlanService Import එක
+import PlanService from "../../services/PlanService";
+import axios from 'axios';
 
+// ================================================================
+// ✅ HELPER: Normalize Features
+// ================================================================
 const normalizeFeatures = (features) => {
   if (!features) return [];
   if (Array.isArray(features)) {
@@ -26,22 +30,45 @@ const normalizeFeatures = (features) => {
   return [];
 };
 
+// ================================================================
+// ✅ MAIN COMPONENT
+// ================================================================
 function SubscriptionPlans() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [savingPlan, setSavingPlan] = useState(false);
+  const [error, setError] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '', price: '', credits: '', features: [''], popular: false
   });
 
+  // ================================================================
+  // ✅ GET AUTH CONFIG
+  // ================================================================
+  const getAuthConfig = () => {
+    const token = localStorage.getItem('token');
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    };
+  };
+
+  // ================================================================
+  // ✅ FETCH PLANS
+  // ================================================================
   const fetchPlans = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
+      console.log('🔄 Fetching subscription plans...');
       const data = await PlanService.getAllPlans();
+      console.log('📊 Fetched plans:', data);
+      
       const normalizedPlans = (data || []).map(plan => ({
         ...plan,
         id: plan.id || plan._id,
@@ -49,11 +76,14 @@ function SubscriptionPlans() {
         price: parseInt(plan.price) || 0,
         credits: parseInt(plan.credits) || 0,
         active: plan.active !== undefined ? Boolean(plan.active) : true,
-        popular: Boolean(plan.popular)
+        popular: Boolean(plan.popular),
+        status: plan.status || 'pending'
       }));
       setPlans(normalizedPlans);
     } catch (error) {
-      console.error("Error fetching plans:", error);
+      console.error("❌ Error fetching plans:", error);
+      setError(error.message || 'Failed to fetch plans');
+      setPlans([]);
     } finally {
       setLoading(false);
     }
@@ -63,9 +93,16 @@ function SubscriptionPlans() {
     fetchPlans();
   }, []);
 
+  // ================================================================
+  // ✅ ADD PLAN - Using Axios Directly
+  // ================================================================
   const addPlan = async () => {
-    if (!formData.name.trim()) return alert("⚠️ Please enter a Plan Name.");
+    if (!formData.name.trim()) {
+      alert("⚠️ Please enter a Plan Name.");
+      return;
+    }
     setSavingPlan(true);
+    setError(null);
     try {
       const payload = {
         name: formData.name.trim(),
@@ -73,24 +110,52 @@ function SubscriptionPlans() {
         credits: parseInt(formData.credits) || 0,
         features: formData.features.filter(f => f && f.trim() !== ''),
         popular: Boolean(formData.popular),
-        active: true
+        active: true,
+        status: 'pending'
       };
 
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      const res = await PlanService.createNewPlan(payload);
-      setPlans([...plans, { ...res, id: res.id || res._id, features: normalizeFeatures(res.features), active: true, popular: Boolean(formData.popular) }]);
+      console.log('📤 Creating plan with payload:', payload);
+      
+      // ✅ Use axios directly for better error handling
+      const response = await axios.post(
+        'http://localhost:5000/api/subscription-plans',
+        payload,
+        getAuthConfig()
+      );
+      
+      console.log('✅ Plan created:', response.data);
+      
+      const newPlan = { 
+        ...response.data, 
+        id: response.data.id || response.data._id,
+        features: normalizeFeatures(response.data.features || payload.features),
+        active: true,
+        popular: Boolean(payload.popular)
+      };
+      
+      setPlans([...plans, newPlan]);
       alert("✅ New Subscription Plan Created!");
       resetForm();
     } catch (error) {
-      alert(`❌ Error creating plan: ${error.message}`);
+      console.error('❌ Error creating plan:', error);
+      const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+      alert(`❌ Error creating plan: ${errorMsg}`);
+      setError(errorMsg);
     } finally {
       setSavingPlan(false);
     }
   };
 
+  // ================================================================
+  // ✅ UPDATE PLAN
+  // ================================================================
   const updatePlan = async () => {
-    if (!formData.name.trim()) return alert("⚠️ Please enter a Plan Name.");
+    if (!formData.name.trim()) {
+      alert("⚠️ Please enter a Plan Name.");
+      return;
+    }
     setSavingPlan(true);
+    setError(null);
     try {
       const targetId = editingItem.id || editingItem._id;
       const payload = {
@@ -101,30 +166,56 @@ function SubscriptionPlans() {
         popular: Boolean(formData.popular)
       };
 
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      await PlanService.updateExistingPlan(targetId, payload);
-      setPlans(plans.map(p => (p.id === targetId || p._id === targetId) ? { ...p, ...payload } : p));
+      console.log('📤 Updating plan:', targetId, payload);
+      
+      // ✅ Use axios directly
+      const response = await axios.put(
+        `http://localhost:5000/api/subscription-plans/${targetId}`,
+        payload,
+        getAuthConfig()
+      );
+      
+      console.log('✅ Plan updated:', response.data);
+      
+      setPlans(plans.map(p => 
+        (p.id === targetId || p._id === targetId) 
+          ? { ...p, ...payload, features: normalizeFeatures(payload.features) } 
+          : p
+      ));
       alert("✅ Plan Updated Successfully!");
       resetForm();
     } catch (error) {
-      alert(`❌ Error updating plan: ${error.message}`);
+      console.error('❌ Error updating plan:', error);
+      const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+      alert(`❌ Error updating plan: ${errorMsg}`);
+      setError(errorMsg);
     } finally {
       setSavingPlan(false);
     }
   };
 
+  // ================================================================
+  // ✅ DELETE PLAN
+  // ================================================================
   const deletePlan = async (id) => {
     if (!window.confirm("Are you sure you want to permanently delete this plan?")) return;
     try {
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      await PlanService.deleteExistingPlan(id);
+      console.log('🗑️ Deleting plan:', id);
+      await axios.delete(
+        `http://localhost:5000/api/subscription-plans/${id}`,
+        getAuthConfig()
+      );
       setPlans(plans.filter(p => p.id !== id && p._id !== id));
       alert("✅ Plan deleted successfully!");
     } catch (error) {
-      alert("❌ Delete failed.");
+      console.error('❌ Error deleting plan:', error);
+      alert(`❌ Delete failed: ${error.response?.data?.message || error.message}`);
     }
   };
 
+  // ================================================================
+  // ✅ TOGGLE PLAN STATUS
+  // ================================================================
   const togglePlanStatus = async (planId, currentActiveStatus) => {
     const nextStatus = !currentActiveStatus;
     const existingPlan = plans.find(p => (p.id === planId || p._id === planId));
@@ -140,23 +231,48 @@ function SubscriptionPlans() {
         active: nextStatus 
       };
 
-      // ✅ FIXED: SubscriptionService වෙනුවට PlanService භාවිත කිරීම
-      await PlanService.updateExistingPlan(planId, payload);
-      setPlans(plans.map(p => (p.id === planId || p._id === planId) ? { ...p, active: nextStatus } : p));
+      console.log('🔄 Toggling plan status:', planId, nextStatus);
+      
+      await axios.put(
+        `http://localhost:5000/api/subscription-plans/${planId}`,
+        payload,
+        getAuthConfig()
+      );
+      
+      setPlans(plans.map(p => 
+        (p.id === planId || p._id === planId) 
+          ? { ...p, active: nextStatus } 
+          : p
+      ));
     } catch (error) {
-      alert("❌ Status update failed.");
+      console.error('❌ Error updating status:', error);
+      alert(`❌ Status update failed: ${error.response?.data?.message || error.message}`);
     }
   };
 
+  // ================================================================
+  // ✅ FORM HELPERS
+  // ================================================================
   const resetForm = () => {
     setFormData({ name: '', price: '', credits: '', features: [''], popular: false });
     setEditingItem(null);
     setShowModal(false);
+    setError(null);
   };
 
-  const handleFeatureChange = (index, val) => { const f = [...formData.features]; f[index] = val; setFormData({ ...formData, features: f }); };
-  const addFeatureField = () => { setFormData({ ...formData, features: [...formData.features, ''] }); };
-  const removeFeatureField = (idx) => { setFormData({ ...formData, features: formData.features.filter((_, i) => i !== idx) }); };
+  const handleFeatureChange = (index, val) => { 
+    const f = [...formData.features]; 
+    f[index] = val; 
+    setFormData({ ...formData, features: f }); 
+  };
+  
+  const addFeatureField = () => { 
+    setFormData({ ...formData, features: [...formData.features, ''] }); 
+  };
+  
+  const removeFeatureField = (idx) => { 
+    setFormData({ ...formData, features: formData.features.filter((_, i) => i !== idx) }); 
+  };
 
   const handleEditClick = (plan) => {
     setEditingItem(plan);
@@ -171,13 +287,18 @@ function SubscriptionPlans() {
     setShowModal(true);
   };
 
+  // ================================================================
+  // ✅ RENDER
+  // ================================================================
   return (
     <div className="space-y-8 text-gray-100 font-sans relative">
+      {/* Background effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-10 right-10 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-10 left-10 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
 
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 pb-6 border-b border-white/10">
         <div>
           <div className="flex items-center gap-3">
@@ -215,6 +336,14 @@ function SubscriptionPlans() {
         </div>
       </div>
 
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
+          ❌ {error}
+        </div>
+      )}
+
+      {/* Loading / Plans Grid */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 text-gray-400 space-y-4">
           <div className="p-4 bg-purple-500/10 rounded-full border border-purple-500/20 animate-bounce">
@@ -300,8 +429,12 @@ function SubscriptionPlans() {
                         >
                           {isActive ? 'Active' : 'Inactive'}
                         </button>
-                        <button onClick={() => handleEditClick(plan)} className="p-2 bg-white/5 border border-white/5 rounded-lg text-gray-400 hover:text-white cursor-pointer"><Edit size={15} /></button>
-                        <button onClick={() => deletePlan(planId)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 cursor-pointer"><Trash2 size={15} /></button>
+                        <button onClick={() => handleEditClick(plan)} className="p-2 bg-white/5 border border-white/5 rounded-lg text-gray-400 hover:text-white cursor-pointer">
+                          <Edit size={15} />
+                        </button>
+                        <button onClick={() => deletePlan(planId)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 cursor-pointer">
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </GlassCard>
                   </motion.div>
@@ -312,6 +445,9 @@ function SubscriptionPlans() {
         </>
       )}
 
+      {/* ================================================================ */}
+      {/* ✅ MODAL - Add/Edit Plan */}
+      {/* ================================================================ */}
       <AnimatePresence>
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
@@ -409,11 +545,18 @@ function SubscriptionPlans() {
                   </div>
                 </div>
 
+                {/* Error in modal */}
+                {error && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-2.5 text-red-400 text-xs">
+                    ❌ {error}
+                  </div>
+                )}
+
                 <button 
                   type="button" 
                   disabled={savingPlan} 
                   onClick={editingItem ? updatePlan : addPlan} 
-                  className="w-full py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-xl text-xs font-bold text-white mt-6 cursor-pointer flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-lg shadow-purple-500/20 border border-white/10 disabled:opacity-50"
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-xl text-xs font-bold text-white mt-4 cursor-pointer flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-lg shadow-purple-500/20 border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {savingPlan ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
                   <span>{editingItem ? 'Save Changes' : 'Create Subscription Plan'}</span>

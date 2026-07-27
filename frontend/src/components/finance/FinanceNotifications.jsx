@@ -1,7 +1,9 @@
 // frontend/src/components/finance/FinanceNotifications.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, CheckCircle, XCircle, Clock, Eye, AlertCircle, Layers, X } from 'lucide-react';
+import { 
+  Bell, CheckCircle, XCircle, Clock, Eye, AlertCircle, Layers, X, FileText
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import NotificationService from '../../services/notificationService';
 import { useNavigate } from 'react-router-dom';
@@ -73,14 +75,20 @@ export default function FinanceNotifications() {
     }
   };
 
+  // ✅ UPDATED: Get notification icon based on type
   const getNotificationIcon = (type) => {
     if (type === 'plan_approved' || type === 'plan_approval_required') 
       return <CheckCircle size={16} className="text-emerald-400" />;
     if (type === 'plan_rejected') 
       return <XCircle size={16} className="text-red-400" />;
+    if (type === 'category_created') 
+      return <Layers size={16} className="text-blue-400" />;
+    if (type === 'level_created') 
+      return <FileText size={16} className="text-purple-400" />;
     return <AlertCircle size={16} className="text-amber-400" />;
   };
 
+  // ✅ UPDATED: Get status color based on type
   const getStatusColor = (type) => {
     if (type === 'plan_approved') 
       return 'border-emerald-500/30 bg-emerald-500/5';
@@ -88,6 +96,10 @@ export default function FinanceNotifications() {
       return 'border-red-500/30 bg-red-500/5';
     if (type === 'plan_approval_required') 
       return 'border-amber-500/30 bg-amber-500/5';
+    if (type === 'category_created') 
+      return 'border-blue-500/30 bg-blue-500/5';
+    if (type === 'level_created') 
+      return 'border-purple-500/30 bg-purple-500/5';
     return 'border-white/10 bg-white/5';
   };
 
@@ -213,7 +225,7 @@ export default function FinanceNotifications() {
                           {notif.message}
                         </p>
                         
-                        <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
                           <div className="flex items-center gap-1">
                             <Clock size={10} className="text-gray-500" />
                             <span className="text-[10px] text-gray-500">
@@ -221,6 +233,7 @@ export default function FinanceNotifications() {
                             </span>
                           </div>
                           
+                          {/* Plan Name Badge */}
                           {notif.planName && (
                             <div className="flex items-center gap-1">
                               <Layers size={10} className="text-purple-400" />
@@ -230,6 +243,27 @@ export default function FinanceNotifications() {
                             </div>
                           )}
                           
+                          {/* ✅ NEW: Category Name Badge */}
+                          {notif.categoryName && (
+                            <div className="flex items-center gap-1">
+                              <Layers size={10} className="text-blue-400" />
+                              <span className="text-[10px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
+                                {notif.categoryName}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {/* ✅ NEW: Level Name Badge */}
+                          {notif.levelName && (
+                            <div className="flex items-center gap-1">
+                              <FileText size={10} className="text-purple-400" />
+                              <span className="text-[10px] text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded">
+                                {notif.levelName}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {/* Mark Read Button */}
                           {!notif.read && (
                             <button
                               onClick={(e) => {

@@ -5,7 +5,8 @@ import {
   AlertCircle, X, ChevronRight, Zap, User,
   Search, Filter, RefreshCw, Award, TrendingUp,
   Power, Trash2, AlertTriangle, Percent, Settings,
-  Target, BarChart3, Sliders, ListChecks, Eye
+  Target, BarChart3, Sliders, ListChecks, Eye, Clock,
+  Coins, BarChart4
 } from 'lucide-react';
 import {
   fetchLanguageSchema,
@@ -16,6 +17,7 @@ import {
 } from '../../services/languageService';
 import GlassCard from '/src/components/ui/GlassCard';
 import Button from '/src/components/ui/Button';
+import Portal from '/src/components/ui/Portal';
 import axios from 'axios';
 
 // ------------------------------------------------------------------------------
@@ -23,7 +25,7 @@ import axios from 'axios';
 // ------------------------------------------------------------------------------
 const API_URL = 'http://localhost:5000/api/languages';
 
-// ✅ Auth config helper (defined here since it's not exported from languageService)
+// ✅ Auth config helper
 const getAuthConfig = () => {
   const token = localStorage.getItem('token');
   console.log('🔑 getAuthConfig called, token:', token ? 'present' : 'missing');
@@ -69,6 +71,34 @@ const PASSING_TYPES = [
   }
 ];
 
+// ✅ Scoring Method Configuration Constants
+const SCORING_METHODS = [
+  {
+    value: 'RAW_SCORE',
+    label: 'Raw Score',
+    description: 'Direct total score (EPS-TOPIK, TOPIK I)',
+    color: 'gray'
+  },
+  {
+    value: 'GROUPED_SECTION',
+    label: 'Grouped Section (JLPT)',
+    description: 'Group sections into combined scores',
+    color: 'blue'
+  }
+];
+
+// Default scoring configs for each method
+const DEFAULT_SCORING_CONFIGS = {
+  RAW_SCORE: { totalMaxScore: 100 },
+  GROUPED_SECTION: {
+    groups: [
+      { name: 'Language Knowledge + Reading', sections: ['Vocabulary', 'Grammar', 'Reading'], maxScore: 120 },
+      { name: 'Listening', sections: ['Listening'], maxScore: 60 }
+    ],
+    totalMaxScore: 180
+  }
+};
+
 // ------------------------------------------------------------------------------
 // Main Component
 // ------------------------------------------------------------------------------
@@ -83,7 +113,7 @@ export default function LanguageConfigPage() {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [activeCategoryId, setActiveCategoryId] = useState('');
   const [activeLevelId, setActiveLevelId] = useState('');
-  const [configMode, setConfigMode] = useState('category'); // 'category' or 'level'
+  const [configMode, setConfigMode] = useState('category');
 
   const [catForm, setCatForm] = useState({ 
     category_name: '', 
@@ -100,24 +130,22 @@ export default function LanguageConfigPage() {
 
   const [lvlForm, setLvlForm] = useState({ 
     level_name: '', 
-    credit_cost: 15,
     passing_type: '',
-    passing_config: {}
+    passing_config: {},
+    scoring_method: '',
+    scoring_config: {}
   });
 
-  // Config form state
   const [configForm, setConfigForm] = useState({
     passingType: 'TOTAL_AND_SECTION',
-    passingConfig: {}
+    passingConfig: {},
+    scoringMethod: 'RAW_SCORE',
+    scoringConfig: {}
   });
 
   const [error, setError] = useState('');
-
-  // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-
-  // Delete confirmation
   const [confirmDelete, setConfirmDelete] = useState({ show: false, categoryId: null, categoryName: '' });
 
   // ----------------------------------------------------------------------------
@@ -137,6 +165,10 @@ export default function LanguageConfigPage() {
       const data = await fetchLanguageSchema();
       if (data.success) {
         setSchema(data.schema);
+        console.log('📊 Schema loaded with scoring_method:', data.schema.map(c => ({ 
+          name: c.category_name, 
+          scoring_method: c.scoring_method 
+        })));
       }
     } catch (err) {
       console.error(err);
@@ -246,15 +278,29 @@ export default function LanguageConfigPage() {
     if (!lvlForm.level_name.trim()) return setError('Level assignment title is required.');
 
     try {
-      const data = await createCategoryLevel(activeCategoryId, {
+      const payload = {
         level_name: lvlForm.level_name,
-        credit_cost: lvlForm.credit_cost,
         passing_type: lvlForm.passing_type || undefined,
         passing_config: lvlForm.passing_config || {}
-      });
+      };
+      
+      if (lvlForm.scoring_method) {
+        payload.scoring_method = lvlForm.scoring_method;
+      }
+      if (lvlForm.scoring_config && Object.keys(lvlForm.scoring_config).length > 0) {
+        payload.scoring_config = lvlForm.scoring_config;
+      }
+      
+      const data = await createCategoryLevel(activeCategoryId, payload);
       if (data.success) {
         setIsLvlModalOpen(false);
-        setLvlForm({ level_name: '', credit_cost: 15, passing_type: '', passing_config: {} });
+        setLvlForm({ 
+          level_name: '', 
+          passing_type: '', 
+          passing_config: {},
+          scoring_method: '',
+          scoring_config: {}
+        });
         showNotification('Dynamic level schema bound under target matrix.');
         syncLanguageSchema();
       }
@@ -275,19 +321,21 @@ export default function LanguageConfigPage() {
     setConfigMode(levelId ? 'level' : 'category');
 
     if (levelId) {
-      // Level config
       const level = category.levels?.find(l => l.id === levelId);
       if (level) {
         setConfigForm({
           passingType: level.passing_type || category.passing_type || 'TOTAL_AND_SECTION',
-          passingConfig: level.passing_config || category.passing_config || {}
+          passingConfig: level.passing_config || category.passing_config || {},
+          scoringMethod: level.scoring_method || category.scoring_method || 'RAW_SCORE',
+          scoringConfig: level.scoring_config || category.scoring_config || {}
         });
       }
     } else {
-      // Category config
       setConfigForm({
         passingType: category.passing_type || 'TOTAL_AND_SECTION',
-        passingConfig: category.passing_config || {}
+        passingConfig: category.passing_config || {},
+        scoringMethod: category.scoring_method || 'RAW_SCORE',
+        scoringConfig: category.scoring_config || {}
       });
     }
 
@@ -315,7 +363,9 @@ export default function LanguageConfigPage() {
 
       const updateData = {
         passing_type: configForm.passingType,
-        passing_config: configForm.passingConfig
+        passing_config: configForm.passingConfig,
+        scoring_method: configForm.scoringMethod,
+        scoring_config: configForm.scoringConfig
       };
 
       const url = configMode === 'level' 
@@ -344,8 +394,8 @@ export default function LanguageConfigPage() {
       if (response.data.success) {
         showNotification(
           configMode === 'level' 
-            ? 'Level passing rules updated successfully!' 
-            : 'Category passing rules updated successfully!'
+            ? 'Level configuration updated successfully!' 
+            : 'Category configuration updated successfully!'
         );
         setIsConfigModalOpen(false);
         syncLanguageSchema();
@@ -395,11 +445,114 @@ export default function LanguageConfigPage() {
   };
 
   // ----------------------------------------------------------------------------
+  // Render Scoring Method Badge
+  // ----------------------------------------------------------------------------
+  const renderScoringMethodBadge = (scoringMethod) => {
+    const method = SCORING_METHODS.find(m => m.value === scoringMethod);
+    if (!method) return <span className="text-[10px] text-gray-500">Raw Score</span>;
+    
+    const colorMap = {
+      'blue': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+      'gray': 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+    };
+
+    return (
+      <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium border ${colorMap[method.color]}`}>
+        📊 {method.label}
+      </span>
+    );
+  };
+
+  // ----------------------------------------------------------------------------
+  // ✅ NEW: Render Level-wise Passing Score Display
+  // ----------------------------------------------------------------------------
+  const renderLevelPassingScore = (level, category) => {
+    const effectivePassingType = level.passing_type || category.passing_type;
+    const effectivePassingConfig = level.passing_config || category.passing_config;
+    const isCustom = level.passing_type && level.passing_type !== category.passing_type;
+    const isCustomScoring = level.scoring_method && level.scoring_method !== category.scoring_method;
+    
+    if (!effectivePassingType) return null;
+
+    switch(effectivePassingType) {
+      case 'TOTAL_AND_SECTION':
+        const overall = effectivePassingConfig?.overallPassScore || '—';
+        const sections = effectivePassingConfig?.sections || [];
+        return (
+          <div className="mt-1.5 pl-5 text-[10px] text-gray-400 flex items-center gap-3 flex-wrap">
+            <span className="text-emerald-400 flex items-center gap-1">
+              🎯 Overall: <span className="font-bold">{overall}%</span>
+              <span className={`text-[9px] ${isCustom ? 'text-amber-400' : 'text-gray-500'}`}>
+                ({isCustom ? 'Custom' : 'Inherited'})
+              </span>
+            </span>
+            {sections.map((s, i) => (
+              <span key={i} className="text-gray-500 flex items-center gap-0.5">
+                {s.name}: <span className="text-blue-400 font-medium">{s.minimumScore}%</span>
+              </span>
+            ))}
+            {isCustomScoring && (
+              <span className="text-blue-400 text-[9px]">(Custom Scoring)</span>
+            )}
+          </div>
+        );
+      
+      case 'CUT_OFF_SCORE':
+        const cutOff = effectivePassingConfig?.cutOffScore || '—';
+        return (
+          <div className="mt-1.5 pl-5 text-[10px] text-gray-400 flex items-center gap-3 flex-wrap">
+            <span className="text-amber-400 flex items-center gap-1">
+              ✂️ Cut-off: <span className="font-bold">{cutOff}%</span>
+              <span className={`text-[9px] ${isCustom ? 'text-amber-400' : 'text-gray-500'}`}>
+                ({isCustom ? 'Custom' : 'Inherited'})
+              </span>
+            </span>
+          </div>
+        );
+      
+      case 'LEVEL_RANGE':
+        const ranges = effectivePassingConfig?.ranges || [];
+        return (
+          <div className="mt-1.5 pl-5 text-[10px] text-gray-400 flex items-center gap-3 flex-wrap">
+            <span className="text-purple-400 flex items-center gap-1">
+              📊 {ranges.length} Level Ranges
+              <span className={`text-[9px] ${isCustom ? 'text-amber-400' : 'text-gray-500'}`}>
+                ({isCustom ? 'Custom' : 'Inherited'})
+              </span>
+            </span>
+          </div>
+        );
+      
+      default:
+        return null;
+    }
+  };
+
+  // ----------------------------------------------------------------------------
   // Render Config Summary
   // ----------------------------------------------------------------------------
-  const renderConfigSummary = (passingType, passingConfig) => {
+  const renderConfigSummary = (passingType, passingConfig, scoringMethod, scoringConfig) => {
     if (!passingType) return <span className="text-xs text-gray-500">Not configured</span>;
 
+    const methodLabel = SCORING_METHODS.find(m => m.value === scoringMethod)?.label || 'Raw Score';
+    const scoringSummary = scoringMethod === 'GROUPED_SECTION' 
+      ? `📊 ${methodLabel} (${scoringConfig?.groups?.length || 0} groups)`
+      : `📊 ${methodLabel}`;
+
+    return (
+      <div className="text-xs text-gray-400 space-y-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-emerald-400">{scoringSummary}</span>
+        </div>
+        {renderPassingConfigSummary(passingType, passingConfig)}
+      </div>
+    );
+  };
+
+  // ----------------------------------------------------------------------------
+  // Render Passing Config Summary
+  // ----------------------------------------------------------------------------
+  const renderPassingConfigSummary = (passingType, passingConfig) => {
     switch(passingType) {
       case 'TOTAL_AND_SECTION':
         const overall = passingConfig?.overallPassScore || 80;
@@ -412,6 +565,9 @@ export default function LanguageConfigPage() {
                 {s.name}: <span className="text-blue-400">{s.minimumScore}%</span>
               </span>
             ))}
+            <span className="ml-2 text-gray-500 text-[10px] bg-white/5 px-1.5 py-0.5 rounded">
+              ⚡ Default for inherited levels
+            </span>
           </div>
         );
       
@@ -419,6 +575,9 @@ export default function LanguageConfigPage() {
         return (
           <span className="text-xs text-amber-400">
             Cut-off: {passingConfig?.cutOffScore || 65}%
+            <span className="ml-2 text-gray-500 text-[10px] bg-white/5 px-1.5 py-0.5 rounded">
+              ⚡ Default for inherited levels
+            </span>
           </span>
         );
       
@@ -431,12 +590,44 @@ export default function LanguageConfigPage() {
                 {r.min}-{r.max}: {r.level}
               </span>
             ))}
+            <span className="ml-2 text-gray-500 text-[10px] bg-white/5 px-1.5 py-0.5 rounded">
+              ⚡ Default for inherited levels
+            </span>
           </div>
         );
       
       default:
         return <span className="text-xs text-gray-500">Default configuration</span>;
     }
+  };
+
+  // ----------------------------------------------------------------------------
+  // Render Credit Display for Category or Level
+  // ----------------------------------------------------------------------------
+  const renderCreditDisplay = (item, isLevel = true) => {
+    const creditCost = isLevel ? item.credit_cost : item.credit_cost;
+    const isCreditSet = isLevel ? item.isCreditSet : item.isCreditSet;
+    const isPending = !isCreditSet || creditCost === 0;
+
+    return (
+      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono flex items-center gap-1 ${
+        isPending
+          ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+          : 'bg-purple-500/10 border border-purple-500/20 text-purple-300'
+      }`}>
+        {isPending ? (
+          <>
+            <Clock size={10} className="animate-pulse" />
+            Pending
+          </>
+        ) : (
+          <>
+            <CheckCircle size={10} />
+            {creditCost} Credits
+          </>
+        )}
+      </span>
+    );
   };
 
   // ----------------------------------------------------------------------------
@@ -520,7 +711,7 @@ export default function LanguageConfigPage() {
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Language Cluster Configuration</h1>
           <p className="text-gray-400 mt-1 text-sm">
-            Configure global metadata frameworks, dynamic level tokens, passing scores, and exam rules
+            Configure global metadata frameworks, dynamic level tokens, passing scores, scoring methods, and exam rules
           </p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
@@ -663,6 +854,8 @@ export default function LanguageConfigPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {filteredSchema.map((cat, index) => {
+              const hasLevels = cat.levels && cat.levels.length > 0;
+              
               return (
                 <motion.div
                   key={cat.id}
@@ -671,16 +864,16 @@ export default function LanguageConfigPage() {
                   transition={{ delay: index * 0.05 }}
                 >
                   <GlassCard className="p-6 relative transition-all border-white/10 hover:border-white/20 hover:shadow-lg hover:shadow-blue-500/5 group">
+                    {/* Category Header */}
                     <div className="flex justify-between items-start mb-3 border-b border-white/5 pb-3">
                       <div>
                         <h3 className="text-xl font-bold text-white">{cat.category_name}</h3>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className="text-xs text-blue-400 font-mono">ID: {cat.id}</span>
                           <span className="text-xs bg-white/5 px-2 py-0.5 rounded-full text-gray-300">
                             {cat.language}
                           </span>
-                          {/* ✅ Show Passing Type */}
                           {cat.passing_type && renderPassingTypeBadge(cat.passing_type)}
+                          {cat.scoring_method && renderScoringMethodBadge(cat.scoring_method)}
                         </div>
                       </div>
                       <span
@@ -696,12 +889,12 @@ export default function LanguageConfigPage() {
                       </span>
                     </div>
 
-                    {/* ✅ Category Config Summary */}
+                    {/* ✅ Category Configuration - With "Default for inherited levels" label */}
                     <div className="mb-3 p-2 bg-white/5 rounded-lg border border-white/5">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
                           <Settings size={12} className="text-blue-400" />
-                          Passing Rules
+                          Configuration
                         </span>
                         <button
                           onClick={() => openConfigModal(cat.id)}
@@ -710,58 +903,93 @@ export default function LanguageConfigPage() {
                           <Eye size={12} /> Configure
                         </button>
                       </div>
-                      {renderConfigSummary(cat.passing_type, cat.passing_config)}
+                      {renderConfigSummary(
+                        cat.passing_type, 
+                        cat.passing_config,
+                        cat.scoring_method,
+                        cat.scoring_config
+                      )}
                     </div>
 
+                    {/* Credit Value for Category (when no levels) */}
+                    {!hasLevels && (
+                      <div className="mb-3 p-2 bg-white/5 rounded-lg border border-white/5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                            <Coins size={12} className="text-amber-400" />
+                            Credit Value
+                          </span>
+                        </div>
+                        <div className="mt-1">
+                          {renderCreditDisplay(cat, false)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Levels Section */}
                     <div className="space-y-2 mb-4">
                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                        <Layers size={13} className="text-purple-400" /> Active Level Layers
-                        {cat.levels?.length > 0 && (
+                        <Layers size={13} className="text-purple-400" /> 
+                        {hasLevels ? `Active Level Layers (${cat.levels.length})` : 'No Levels Configured'}
+                        {hasLevels && (
                           <span className="text-[9px] text-gray-500 font-normal ml-1">
-                            (Levels can override passing rules)
+                            (Levels can override configuration)
                           </span>
                         )}
                       </h4>
-                      {cat.levels?.length === 0 ? (
-                        <p className="text-xs text-gray-500 italic pl-1">
-                          No operational metrics bounds mapped yet.
-                        </p>
+                      {!hasLevels ? (
+                        <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+                          <p className="text-xs text-gray-500 italic">
+                            No levels mapped yet. Add levels to configure credit values.
+                          </p>
+                          <div className="flex items-center gap-2">
+                            {renderCreditDisplay(cat, false)}
+                          </div>
+                        </div>
                       ) : (
                         <div className="space-y-2 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
                           {cat.levels.map((lvl) => {
                             const hasCustomConfig = lvl.passing_type && lvl.passing_type !== cat.passing_type;
+                            const hasCustomScoring = lvl.scoring_method && lvl.scoring_method !== cat.scoring_method;
                             
                             return (
                               <div
                                 key={lvl.id}
-                                className="flex justify-between items-center bg-white/5 p-3 rounded-xl text-xs font-medium border border-white/5 group-hover:border-white/10 transition-colors"
+                                className="flex flex-col bg-white/5 p-3 rounded-xl text-xs font-medium border border-white/5 group-hover:border-white/10 transition-colors"
                               >
-                                <span className="text-gray-300 flex items-center gap-1">
-                                  <ChevronRight size={12} className="text-blue-500" /> {lvl.level_name}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  {/* ✅ Level passing type indicator */}
-                                  {hasCustomConfig ? (
-                                    <span className="px-1.5 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded text-[9px] font-medium">
-                                      Custom
-                                    </span>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 bg-gray-500/10 border border-gray-500/20 text-gray-400 rounded text-[9px] font-medium">
-                                      Inherited
-                                    </span>
-                                  )}
-                                  <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 text-purple-300 rounded-md text-[10px] font-bold font-mono">
-                                    {lvl.credit_cost} Credits
+                                {/* Level Row - Badges and Controls */}
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-300 flex items-center gap-1">
+                                    <ChevronRight size={12} className="text-blue-500" /> {lvl.level_name}
                                   </span>
-                                  {/* ✅ Level Config Button */}
-                                  <button
-                                    onClick={() => openConfigModal(cat.id, lvl.id)}
-                                    className="p-1 bg-white/5 hover:bg-blue-500/10 rounded-lg transition-colors"
-                                    title="Configure level passing rules"
-                                  >
-                                    <Settings size={12} className="text-gray-400 hover:text-blue-400" />
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    {/* Custom/Inherited Badge */}
+                                    {hasCustomConfig ? (
+                                      <span className="px-1.5 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded text-[9px] font-medium">
+                                        Custom
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 bg-gray-500/10 border border-gray-500/20 text-gray-400 rounded text-[9px] font-medium">
+                                        Inherited
+                                      </span>
+                                    )}
+                                    {/* Scoring Method Badge */}
+                                    {renderScoringMethodBadge(lvl.scoring_method || cat.scoring_method)}
+                                    {/* Credit Display */}
+                                    {renderCreditDisplay(lvl, true)}
+                                    {/* Config Button */}
+                                    <button
+                                      onClick={() => openConfigModal(cat.id, lvl.id)}
+                                      className="p-1 bg-white/5 hover:bg-blue-500/10 rounded-lg transition-colors"
+                                      title="Configure level configuration"
+                                    >
+                                      <Settings size={12} className="text-gray-400 hover:text-blue-400" />
+                                    </button>
+                                  </div>
                                 </div>
+
+                                {/* ✅ NEW: Level-wise Passing Score Display */}
+                                {renderLevelPassingScore(lvl, cat)}
                               </div>
                             );
                           })}
@@ -769,12 +997,12 @@ export default function LanguageConfigPage() {
                       )}
                     </div>
 
+                    {/* Footer */}
                     <div className="flex gap-2 border-t border-white/5 pt-4 justify-between items-center flex-wrap">
                       <div className="text-[10px] font-mono text-gray-500 flex items-center gap-1">
                         <User size={11} /> {cat.created_by ? cat.created_by.split('@')[0] : 'system'}
                       </div>
                       <div className="flex items-center gap-2">
-                        {/* Toggle status button */}
                         {cat.status !== 'deleted' && (
                           <button
                             onClick={() => handleToggleStatus(cat.id, cat.status)}
@@ -789,7 +1017,6 @@ export default function LanguageConfigPage() {
                           </button>
                         )}
 
-                        {/* Archive button */}
                         {cat.status !== 'deleted' && (
                           <button
                             onClick={() =>
@@ -802,7 +1029,6 @@ export default function LanguageConfigPage() {
                           </button>
                         )}
 
-                        {/* Restore button */}
                         {cat.status === 'deleted' && (
                           <button
                             onClick={() => handleRestoreCategory(cat.id)}
@@ -813,7 +1039,6 @@ export default function LanguageConfigPage() {
                           </button>
                         )}
 
-                        {/* Add Level Tier button */}
                         {cat.status !== 'deleted' && (
                           <button
                             onClick={() => {
@@ -838,209 +1063,343 @@ export default function LanguageConfigPage() {
       {/* --- MODAL: Add Language Scope --- */}
       <AnimatePresence>
         {isCatModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-            >
-              <GlassCard className="w-full max-w-2xl p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-white/5 pb-4 sticky top-0 bg-white dark:bg-[#070c19] z-10">
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Globe className="text-blue-500" size={18} /> Deploy Language Scope
-                  </h3>
-                  <button
-                    onClick={() => setIsCatModalOpen(false)}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <form onSubmit={handleCreateCategory} className="space-y-4">
-                  {error && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs p-3 rounded-xl flex items-center gap-2 font-medium">
-                      <ShieldAlert size={15} /> {error}
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                      Category Display Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., Japanese Language (JLPT)"
-                      value={catForm.category_name}
-                      onChange={(e) => setCatForm({ ...catForm, category_name: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                      Target Language Core
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., Japanese"
-                      value={catForm.language}
-                      onChange={(e) => setCatForm({ ...catForm, language: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                    />
-                  </div>
-
-                  {/* ✅ Passing Type Selection */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                      Passing Type
-                    </label>
-                    <select
-                      value={catForm.passing_type}
-                      onChange={(e) => {
-                        const type = e.target.value;
-                        let config = {};
-                        if (type === 'TOTAL_AND_SECTION') {
-                          config = {
-                            overallPassScore: 80,
-                            sections: [
-                              { name: 'Language Knowledge + Reading', minimumScore: 38 },
-                              { name: 'Listening', minimumScore: 19 }
-                            ]
-                          };
-                        } else if (type === 'CUT_OFF_SCORE') {
-                          config = { cutOffScore: 65 };
-                        } else if (type === 'LEVEL_RANGE') {
-                          config = {
-                            ranges: [
-                              { min: 0, max: 79, level: 'No Level', passed: false },
-                              { min: 80, max: 139, level: 'Level 1', passed: true },
-                              { min: 140, max: 200, level: 'Level 2', passed: true }
-                            ]
-                          };
-                        } else {
-                          config = { passingScore: 65 };
-                        }
-                        setCatForm({ ...catForm, passing_type: type, passing_config: config });
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                    >
-                      {PASSING_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label} - {type.description}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-gray-500">
-                      Select the passing rule type for this category
-                    </p>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
+          <Portal>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full max-w-2xl"
+              >
+                <GlassCard className="p-6 bg-white dark:bg-[#0a0f1e] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-white/5 pb-4 sticky top-0 z-10">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Globe className="text-blue-500" size={18} /> Deploy Language Scope
+                    </h3>
+                    <button
                       onClick={() => setIsCatModalOpen(false)}
-                      className="text-xs"
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl"
                     >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="success"
-                      size="sm"
-                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm"
-                    >
-                      Commit Scope Node
-                    </Button>
+                      <X size={18} />
+                    </button>
                   </div>
-                </form>
-              </GlassCard>
-            </motion.div>
-          </div>
+
+                  <form onSubmit={handleCreateCategory} className="space-y-4">
+                    {error && (
+                      <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs p-3 rounded-xl flex items-center gap-2 font-medium">
+                        <ShieldAlert size={15} /> {error}
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
+                        Category Display Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g., Japanese Language (JLPT)"
+                        value={catForm.category_name}
+                        onChange={(e) => setCatForm({ ...catForm, category_name: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
+                        Target Language Core
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g., Japanese"
+                        value={catForm.language}
+                        onChange={(e) => setCatForm({ ...catForm, language: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
+                        Passing Type
+                      </label>
+                      <select
+                        value={catForm.passing_type}
+                        onChange={(e) => {
+                          const type = e.target.value;
+                          let config = {};
+                          if (type === 'TOTAL_AND_SECTION') {
+                            config = {
+                              overallPassScore: 80,
+                              sections: [
+                                { name: 'Language Knowledge + Reading', minimumScore: 38 },
+                                { name: 'Listening', minimumScore: 19 }
+                              ]
+                            };
+                          } else if (type === 'CUT_OFF_SCORE') {
+                            config = { cutOffScore: 65 };
+                          } else if (type === 'LEVEL_RANGE') {
+                            config = {
+                              ranges: [
+                                { min: 0, max: 79, level: 'No Level', passed: false },
+                                { min: 80, max: 139, level: 'Level 1', passed: true },
+                                { min: 140, max: 200, level: 'Level 2', passed: true }
+                              ]
+                            };
+                          } else {
+                            config = { passingScore: 65 };
+                          }
+                          setCatForm({ ...catForm, passing_type: type, passing_config: config });
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      >
+                        {PASSING_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label} - {type.description}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-gray-500">
+                        Select the passing rule type for this category
+                      </p>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsCatModalOpen(false)}
+                        className="text-xs"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="success"
+                        size="sm"
+                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm"
+                      >
+                        Commit Scope Node
+                      </Button>
+                    </div>
+                  </form>
+                </GlassCard>
+              </motion.div>
+            </div>
+          </Portal>
         )}
       </AnimatePresence>
 
       {/* --- MODAL: Add Level Tier --- */}
+      {/* ✅ FIXED: Sticky Header */}
       <AnimatePresence>
         {isLvlModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-            >
-              <GlassCard className="w-full max-w-lg p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-white/5 pb-4 sticky top-0 bg-white dark:bg-[#070c19] z-10">
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Layers className="text-purple-500" size={18} /> Append Level Tier Mapping
-                  </h3>
-                  <button
-                    onClick={() => setIsLvlModalOpen(false)}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <form onSubmit={handleCreateLevel} className="space-y-4">
-                  {error && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs p-3 rounded-xl flex items-center gap-2 font-medium">
-                      <ShieldAlert size={15} /> {error}
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                      Level Tier Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., JLPT N4"
-                      value={lvlForm.level_name}
-                      onChange={(e) => setLvlForm({ ...lvlForm, level_name: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                    />
+          <Portal>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full max-w-lg"
+              >
+                <GlassCard className="p-0 bg-white dark:bg-[#0a0f1e] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
+                  
+                  {/* ✅ Sticky Header */}
+                  <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-white/5 sticky top-0 z-20 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Layers className="text-purple-500" size={18} /> Append Level Tier Mapping
+                    </h3>
+                    <button
+                      onClick={() => setIsLvlModalOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl flex-shrink-0"
+                    >
+                      <X size={18} />
+                    </button>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                      Credit Cost
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      required
-                      placeholder="e.g., 15"
-                      value={lvlForm.credit_cost}
-                      onChange={(e) => setLvlForm({ ...lvlForm, credit_cost: parseInt(e.target.value) || 0 })}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                    />
+                  {/* ✅ Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                    <form onSubmit={handleCreateLevel} className="space-y-4">
+                      {error && (
+                        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs p-3 rounded-xl flex items-center gap-2 font-medium">
+                          <ShieldAlert size={15} /> {error}
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
+                          Level Tier Name
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g., JLPT N4"
+                          value={lvlForm.level_name}
+                          onChange={(e) => setLvlForm({ ...lvlForm, level_name: e.target.value })}
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        />
+                      </div>
+
+                      {/* Scoring Method Selection */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
+                          Scoring Method
+                        </label>
+                        <select
+                          value={lvlForm.scoring_method}
+                          onChange={(e) => {
+                            const method = e.target.value;
+                            const config = DEFAULT_SCORING_CONFIGS[method] || {};
+                            setLvlForm({ ...lvlForm, scoring_method: method, scoring_config: config });
+                          }}
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        >
+                          <option value="">Inherit from Category</option>
+                          {SCORING_METHODS.map((method) => (
+                            <option key={method.value} value={method.value}>
+                              {method.label} - {method.description}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-gray-500">
+                          How scores should be calculated for this level (leave empty to inherit)
+                        </p>
+                      </div>
+
+                      {/* Scoring Config (when GROUPED_SECTION is selected) */}
+                      {lvlForm.scoring_method === 'GROUPED_SECTION' && (
+                        <div className="space-y-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                          <h4 className="text-xs font-bold text-blue-400">Grouped Section Configuration</h4>
+                          <div className="space-y-2">
+                            {(lvlForm.scoring_config?.groups || []).map((group, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={group.name}
+                                  onChange={(e) => {
+                                    const newGroups = [...(lvlForm.scoring_config?.groups || [])];
+                                    newGroups[index] = { ...newGroups[index], name: e.target.value };
+                                    setLvlForm({
+                                      ...lvlForm,
+                                      scoring_config: { ...lvlForm.scoring_config, groups: newGroups }
+                                    });
+                                  }}
+                                  className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                  placeholder="Group name"
+                                />
+                                <input
+                                  type="text"
+                                  value={group.sections?.join(', ') || ''}
+                                  onChange={(e) => {
+                                    const newGroups = [...(lvlForm.scoring_config?.groups || [])];
+                                    newGroups[index] = { 
+                                      ...newGroups[index], 
+                                      sections: e.target.value.split(',').map(s => s.trim()).filter(Boolean) 
+                                    };
+                                    setLvlForm({
+                                      ...lvlForm,
+                                      scoring_config: { ...lvlForm.scoring_config, groups: newGroups }
+                                    });
+                                  }}
+                                  className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                  placeholder="Sections (comma separated)"
+                                />
+                                <input
+                                  type="number"
+                                  value={group.maxScore}
+                                  onChange={(e) => {
+                                    const newGroups = [...(lvlForm.scoring_config?.groups || [])];
+                                    newGroups[index] = { ...newGroups[index], maxScore: parseInt(e.target.value) || 0 };
+                                    setLvlForm({
+                                      ...lvlForm,
+                                      scoring_config: { ...lvlForm.scoring_config, groups: newGroups }
+                                    });
+                                  }}
+                                  className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                  placeholder="Max"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newGroups = (lvlForm.scoring_config?.groups || []).filter((_, i) => i !== index);
+                                    setLvlForm({
+                                      ...lvlForm,
+                                      scoring_config: { ...lvlForm.scoring_config, groups: newGroups }
+                                    });
+                                  }}
+                                  className="text-red-400 hover:text-red-300 p-1"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newGroups = [...(lvlForm.scoring_config?.groups || []), { name: 'New Group', sections: [], maxScore: 100 }];
+                                setLvlForm({
+                                  ...lvlForm,
+                                  scoring_config: { ...lvlForm.scoring_config, groups: newGroups }
+                                });
+                              }}
+                              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                            >
+                              <Plus size={12} /> Add Group
+                            </button>
+                            <div className="mt-2">
+                              <label className="text-[10px] text-gray-400">Total Max Score</label>
+                              <input
+                                type="number"
+                                value={lvlForm.scoring_config?.totalMaxScore || 180}
+                                onChange={(e) => {
+                                  setLvlForm({
+                                    ...lvlForm,
+                                    scoring_config: { ...lvlForm.scoring_config, totalMaxScore: parseInt(e.target.value) || 180 }
+                                  });
+                                }}
+                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="p-4 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="p-1.5 bg-amber-500/10 rounded-lg flex-shrink-0 mt-0.5">
+                            <Clock size={16} className="text-amber-400 animate-pulse" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold text-amber-400">
+                              ⏳ Credit Valuation Pending from Finance Admin
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1 leading-relaxed">
+                              Finance administrator will assign credit values through the{' '}
+                              <span className="text-blue-400 font-medium">Credit Valuation Dashboard</span>.
+                              Until then, this level will appear with 0 credits.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                        <p className="text-[10px] text-blue-400 font-medium flex items-center gap-1">
+                          <Settings size={12} />
+                          Level Configuration
+                        </p>
+                        <p className="text-[9px] text-gray-500 mt-1">
+                          By default, this level inherits the category's passing rules and scoring method.
+                          You can configure custom rules later using the "Configure" button on the level.
+                        </p>
+                      </div>
+
+                      <div className="h-4" />
+                    </form>
                   </div>
 
-                  {/* ✅ Option to override passing rules */}
-                  <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl">
-                    <p className="text-[10px] text-blue-400 font-medium flex items-center gap-1">
-                      <Settings size={12} />
-                      Level Passing Rules
-                    </p>
-                    <p className="text-[9px] text-gray-500 mt-1">
-                      By default, this level inherits the category's passing rules.
-                      You can configure custom rules later using the "Configure" button on the level.
-                    </p>
-                  </div>
-
-                  <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl text-center">
-                    <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest">
-                      Credit valuation pending approval from Finance Admin.
-                    </p>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
+                  {/* ✅ Fixed Footer */}
+                  <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
                     <Button
                       type="button"
                       variant="ghost"
@@ -1054,324 +1413,462 @@ export default function LanguageConfigPage() {
                       type="submit"
                       variant="success"
                       size="sm"
+                      onClick={handleCreateLevel}
                       className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm"
                     >
                       Authorize Mapping
                     </Button>
                   </div>
-                </form>
-              </GlassCard>
-            </motion.div>
-          </div>
+                </GlassCard>
+              </motion.div>
+            </div>
+          </Portal>
         )}
       </AnimatePresence>
 
-      {/* --- MODAL: Configure Passing Rules --- */}
+      {/* --- MODAL: Configure Level Settings --- */}
+      {/* ✅ FIXED: Sticky Header */}
       <AnimatePresence>
         {isConfigModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-            >
-              <GlassCard className="w-full max-w-2xl p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-white/5 pb-4 sticky top-0 bg-white dark:bg-[#070c19] z-10">
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Settings className="text-blue-500" size={18} />
-                    Configure Passing Rules
-                    <span className="text-xs font-normal text-gray-500">
-                      ({configMode === 'category' ? 'Category' : 'Level'} Level)
-                    </span>
-                  </h3>
-                  <button
-                    onClick={() => setIsConfigModalOpen(false)}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {/* Passing Type Selection */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                      Passing Type
-                    </label>
-                    <select
-                      value={configForm.passingType}
-                      onChange={(e) => {
-                        const type = e.target.value;
-                        let config = {};
-                        if (type === 'TOTAL_AND_SECTION') {
-                          config = {
-                            overallPassScore: 80,
-                            sections: [
-                              { name: 'Language Knowledge + Reading', minimumScore: 38 },
-                              { name: 'Listening', minimumScore: 19 }
-                            ]
-                          };
-                        } else if (type === 'CUT_OFF_SCORE') {
-                          config = { cutOffScore: 65 };
-                        } else if (type === 'LEVEL_RANGE') {
-                          config = {
-                            ranges: [
-                              { min: 0, max: 79, level: 'No Level', passed: false },
-                              { min: 80, max: 139, level: 'Level 1', passed: true },
-                              { min: 140, max: 200, level: 'Level 2', passed: true }
-                            ]
-                          };
-                        } else {
-                          config = { passingScore: 65 };
-                        }
-                        setConfigForm({ ...configForm, passingType: type, passingConfig: config });
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+          <Portal>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full max-w-2xl"
+              >
+                <GlassCard className="p-0 bg-white dark:bg-[#0a0f1e] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
+                  
+                  {/* ✅ Sticky Header */}
+                  <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-white/5 sticky top-0 z-20 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Settings className="text-blue-500" size={18} />
+                      Configure Level Settings
+                      <span className="text-xs font-normal text-gray-500">
+                        ({configMode === 'category' ? 'Category' : 'Level'} Level)
+                      </span>
+                    </h3>
+                    <button
+                      onClick={() => setIsConfigModalOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl flex-shrink-0"
                     >
-                      {PASSING_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
+                      <X size={18} />
+                    </button>
                   </div>
 
-                  {/* Dynamic Config based on Passing Type */}
-                  {configForm.passingType === 'TOTAL_AND_SECTION' && (
-                    <div className="space-y-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
-                      <h4 className="text-xs font-bold text-blue-400">JLPT Configuration</h4>
-                      <div className="space-y-2">
-                        <label className="text-[10px] text-gray-400">Overall Passing Score (%)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={configForm.passingConfig?.overallPassScore || 80}
-                          onChange={(e) => setConfigForm({
-                            ...configForm,
-                            passingConfig: {
-                              ...configForm.passingConfig,
-                              overallPassScore: parseInt(e.target.value) || 80
-                            }
-                          })}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] text-gray-400">Section Minimum Scores</label>
-                        {(configForm.passingConfig?.sections || []).map((section, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={section.name}
-                              onChange={(e) => {
-                                const newSections = [...(configForm.passingConfig?.sections || [])];
-                                newSections[index] = { ...newSections[index], name: e.target.value };
-                                setConfigForm({
-                                  ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, sections: newSections }
-                                });
-                              }}
-                              className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                              placeholder="Section name"
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={section.minimumScore}
-                              onChange={(e) => {
-                                const newSections = [...(configForm.passingConfig?.sections || [])];
-                                newSections[index] = { ...newSections[index], minimumScore: parseInt(e.target.value) || 0 };
-                                setConfigForm({
-                                  ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, sections: newSections }
-                                });
-                              }}
-                              className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                              placeholder="Min %"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newSections = (configForm.passingConfig?.sections || []).filter((_, i) => i !== index);
-                                setConfigForm({
-                                  ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, sections: newSections }
-                                });
-                              }}
-                              className="text-red-400 hover:text-red-300 p-1"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
+                  {/* ✅ Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                    {/* Scoring Method Selection */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
+                        Scoring Method
+                      </label>
+                      <select
+                        value={configForm.scoringMethod || 'RAW_SCORE'}
+                        onChange={(e) => {
+                          const method = e.target.value;
+                          const config = DEFAULT_SCORING_CONFIGS[method] || {};
+                          setConfigForm({ 
+                            ...configForm, 
+                            scoringMethod: method, 
+                            scoringConfig: config 
+                          });
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      >
+                        {SCORING_METHODS.map((method) => (
+                          <option key={method.value} value={method.value}>
+                            {method.label} - {method.description}
+                          </option>
                         ))}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newSections = [...(configForm.passingConfig?.sections || []), { name: 'New Section', minimumScore: 30 }];
-                            setConfigForm({
-                              ...configForm,
-                              passingConfig: { ...configForm.passingConfig, sections: newSections }
-                            });
-                          }}
-                          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                        >
-                          <Plus size={12} /> Add Section
-                        </button>
-                      </div>
+                      </select>
+                      <p className="text-[10px] text-gray-500">
+                        How scores should be calculated for this level
+                      </p>
                     </div>
-                  )}
 
-                  {configForm.passingType === 'CUT_OFF_SCORE' && (
-                    <div className="space-y-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
-                      <h4 className="text-xs font-bold text-amber-400">EPS-TOPIK Configuration</h4>
-                      <div className="space-y-2">
-                        <label className="text-[10px] text-gray-400">Current Cut-off Score (%)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={configForm.passingConfig?.cutOffScore || 65}
-                          onChange={(e) => setConfigForm({
-                            ...configForm,
-                            passingConfig: {
-                              ...configForm.passingConfig,
-                              cutOffScore: parseInt(e.target.value) || 65
-                            }
-                          })}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
-                        />
-                        <p className="text-[9px] text-gray-500">This can be updated each recruitment cycle</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {configForm.passingType === 'LEVEL_RANGE' && (
-                    <div className="space-y-3 p-4 bg-purple-500/5 border border-purple-500/20 rounded-xl">
-                      <h4 className="text-xs font-bold text-purple-400">TOPIK I Configuration</h4>
-                      <div className="space-y-2">
-                        <label className="text-[10px] text-gray-400">Level Ranges</label>
-                        {(configForm.passingConfig?.ranges || []).map((range, index) => (
-                          <div key={index} className="flex items-center gap-2">
+                    {/* Scoring Config (when GROUPED_SECTION) */}
+                    {configForm.scoringMethod === 'GROUPED_SECTION' && (
+                      <div className="space-y-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                        <h4 className="text-xs font-bold text-blue-400">Grouped Section Configuration</h4>
+                        <div className="space-y-2">
+                          {(configForm.scoringConfig?.groups || []).map((group, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={group.name}
+                                onChange={(e) => {
+                                  const newGroups = [...(configForm.scoringConfig?.groups || [])];
+                                  newGroups[index] = { ...newGroups[index], name: e.target.value };
+                                  setConfigForm({
+                                    ...configForm,
+                                    scoringConfig: { ...configForm.scoringConfig, groups: newGroups }
+                                  });
+                                }}
+                                className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Group name"
+                              />
+                              <input
+                                type="text"
+                                value={group.sections?.join(', ') || ''}
+                                onChange={(e) => {
+                                  const newGroups = [...(configForm.scoringConfig?.groups || [])];
+                                  newGroups[index] = { 
+                                    ...newGroups[index], 
+                                    sections: e.target.value.split(',').map(s => s.trim()).filter(Boolean) 
+                                  };
+                                  setConfigForm({
+                                    ...configForm,
+                                    scoringConfig: { ...configForm.scoringConfig, groups: newGroups }
+                                  });
+                                }}
+                                className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Sections (comma separated)"
+                              />
+                              <input
+                                type="number"
+                                value={group.maxScore}
+                                onChange={(e) => {
+                                  const newGroups = [...(configForm.scoringConfig?.groups || [])];
+                                  newGroups[index] = { ...newGroups[index], maxScore: parseInt(e.target.value) || 0 };
+                                  setConfigForm({
+                                    ...configForm,
+                                    scoringConfig: { ...configForm.scoringConfig, groups: newGroups }
+                                  });
+                                }}
+                                className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Max"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newGroups = (configForm.scoringConfig?.groups || []).filter((_, i) => i !== index);
+                                  setConfigForm({
+                                    ...configForm,
+                                    scoringConfig: { ...configForm.scoringConfig, groups: newGroups }
+                                  });
+                                }}
+                                className="text-red-400 hover:text-red-300 p-1"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newGroups = [...(configForm.scoringConfig?.groups || []), { name: 'New Group', sections: [], maxScore: 100 }];
+                              setConfigForm({
+                                ...configForm,
+                                scoringConfig: { ...configForm.scoringConfig, groups: newGroups }
+                              });
+                            }}
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                          >
+                            <Plus size={12} /> Add Group
+                          </button>
+                          <div className="mt-2">
+                            <label className="text-[10px] text-gray-400">Total Max Score</label>
                             <input
                               type="number"
-                              min="0"
-                              max="200"
-                              value={range.min}
+                              value={configForm.scoringConfig?.totalMaxScore || 180}
                               onChange={(e) => {
-                                const newRanges = [...(configForm.passingConfig?.ranges || [])];
-                                newRanges[index] = { ...newRanges[index], min: parseInt(e.target.value) || 0 };
                                 setConfigForm({
                                   ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, ranges: newRanges }
+                                  scoringConfig: { ...configForm.scoringConfig, totalMaxScore: parseInt(e.target.value) || 180 }
                                 });
                               }}
-                              className="w-16 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                              placeholder="Min"
+                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
                             />
-                            <span className="text-gray-500">-</span>
-                            <input
-                              type="number"
-                              min="0"
-                              max="200"
-                              value={range.max}
-                              onChange={(e) => {
-                                const newRanges = [...(configForm.passingConfig?.ranges || [])];
-                                newRanges[index] = { ...newRanges[index], max: parseInt(e.target.value) || 0 };
-                                setConfigForm({
-                                  ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, ranges: newRanges }
-                                });
-                              }}
-                              className="w-16 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                              placeholder="Max"
-                            />
-                            <input
-                              type="text"
-                              value={range.level}
-                              onChange={(e) => {
-                                const newRanges = [...(configForm.passingConfig?.ranges || [])];
-                                newRanges[index] = { ...newRanges[index], level: e.target.value };
-                                setConfigForm({
-                                  ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, ranges: newRanges }
-                                });
-                              }}
-                              className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                              placeholder="Level name"
-                            />
-                            <select
-                              value={range.passed ? 'true' : 'false'}
-                              onChange={(e) => {
-                                const newRanges = [...(configForm.passingConfig?.ranges || [])];
-                                newRanges[index] = { ...newRanges[index], passed: e.target.value === 'true' };
-                                setConfigForm({
-                                  ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, ranges: newRanges }
-                                });
-                              }}
-                              className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                            >
-                              <option value="true">PASS</option>
-                              <option value="false">FAIL</option>
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newRanges = (configForm.passingConfig?.ranges || []).filter((_, i) => i !== index);
-                                setConfigForm({
-                                  ...configForm,
-                                  passingConfig: { ...configForm.passingConfig, ranges: newRanges }
-                                });
-                              }}
-                              className="text-red-400 hover:text-red-300 p-1"
-                            >
-                              <X size={14} />
-                            </button>
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Passing Type Selection */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
+                        Passing Type
+                      </label>
+                      <select
+                        value={configForm.passingType}
+                        onChange={(e) => {
+                          const type = e.target.value;
+                          let config = {};
+                          if (type === 'TOTAL_AND_SECTION') {
+                            config = {
+                              overallPassScore: 80,
+                              sections: [
+                                { name: 'Language Knowledge + Reading', minimumScore: 38 },
+                                { name: 'Listening', minimumScore: 19 }
+                              ]
+                            };
+                          } else if (type === 'CUT_OFF_SCORE') {
+                            config = { cutOffScore: 65 };
+                          } else if (type === 'LEVEL_RANGE') {
+                            config = {
+                              ranges: [
+                                { min: 0, max: 79, level: 'No Level', passed: false },
+                                { min: 80, max: 139, level: 'Level 1', passed: true },
+                                { min: 140, max: 200, level: 'Level 2', passed: true }
+                              ]
+                            };
+                          } else {
+                            config = { passingScore: 65 };
+                          }
+                          setConfigForm({ ...configForm, passingType: type, passingConfig: config });
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      >
+                        {PASSING_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
+                          </option>
                         ))}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newRanges = [...(configForm.passingConfig?.ranges || []), { min: 0, max: 100, level: 'New Level', passed: false }];
-                            setConfigForm({
+                      </select>
+                    </div>
+
+                    {/* Dynamic Config based on Passing Type */}
+                    {configForm.passingType === 'TOTAL_AND_SECTION' && (
+                      <div className="space-y-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                        <h4 className="text-xs font-bold text-blue-400">JLPT Configuration</h4>
+                        <div className="space-y-2">
+                          <label className="text-[10px] text-gray-400">Overall Passing Score (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={configForm.passingConfig?.overallPassScore || 80}
+                            onChange={(e) => setConfigForm({
                               ...configForm,
-                              passingConfig: { ...configForm.passingConfig, ranges: newRanges }
-                            });
-                          }}
-                          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                        >
-                          <Plus size={12} /> Add Range
-                        </button>
+                              passingConfig: {
+                                ...configForm.passingConfig,
+                                overallPassScore: parseInt(e.target.value) || 80
+                              }
+                            })}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] text-gray-400">Section Minimum Scores</label>
+                          {(configForm.passingConfig?.sections || []).map((section, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={section.name}
+                                onChange={(e) => {
+                                  const newSections = [...(configForm.passingConfig?.sections || [])];
+                                  newSections[index] = { ...newSections[index], name: e.target.value };
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, sections: newSections }
+                                  });
+                                }}
+                                className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Section name"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={section.minimumScore}
+                                onChange={(e) => {
+                                  const newSections = [...(configForm.passingConfig?.sections || [])];
+                                  newSections[index] = { ...newSections[index], minimumScore: parseInt(e.target.value) || 0 };
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, sections: newSections }
+                                  });
+                                }}
+                                className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Min %"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newSections = (configForm.passingConfig?.sections || []).filter((_, i) => i !== index);
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, sections: newSections }
+                                  });
+                                }}
+                                className="text-red-400 hover:text-red-300 p-1"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newSections = [...(configForm.passingConfig?.sections || []), { name: 'New Section', minimumScore: 30 }];
+                              setConfigForm({
+                                ...configForm,
+                                passingConfig: { ...configForm.passingConfig, sections: newSections }
+                              });
+                            }}
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                          >
+                            <Plus size={12} /> Add Section
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {configForm.passingType === 'SIMPLE_PERCENTAGE' && (
-                    <div className="space-y-3 p-4 bg-gray-500/5 border border-gray-500/20 rounded-xl">
-                      <h4 className="text-xs font-bold text-gray-400">Simple Percentage Configuration</h4>
-                      <div className="space-y-2">
-                        <label className="text-[10px] text-gray-400">Passing Score (%)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={configForm.passingConfig?.passingScore || 65}
-                          onChange={(e) => setConfigForm({
-                            ...configForm,
-                            passingConfig: {
-                              ...configForm.passingConfig,
-                              passingScore: parseInt(e.target.value) || 65
-                            }
-                          })}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
-                        />
+                    {configForm.passingType === 'CUT_OFF_SCORE' && (
+                      <div className="space-y-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                        <h4 className="text-xs font-bold text-amber-400">EPS-TOPIK Configuration</h4>
+                        <div className="space-y-2">
+                          <label className="text-[10px] text-gray-400">Current Cut-off Score (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={configForm.passingConfig?.cutOffScore || 65}
+                            onChange={(e) => setConfigForm({
+                              ...configForm,
+                              passingConfig: {
+                                ...configForm.passingConfig,
+                                cutOffScore: parseInt(e.target.value) || 65
+                              }
+                            })}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
+                          />
+                          <p className="text-[9px] text-gray-500">This can be updated each recruitment cycle</p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
+                    {configForm.passingType === 'LEVEL_RANGE' && (
+                      <div className="space-y-3 p-4 bg-purple-500/5 border border-purple-500/20 rounded-xl">
+                        <h4 className="text-xs font-bold text-purple-400">TOPIK I Configuration</h4>
+                        <div className="space-y-2">
+                          <label className="text-[10px] text-gray-400">Level Ranges</label>
+                          {(configForm.passingConfig?.ranges || []).map((range, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="0"
+                                max="200"
+                                value={range.min}
+                                onChange={(e) => {
+                                  const newRanges = [...(configForm.passingConfig?.ranges || [])];
+                                  newRanges[index] = { ...newRanges[index], min: parseInt(e.target.value) || 0 };
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, ranges: newRanges }
+                                  });
+                                }}
+                                className="w-16 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Min"
+                              />
+                              <span className="text-gray-500">-</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="200"
+                                value={range.max}
+                                onChange={(e) => {
+                                  const newRanges = [...(configForm.passingConfig?.ranges || [])];
+                                  newRanges[index] = { ...newRanges[index], max: parseInt(e.target.value) || 0 };
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, ranges: newRanges }
+                                  });
+                                }}
+                                className="w-16 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Max"
+                              />
+                              <input
+                                type="text"
+                                value={range.level}
+                                onChange={(e) => {
+                                  const newRanges = [...(configForm.passingConfig?.ranges || [])];
+                                  newRanges[index] = { ...newRanges[index], level: e.target.value };
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, ranges: newRanges }
+                                  });
+                                }}
+                                className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                                placeholder="Level name"
+                              />
+                              <select
+                                value={range.passed ? 'true' : 'false'}
+                                onChange={(e) => {
+                                  const newRanges = [...(configForm.passingConfig?.ranges || [])];
+                                  newRanges[index] = { ...newRanges[index], passed: e.target.value === 'true' };
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, ranges: newRanges }
+                                  });
+                                }}
+                                className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                              >
+                                <option value="true">PASS</option>
+                                <option value="false">FAIL</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newRanges = (configForm.passingConfig?.ranges || []).filter((_, i) => i !== index);
+                                  setConfigForm({
+                                    ...configForm,
+                                    passingConfig: { ...configForm.passingConfig, ranges: newRanges }
+                                  });
+                                }}
+                                className="text-red-400 hover:text-red-300 p-1"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newRanges = [...(configForm.passingConfig?.ranges || []), { min: 0, max: 100, level: 'New Level', passed: false }];
+                              setConfigForm({
+                                ...configForm,
+                                passingConfig: { ...configForm.passingConfig, ranges: newRanges }
+                              });
+                            }}
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                          >
+                            <Plus size={12} /> Add Range
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {configForm.passingType === 'SIMPLE_PERCENTAGE' && (
+                      <div className="space-y-3 p-4 bg-gray-500/5 border border-gray-500/20 rounded-xl">
+                        <h4 className="text-xs font-bold text-gray-400">Simple Percentage Configuration</h4>
+                        <div className="space-y-2">
+                          <label className="text-[10px] text-gray-400">Passing Score (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={configForm.passingConfig?.passingScore || 65}
+                            onChange={(e) => setConfigForm({
+                              ...configForm,
+                              passingConfig: {
+                                ...configForm.passingConfig,
+                                passingScore: parseInt(e.target.value) || 65
+                              }
+                            })}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="h-4" />
+                  </div>
+
+                  {/* ✅ Fixed Footer */}
+                  <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
                     <Button
                       type="button"
                       variant="ghost"
@@ -1388,62 +1885,64 @@ export default function LanguageConfigPage() {
                       onClick={handleSaveConfig}
                       className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm"
                     >
-                      Save Rules
+                      Save Configuration
                     </Button>
                   </div>
-                </div>
-              </GlassCard>
-            </motion.div>
-          </div>
+                </GlassCard>
+              </motion.div>
+            </div>
+          </Portal>
         )}
       </AnimatePresence>
 
       {/* --- CONFIRM ARCHIVE MODAL --- */}
       <AnimatePresence>
         {confirmDelete.show && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm bg-[#0f1629] border border-amber-500/30 rounded-2xl p-6 shadow-2xl text-left"
-            >
-              <div className="flex items-center gap-3 text-amber-400 mb-4">
-                <div className="p-2 bg-amber-500/10 rounded-xl border border-amber-500/20">
-                  <AlertTriangle size={22} />
+          <Portal>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-sm bg-[#0f1629] border border-amber-500/30 rounded-2xl p-6 shadow-2xl text-left"
+              >
+                <div className="flex items-center gap-3 text-amber-400 mb-4">
+                  <div className="p-2 bg-amber-500/10 rounded-xl border border-amber-500/20">
+                    <AlertTriangle size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Archive Category?</h3>
+                    <p className="text-xs text-gray-400">This action can be reversed</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Archive Category?</h3>
-                  <p className="text-xs text-gray-400">This action can be reversed</p>
+
+                <p className="text-sm text-gray-300 mb-6 leading-relaxed">
+                  Are you sure you want to archive the category{' '}
+                  <span className="text-white font-bold">"{confirmDelete.categoryName}"</span>?
+                  It will be hidden from the active system but can be restored at any time.
+                </p>
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="text-xs border border-white/5 bg-white/5 hover:bg-white/10"
+                    onClick={() => setConfirmDelete({ show: false, categoryId: null, categoryName: '' })}
+                  >
+                    Cancel
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteCategory}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-xl shadow-lg transition-colors"
+                  >
+                    Yes, Archive
+                  </button>
                 </div>
-              </div>
-
-              <p className="text-sm text-gray-300 mb-6 leading-relaxed">
-                Are you sure you want to archive the category{' '}
-                <span className="text-white font-bold">"{confirmDelete.categoryName}"</span>?
-                It will be hidden from the active system but can be restored at any time.
-              </p>
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="text-xs border border-white/5 bg-white/5 hover:bg-white/10"
-                  onClick={() => setConfirmDelete({ show: false, categoryId: null, categoryName: '' })}
-                >
-                  Cancel
-                </Button>
-                <button
-                  type="button"
-                  onClick={handleDeleteCategory}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-xl shadow-lg transition-colors"
-                >
-                  Yes, Archive
-                </button>
-              </div>
-            </motion.div>
-          </div>
+              </motion.div>
+            </div>
+          </Portal>
         )}
       </AnimatePresence>
     </div>
