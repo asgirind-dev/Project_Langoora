@@ -1,23 +1,22 @@
 const express = require('express');
 const router = express.Router();
-
+const { protect, authorizeRoles } = require('../middleware/authMiddleware');
+const upload = require('../middleware/uploadMiddleware');
 const {
   createExam,
   getTutorExams,
+  getStudentExams,
   getExamById,
   deleteExam,
   updateExamStatus,
   updateExamDraft,
   updateExam,
   getAllExams,
-  getAllExamsDev, // NEW: Import dev function
-  getStudentExams, 
+  getAllExamsDev,
   deleteStudentExam,
-  uploadAsset 
+  uploadAsset,
+  deleteAsset
 } = require('../controllers/examController');
-
-const { protect, authorizeRoles } = require('../middleware/authMiddleware');
-const upload = require('../middleware/uploadMiddleware');
 
 // ============================================================
 //  IMPORTANT: literal routes MUST be declared before the
@@ -30,7 +29,6 @@ const upload = require('../middleware/uploadMiddleware');
 // ============================================================
 
 // ============================================================
-//  TUTOR / ADMIN ENDPOINTS (protected, literal paths first)
 //  PUBLIC ENDPOINTS (No authentication required)
 // ============================================================
 
@@ -76,16 +74,6 @@ router.get('/tutor-exams', protect, authorizeRoles('tutor', 'admin'), getTutorEx
 router.post('/create', protect, authorizeRoles('tutor', 'admin'), createExam);
 
 // ============================================================
-//  STUDENT DASHBOARD ENDPOINT (literal path, before '/:examId')
-// ============================================================
-
-/**
- * Get all available exams for students to browse
- * GET /api/exams/available
- */
-router.get('/available', getAllExams);
-
-// ============================================================
 //  STUDENT EXAM ATTEMPTS MANAGEMENT (literal paths, before '/:examId')
 // ============================================================
 
@@ -116,8 +104,6 @@ router.get('/:examId', protect, authorizeRoles('tutor', 'admin'), getExamById);
  * DELETE /api/exams/:examId
  */
 router.delete('/:examId', protect, authorizeRoles('tutor', 'admin'), deleteExam);
-//  STUDENT EXAM ATTEMPTS MANAGEMENT
-// ============================================================
 
 /**
  * Update exam status
