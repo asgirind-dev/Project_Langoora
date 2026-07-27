@@ -1,7 +1,16 @@
+// backend/controllers/examController.js
 const { db } = require("../config/firebase");
 const cloudinary = require("cloudinary").v2;
 const path = require("path");
 const examServices = require("../services/examServices");
+
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
 
 // =========================================================================
 // Cloudinary Configuration (using environment variables)
@@ -13,7 +22,7 @@ cloudinary.config({
 });
 
 // =========================================================================
-// 1. Create Exam
+// 1. Create Exam - WITH AUDIT LOG
 // =========================================================================
 const createExam = async (req, res) => {
   try {
@@ -56,6 +65,20 @@ const createExam = async (req, res) => {
     const result = await examServices.createExamInDB(examData);
 
     if (result.success) {
+      // ✅ CONTENT MODERATION AUDIT LOG - CREATED
+      logAudit(auditLogService.logContentModeration, {
+        userId: tutorId,
+        userEmail: req.user?.email || 'unknown',
+        actorId: tutorId,
+        actorEmail: req.user?.email || 'unknown',
+        action: 'created',
+        entityType: 'exam',
+        entityId: result.examId,
+        entityName: title,
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+
       return res.status(201).json({
         success: true,
         message: "Exam structure deployed successfully!",
@@ -78,7 +101,7 @@ const createExam = async (req, res) => {
 };
 
 // =========================================================================
-// 2. Get Purchased Exams for Logged-In Student
+// 2. Get Purchased Exams for Logged-In Student (NO AUDIT - READ ONLY)
 // =========================================================================
 const getStudentExams = async (req, res) => {
   try {
@@ -120,19 +143,16 @@ const getStudentExams = async (req, res) => {
             if (examDoc.exists) {
               const examData = examDoc.data();
 
-              // Extract Tutor Name with multiple fallbacks
               const tutorName =
                 examData.tutor_name ||
                 examData.tutorName ||
                 examData.tutor?.name ||
                 "Expert Tutor";
 
-              // Extract Questions count (check Array length first, then direct numbers)
               const questionsCount = Array.isArray(examData.questions)
                 ? examData.questions.length
                 : examData.total_questions || examData.questions_count || 0;
 
-              // Extract Duration
               const duration =
                 examData.duration_minutes ||
                 examData.duration ||
@@ -147,21 +167,15 @@ const getStudentExams = async (req, res) => {
                   examData.name ||
                   `Exam Pack (${examData.level_id || "JLPT"})`,
                 description: examData.description || "",
-
-                // FIXED METADATA FOR FRONTEND CARDS
                 tutor_id: examData.tutor_id || examData.tutorId || null,
                 tutor_name: tutorName,
-                tutor: tutorName, // backwards compatibility
-
+                tutor: tutorName,
                 duration_minutes: duration,
-                duration: duration, // backwards compatibility
-
+                duration: duration,
                 total_questions: questionsCount,
-                questions: questionsCount, // backwards compatibility
-
+                questions: questionsCount,
                 category: examData.category_id || examData.category || "",
                 level: examData.level_id || examData.level || "",
-
                 thumbnail:
                   examData.thumbnail ||
                   "https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400",
@@ -209,7 +223,7 @@ const getStudentExams = async (req, res) => {
 };
 
 // =========================================================================
-// 3. Delete / Remove Purchased Student Exam
+// 3. Delete / Remove Purchased Student Exam (NO AUDIT - Student action)
 // =========================================================================
 const deleteStudentExam = async (req, res) => {
   try {
@@ -240,7 +254,7 @@ const deleteStudentExam = async (req, res) => {
 };
 
 // =========================================================================
-// 4. Purchase an Exam
+// 4. Purchase an Exam - WITH FINANCIAL AUDIT LOG
 // =========================================================================
 const purchaseExam = async (req, res) => {
   try {
@@ -258,7 +272,6 @@ const purchaseExam = async (req, res) => {
         .json({ success: false, message: "Unauthorized user." });
     }
 
-    // Ensure targetExamId is never undefined
     const targetExamId = exam_id || level_id || req.body.id;
 
     if (!targetExamId) {
@@ -268,7 +281,6 @@ const purchaseExam = async (req, res) => {
       });
     }
 
-    // Check existing purchase
     const existingPurchase = await db
       .collection("purchased_exams")
       .where("student_id", "==", studentId)
@@ -284,7 +296,6 @@ const purchaseExam = async (req, res) => {
 
     let examData = null;
 
-    // 1. Try to fetch from exam_categories/levels
     if (category_id && level_id) {
       const levelDoc = await db
         .collection("exam_categories")
@@ -298,7 +309,6 @@ const purchaseExam = async (req, res) => {
       }
     }
 
-    // 2. Try to fetch directly from exams collection
     if (!examData && targetExamId) {
       const examDoc = await db.collection("exams").doc(targetExamId).get();
       if (examDoc.exists) {
@@ -342,7 +352,6 @@ const purchaseExam = async (req, res) => {
 
       const newBalance = currentCredits - requiredCredits;
 
-      // Update User Wallet/Credits
       const updateData = { updatedAt: new Date().toISOString() };
       if (freshUserData.credits !== undefined) updateData.credits = newBalance;
       if (freshUserData.wallet_balance !== undefined)
@@ -360,16 +369,17 @@ const purchaseExam = async (req, res) => {
 
       transaction.update(userRef, updateData);
 
-      // Add to Purchased Exams
       const purchaseRef = db.collection("purchased_exams").doc();
       transaction.set(purchaseRef, {
         student_id: studentId,
         exam_id: targetExamId,
         purchasedAt: new Date().toISOString(),
         status: "active",
+        credits_deducted: requiredCredits,
+        tutor_id: examData?.tutor_id || null,
+        tutor_name: examData?.tutor_name || 'Expert Tutor'
       });
 
-      // Save Transaction Log
       const transactionRef = db.collection("transactions").doc(transactionId);
       transaction.set(transactionRef, {
         order_id: transactionId,
@@ -384,6 +394,22 @@ const purchaseExam = async (req, res) => {
       });
     });
 
+    // ✅ FINANCIAL AUDIT LOG - SUCCESSFUL PURCHASE
+    logAudit(auditLogService.logFinancial, {
+      userId: studentId,
+      userEmail: req.user?.email || 'unknown',
+      actorId: studentId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'purchase',
+      entityType: 'exam',
+      entityId: targetExamId,
+      credits: requiredCredits,
+      status: 'completed',
+      paymentMethod: 'Wallet Credits',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({
       success: true,
       message: "Exam unlocked successfully! 🎉",
@@ -391,6 +417,20 @@ const purchaseExam = async (req, res) => {
     });
   } catch (error) {
     console.error("Purchase Exam Error:", error);
+
+    // ✅ FINANCIAL AUDIT LOG - FAILED PURCHASE
+    logAudit(auditLogService.logFinancial, {
+      userId: req.user?.uid || req.user?.id || 'unknown',
+      userEmail: req.user?.email || 'unknown',
+      action: 'purchase',
+      entityType: 'exam',
+      entityId: req.body.exam_id || req.body.level_id || 'unknown',
+      status: 'failed',
+      error: error.message,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(500).json({
       success: false,
       message: error.message || "Internal server error during purchase.",
@@ -400,7 +440,7 @@ const purchaseExam = async (req, res) => {
 };
 
 // =========================================================================
-// 5. Get All Published Exams
+// 5. Get All Published Exams (NO AUDIT - READ ONLY)
 // =========================================================================
 const getAllExams = async (req, res) => {
   try {
@@ -409,12 +449,11 @@ const getAllExams = async (req, res) => {
       .where("status", "in", ["active", "published"])
       .get();
 
-    // 2. Exam Categories සහ Subcollections (levels) query කර Credits Map එකක් හදාගැනීම
     const categoriesSnapshot = await db.collection('exam_categories').get();
     const levelCreditsMap = {};
 
     for (const categoryDoc of categoriesSnapshot.docs) {
-      const categoryId = categoryDoc.id; // e.g., 'jlpt', 'eps---topik'
+      const categoryId = categoryDoc.id;
       
       const levelsSnapshot = await db
         .collection('exam_categories')
@@ -424,18 +463,15 @@ const getAllExams = async (req, res) => {
 
       levelsSnapshot.forEach((levelDoc) => {
         const levelData = levelDoc.data();
-        const levelId = levelDoc.id; // e.g., 'jlpt_n4', 'jlpt_n5'
+        const levelId = levelDoc.id;
         
-        // Document එකෙන් credits ලබා ගැනීම
         const creditValue = Number(levelData.credits ?? levelData.price ?? levelData.credit_cost ?? 0);
         
-        // key 2 කින්ම Map එකට එකතු කරයි (e.g. 'jlpt_jlpt_n5' සහ 'jlpt_n5')
         levelCreditsMap[`${categoryId}_${levelId}`] = creditValue;
         levelCreditsMap[levelId] = creditValue;
       });
     }
 
-    // 3. Exams Process කිරීම සහ Credits Join කිරීම
     const examsList = [];
 
     snapshot.forEach((doc) => {
@@ -443,7 +479,6 @@ const getAllExams = async (req, res) => {
       const catId = data.category_id || data.category || '';
       const levelId = data.level_id || data.level || '';
 
-      // subcollection වලින් ආපු dynamic level credits සෙවීම
       const matchedCredits = 
         levelCreditsMap[`${catId}_${levelId}`] ?? 
         levelCreditsMap[levelId] ?? 
@@ -487,7 +522,7 @@ const getAllExams = async (req, res) => {
 };
 
 // =========================================================================
-// 5.5 Get ALL exams (Development only - NO AUTH)
+// 5.5 Get ALL exams (Development only - NO AUTH) (NO AUDIT)
 // =========================================================================
 const getAllExamsDev = async (req, res) => {
   try {
@@ -515,7 +550,7 @@ const getAllExamsDev = async (req, res) => {
 };
 
 // =========================================================================
-// 6. Submit Exam and Update Purchase Document
+// 6. Submit Exam and Update Purchase Document (NO AUDIT - Student action)
 // =========================================================================
 const submitExamResult = async (req, res) => {
   try {
@@ -614,7 +649,7 @@ const submitExamResult = async (req, res) => {
 };
 
 // =========================================================================
-// 7. Get Tutor Exams (Only logged-in tutor's exams)
+// 7. Get Tutor Exams (Only logged-in tutor's exams) (NO AUDIT - READ ONLY)
 // =========================================================================
 const getTutorExams = async (req, res) => {
   try {
@@ -644,7 +679,7 @@ const getTutorExams = async (req, res) => {
 };
 
 // =========================================================================
-// 8. Get Exam by ID (with access control)
+// 8. Get Exam by ID (with access control) (NO AUDIT - READ ONLY)
 // =========================================================================
 const getExamById = async (req, res) => {
   try {
@@ -668,14 +703,33 @@ const getExamById = async (req, res) => {
 };
 
 // =========================================================================
-// 9. Delete Exam (soft delete with access control)
+// 9. Delete Exam (soft delete with access control) - WITH AUDIT LOG
 // =========================================================================
 const deleteExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
+    // Get exam details before deletion
+    const examDoc = await db.collection('exams').doc(examId).get();
+    const examData = examDoc.exists ? examDoc.data() : null;
+
     const result = await examServices.softDeleteExamFromDB(examId, tutorId);
+
+    // ✅ CONTENT MODERATION AUDIT LOG - SOFT DELETE
+    logAudit(auditLogService.logContentModeration, {
+      userId: tutorId,
+      userEmail: req.user?.email || 'unknown',
+      actorId: tutorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'deleted',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData?.title || examId,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Delete Exam Error:", error);
@@ -688,7 +742,7 @@ const deleteExam = async (req, res) => {
 };
 
 // =========================================================================
-// Recycle Bin: Get all soft-deleted exams for the logged-in tutor
+// Recycle Bin: Get all soft-deleted exams (NO AUDIT - READ ONLY)
 // =========================================================================
 const getRecycleBinExams = async (req, res) => {
   try {
@@ -718,14 +772,33 @@ const getRecycleBinExams = async (req, res) => {
 };
 
 // =========================================================================
-// Recycle Bin: Restore a soft-deleted exam
+// Recycle Bin: Restore a soft-deleted exam - WITH AUDIT LOG
 // =========================================================================
 const restoreExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
+    // Get exam details before restore
+    const examDoc = await db.collection('exams').doc(examId).get();
+    const examData = examDoc.exists ? examDoc.data() : null;
+
     const result = await examServices.restoreExamFromDB(examId, tutorId);
+
+    // ✅ CONTENT MODERATION AUDIT LOG - RESTORED
+    logAudit(auditLogService.logContentModeration, {
+      userId: tutorId,
+      userEmail: req.user?.email || 'unknown',
+      actorId: tutorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'restored',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData?.title || examId,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Restore Exam Error:", error);
@@ -738,17 +811,37 @@ const restoreExam = async (req, res) => {
 };
 
 // =========================================================================
-// Recycle Bin: Permanently delete an exam
+// Recycle Bin: Permanently delete an exam - WITH AUDIT LOG
 // =========================================================================
 const permanentDeleteExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
+    // Get exam details before permanent deletion
+    const examDoc = await db.collection('exams').doc(examId).get();
+    const examData = examDoc.exists ? examDoc.data() : null;
+
     const result = await examServices.permanentlyDeleteExamFromDB(
       examId,
       tutorId,
     );
+
+    // ✅ CONTENT MODERATION AUDIT LOG - PERMANENT DELETE
+    logAudit(auditLogService.logContentModeration, {
+      userId: tutorId,
+      userEmail: req.user?.email || 'unknown',
+      actorId: tutorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'deleted',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData?.title || examId,
+      reason: 'Permanent deletion from recycle bin',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Permanent Delete Exam Error:", error);
@@ -761,7 +854,7 @@ const permanentDeleteExam = async (req, res) => {
 };
 
 // =========================================================================
-// 10. Update Exam Status
+// 10. Update Exam Status - WITH AUDIT LOG
 // =========================================================================
 const updateExamStatus = async (req, res) => {
   try {
@@ -776,11 +869,32 @@ const updateExamStatus = async (req, res) => {
       });
     }
 
+    // Get exam details before status update
+    const examDoc = await db.collection('exams').doc(examId).get();
+    const examData = examDoc.exists ? examDoc.data() : null;
+    const oldStatus = examData?.status || 'draft';
+
     const result = await examServices.updateExamStatusInDB(
       examId,
       status,
       tutorId,
     );
+
+    // ✅ CONTENT MODERATION AUDIT LOG - STATUS UPDATE
+    logAudit(auditLogService.logContentModeration, {
+      userId: tutorId,
+      userEmail: req.user?.email || 'unknown',
+      actorId: tutorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'updated',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData?.title || examId,
+      changes: { status: { old: oldStatus, new: status } },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Update Exam Status Error:", error);
@@ -793,7 +907,7 @@ const updateExamStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 11. Update Exam Draft (Auto-save)
+// 11. Update Exam Draft (Auto-save) - WITH AUDIT LOG
 // =========================================================================
 const updateExamDraft = async (req, res) => {
   try {
@@ -801,11 +915,31 @@ const updateExamDraft = async (req, res) => {
     const draftData = req.body;
     const tutorId = req.user?.id || req.user?.uid;
 
+    // Get exam details before draft update
+    const examDoc = await db.collection('exams').doc(examId).get();
+    const examData = examDoc.exists ? examDoc.data() : null;
+
     const result = await examServices.updateExamDraftInDB(
       examId,
       draftData,
       tutorId,
     );
+
+    // ✅ CONTENT MODERATION AUDIT LOG - DRAFT UPDATE
+    logAudit(auditLogService.logContentModeration, {
+      userId: tutorId,
+      userEmail: req.user?.email || 'unknown',
+      actorId: tutorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'updated',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData?.title || examId,
+      changes: { draft: 'Auto-saved' },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Update Exam Draft Error:", error);
@@ -818,7 +952,7 @@ const updateExamDraft = async (req, res) => {
 };
 
 // =========================================================================
-// 12. Update Existing Exam
+// 12. Update Existing Exam - WITH AUDIT LOG
 // =========================================================================
 const updateExam = async (req, res) => {
   try {
@@ -826,7 +960,35 @@ const updateExam = async (req, res) => {
     const examData = req.body;
     const tutorId = req.user?.id || req.user?.uid;
 
+    // Get old exam details before update
+    const oldExamDoc = await db.collection('exams').doc(examId).get();
+    const oldExamData = oldExamDoc.exists ? oldExamDoc.data() : null;
+
     const result = await examServices.updateExamInDB(examId, examData, tutorId);
+
+    // ✅ CONTENT MODERATION AUDIT LOG - EXAM UPDATE
+    const changes = {};
+    const fieldsToTrack = ['title', 'category_id', 'level_id', 'duration_minutes', 'status', 'description'];
+    fieldsToTrack.forEach(field => {
+      if (oldExamData && oldExamData[field] !== examData[field]) {
+        changes[field] = { old: oldExamData[field], new: examData[field] };
+      }
+    });
+
+    logAudit(auditLogService.logContentModeration, {
+      userId: tutorId,
+      userEmail: req.user?.email || 'unknown',
+      actorId: tutorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'updated',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData.title || oldExamData?.title || examId,
+      changes: changes,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Update Exam Error:", error);
@@ -839,7 +1001,7 @@ const updateExam = async (req, res) => {
 };
 
 // =========================================================================
-// 13. Upload Asset (Audio to Cloudinary | Images to Base64)
+// 13. Upload Asset (Audio to Cloudinary | Images to Base64) (NO AUDIT)
 // =========================================================================
 const uploadAsset = async (req, res) => {
   try {
@@ -964,7 +1126,7 @@ const uploadAsset = async (req, res) => {
 };
 
 // =========================================================================
-// 14. Delete Asset from Cloudinary
+// 14. Delete Asset from Cloudinary (NO AUDIT)
 // =========================================================================
 const deleteAsset = async (req, res) => {
   try {
@@ -1019,7 +1181,7 @@ const deleteAsset = async (req, res) => {
 };
 
 // =========================================================================
-// ✅ NEW: Get pending exams for quality audits (filtered by language)
+// ✅ NEW: Get pending exams for quality audits (NO AUDIT - READ ONLY)
 // =========================================================================
 const getPendingExams = async (req, res) => {
   try {
@@ -1048,7 +1210,7 @@ const getPendingExams = async (req, res) => {
 };
 
 // =========================================================================
-// ✅ NEW: Approve exam
+// ✅ NEW: Approve exam - WITH AUDIT LOG
 // =========================================================================
 const approveExam = async (req, res) => {
   try {
@@ -1058,7 +1220,27 @@ const approveExam = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
+    // Get exam details before approval
+    const examDoc = await db.collection('exams').doc(examId).get();
+    const examData = examDoc.exists ? examDoc.data() : null;
+
     const result = await examServices.approveExam(examId, validatorId);
+
+    // ✅ CONTENT MODERATION AUDIT LOG - APPROVED
+    logAudit(auditLogService.logContentModeration, {
+      userId: examData?.tutor_id || 'unknown',
+      userEmail: examData?.tutor_email || 'unknown',
+      actorId: validatorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'approved',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData?.title || examId,
+      feedback: 'Exam approved by validator',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Approve Exam Error:", error);
@@ -1070,7 +1252,7 @@ const approveExam = async (req, res) => {
 };
 
 // =========================================================================
-// ❌ NEW: Reject exam with feedback
+// ❌ NEW: Reject exam with feedback - WITH AUDIT LOG
 // =========================================================================
 const rejectExam = async (req, res) => {
   try {
@@ -1081,7 +1263,27 @@ const rejectExam = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
+    // Get exam details before rejection
+    const examDoc = await db.collection('exams').doc(examId).get();
+    const examData = examDoc.exists ? examDoc.data() : null;
+
     const result = await examServices.rejectExam(examId, validatorId, feedback);
+
+    // ✅ CONTENT MODERATION AUDIT LOG - REJECTED
+    logAudit(auditLogService.logContentModeration, {
+      userId: examData?.tutor_id || 'unknown',
+      userEmail: examData?.tutor_email || 'unknown',
+      actorId: validatorId,
+      actorEmail: req.user?.email || 'unknown',
+      action: 'rejected',
+      entityType: 'exam',
+      entityId: examId,
+      entityName: examData?.title || examId,
+      feedback: feedback || 'No specific reason provided',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("Reject Exam Error:", error);
