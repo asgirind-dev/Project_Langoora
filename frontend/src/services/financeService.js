@@ -80,28 +80,71 @@ class FinanceService {
   }
 
   // ============================================
-  // ⭐ NEW: Get all tutors with tokens from purchased_exams
+  // ⭐ FIXED: Get all tutors with tokens
   // ============================================
   async getTutorsTokens() {
     try {
-      const response = await axios.get(`${API_URL}/tutors-tokens`, getAuthConfig());
-      console.log('📊 API Response (tutors-tokens):', response.data);
+      // ✅ නිවැරදි endpoint එකට change කළා
+      const response = await axios.get(`${API_URL}/payout/active-tutors`, getAuthConfig());
+      console.log('📊 Tutors response:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Error fetching tutors tokens:', error);
+      console.error('❌ Error fetching tutors:', error);
       throw error;
     }
   }
 
   // ============================================
-  // ⭐ NEW: Get single tutor tokens
+  // ⭐ NEW: Get tutor tokens (specific tutor)
   // ============================================
   async getTutorTokens(tutorId) {
     try {
-      const response = await axios.get(`${API_URL}/tutor-tokens/${tutorId}`, getAuthConfig());
+      // ✅ නිවැරදි endpoint එක
+      const response = await axios.get(`${API_URL}/payout/tokens/${tutorId}`, getAuthConfig());
       return response.data;
     } catch (error) {
       console.error(`❌ Error fetching tutor tokens for ${tutorId}:`, error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // ⭐ NEW: Get tutor tokens for logged in tutor
+  // ============================================
+  async getMyTutorTokens() {
+    try {
+      // ✅ Logged in tutor ගේ tokens
+      const response = await axios.get(`${API_URL}/payout/tokens`, getAuthConfig());
+      console.log('📊 My tokens:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching my tokens:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // ⭐ NEW: Get tutor earnings history
+  // ============================================
+  async getTutorEarningsHistory() {
+    try {
+      const response = await axios.get(`${API_URL}/payout/earnings-history`, getAuthConfig());
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching earnings history:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // ⭐ NEW: Get tutor details with bank info
+  // ============================================
+  async getTutorDetails() {
+    try {
+      const response = await axios.get(`${API_URL}/payout/details`, getAuthConfig());
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching tutor details:', error);
       throw error;
     }
   }

@@ -20,21 +20,13 @@ const DEFAULT_TIMEOUTS = {
 const WARNING_TIME = 30;
 
 export function SessionTimeoutManager({ children }) {
-  console.log('🟢🟢🟢 SessionTimeoutManager COMPONENT RENDER START 🟢🟢🟢');
-  console.log('📍 Path:', window.location.pathname);
-  console.log('👤 User role from localStorage:', localStorage.getItem('userRole'));
-
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  
-  console.log('📦 useAuth user:', user);
-  console.log('📦 user?.role:', user?.role);
 
   const [showWarning, setShowWarning] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(WARNING_TIME);
   const [isIdle, setIsIdle] = useState(false);
   
-  // ✅ State for dynamic timeouts
   const [sessionTimeouts, setSessionTimeouts] = useState(null);
   const [timeoutsLoading, setTimeoutsLoading] = useState(true);
   
@@ -43,21 +35,16 @@ export function SessionTimeoutManager({ children }) {
   const countdownRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
 
-  console.log('✅ State initialized');
-
   // ✅ Fetch session timeouts from backend
   useEffect(() => {
     const fetchTimeouts = async () => {
       try {
-        console.log('🔄 Fetching session timeouts from backend...');
         const response = await fetch('http://localhost:5000/api/system-settings/security');
         const data = await response.json();
         
         if (data.success && data.data?.sessionTimeouts) {
-          console.log('✅ Session timeouts fetched:', data.data.sessionTimeouts);
           setSessionTimeouts(data.data.sessionTimeouts);
         } else {
-          console.log('⚠️ Using default timeouts');
           setSessionTimeouts(DEFAULT_TIMEOUTS);
         }
       } catch (error) {
@@ -74,27 +61,18 @@ export function SessionTimeoutManager({ children }) {
   // ✅ Get user's timeout setting - DYNAMIC
   const getUserTimeout = useCallback(() => {
     const userRole = user?.role || localStorage.getItem('userRole') || 'student';
-    
-    // Use dynamic timeouts if available, otherwise fallback to defaults
     const timeouts = sessionTimeouts || DEFAULT_TIMEOUTS;
-    const timeout = timeouts[userRole] || 45;
-    
-    console.log(`⏱️ getUserTimeout: role=${userRole}, timeout=${timeout} minutes (from ${sessionTimeouts ? 'backend' : 'default'})`);
-    return timeout;
+    return timeouts[userRole] || 45;
   }, [user, sessionTimeouts]);
 
   // ✅ Get timeout in milliseconds
   const getTimeoutMs = useCallback(() => {
-    const ms = getUserTimeout() * 60 * 1000;
-    console.log(`⏱️ getTimeoutMs: ${ms}ms (${getUserTimeout()} minutes)`);
-    return ms;
+    return getUserTimeout() * 60 * 1000;
   }, [getUserTimeout]);
 
   // ✅ Reset all timers
   const resetTimers = useCallback(() => {
-    console.log('🔄 resetTimers called');
     const timeoutMs = getTimeoutMs();
-    console.log(`⏱️ Timeout: ${timeoutMs/1000/60} minutes`);
     
     clearTimeout(timeoutRef.current);
     clearTimeout(warningRef.current);
@@ -105,21 +83,15 @@ export function SessionTimeoutManager({ children }) {
     setTimeRemaining(WARNING_TIME);
     lastActivityRef.current = Date.now();
     
-    console.log('✅ Timers cleared, states reset');
-    
     const timeoutDuration = timeoutMs - (WARNING_TIME * 1000);
-    console.log(`⏱️ Main timeout will fire in ${timeoutDuration/1000/60} minutes`);
     
     timeoutRef.current = setTimeout(() => {
-      console.log('🔴🔴🔴 MAIN TIMEOUT FIRED - SHOWING WARNING 🔴🔴🔴');
       setShowWarning(true);
       setTimeRemaining(WARNING_TIME);
       
       countdownRef.current = setInterval(() => {
         setTimeRemaining(prev => {
-          console.log(`⏱️ Countdown: ${prev} seconds remaining`);
           if (prev <= 1) {
-            console.log('⏰ Countdown ended - Auto logout!');
             clearInterval(countdownRef.current);
             handleAutoLogout();
             return 0;
@@ -129,19 +101,16 @@ export function SessionTimeoutManager({ children }) {
       }, 1000);
       
       warningRef.current = setTimeout(() => {
-        console.log('⏰ Warning timeout - Auto logout!');
         handleAutoLogout();
       }, WARNING_TIME * 1000);
       
     }, timeoutDuration);
     
     lastActivityRef.current = Date.now();
-    console.log('✅ resetTimers complete');
   }, [getTimeoutMs]);
 
   // ✅ Handle auto logout
   const handleAutoLogout = useCallback(async () => {
-    console.log('🚪🚪🚪 handleAutoLogout called 🚪🚪🚪');
     clearTimeout(timeoutRef.current);
     clearTimeout(warningRef.current);
     clearInterval(countdownRef.current);
@@ -151,12 +120,9 @@ export function SessionTimeoutManager({ children }) {
     const emergencyModal = document.querySelector('#emergency-modal');
     if (emergencyModal) {
       emergencyModal.remove();
-      console.log('✅ Emergency modal removed');
     }
     
-    console.log('🔴 Logging out user...');
     await logout();
-    console.log('✅ User logged out, redirecting to login');
     navigate('/auth/login', { 
       state: { 
         message: 'Your session has expired due to inactivity. Please login again.' 
@@ -166,7 +132,6 @@ export function SessionTimeoutManager({ children }) {
 
   // ✅ Extend session
   const extendSession = useCallback(() => {
-    console.log('🔄🔄🔄 extendSession called - User clicked "Stay Logged In" 🔄🔄🔄');
     clearTimeout(warningRef.current);
     clearInterval(countdownRef.current);
     setShowWarning(false);
@@ -177,25 +142,20 @@ export function SessionTimeoutManager({ children }) {
     const emergencyModal = document.querySelector('#emergency-modal');
     if (emergencyModal) {
       emergencyModal.remove();
-      console.log('✅ Emergency modal removed');
     }
     
     const timeoutMs = getTimeoutMs();
     clearTimeout(timeoutRef.current);
     
     const timeoutDuration = timeoutMs - (WARNING_TIME * 1000);
-    console.log(`⏱️ New main timeout will fire in ${timeoutDuration/1000/60} minutes`);
     
     timeoutRef.current = setTimeout(() => {
-      console.log('🔴🔴🔴 MAIN TIMEOUT FIRED - SHOWING WARNING 🔴🔴🔴');
       setShowWarning(true);
       setTimeRemaining(WARNING_TIME);
       
       countdownRef.current = setInterval(() => {
         setTimeRemaining(prev => {
-          console.log(`⏱️ Countdown: ${prev} seconds remaining`);
           if (prev <= 1) {
-            console.log('⏰ Countdown ended - Auto logout!');
             clearInterval(countdownRef.current);
             handleAutoLogout();
             return 0;
@@ -205,7 +165,6 @@ export function SessionTimeoutManager({ children }) {
       }, 1000);
       
       warningRef.current = setTimeout(() => {
-        console.log('⏰ Warning timeout - Auto logout!');
         handleAutoLogout();
       }, WARNING_TIME * 1000);
       
@@ -214,32 +173,23 @@ export function SessionTimeoutManager({ children }) {
 
   // ✅ Handle user activity
   const handleActivity = useCallback(() => {
-    console.log('🖱️ Activity detected');
     if (!showWarning) {
       const now = Date.now();
       const elapsed = now - lastActivityRef.current;
       const timeoutMs = getTimeoutMs();
       
-      console.log(`⏱️ Elapsed since last activity: ${elapsed/1000} seconds`);
-      
       if (elapsed > timeoutMs * 0.5) {
-        console.log('🔄 More than 50% of timeout passed - Resetting timers');
         resetTimers();
       } else {
-        console.log('✅ Updating last activity timestamp');
         lastActivityRef.current = now;
       }
     } else {
-      console.log('🔄 Activity during warning - Extending session');
       extendSession();
     }
   }, [showWarning, resetTimers, extendSession, getTimeoutMs]);
 
   // ✅ Setup activity listeners
   useEffect(() => {
-    console.log('🔵🔵🔵 useEffect (activity listeners) RUNNING 🔵🔵🔵');
-    console.log('📍 Current path:', window.location.pathname);
-    
     const isAuthPage = window.location.pathname.includes('/auth/');
     const isPublicPage = window.location.pathname === '/' || 
                          window.location.pathname.includes('/pricing') ||
@@ -247,20 +197,13 @@ export function SessionTimeoutManager({ children }) {
                          window.location.pathname.includes('/services') ||
                          window.location.pathname.includes('/contact');
     
-    console.log(`🚫 isAuthPage: ${isAuthPage}`);
-    console.log(`🚫 isPublicPage: ${isPublicPage}`);
-    
     if (isAuthPage || isPublicPage) {
-      console.log('⏭️ SKIPPING: Public/Auth page - Session timeout disabled');
       return;
     }
 
-    console.log('✅ Protected route - Setting up session timeout');
-    console.log('🔄 Resetting timers on mount');
     resetTimers();
 
     const events = ['mousedown', 'keydown', 'scroll', 'mousemove', 'click', 'touchstart'];
-    console.log(`📡 Adding event listeners for: ${events.join(', ')}`);
     
     const activityHandler = () => {
       handleActivity();
@@ -269,30 +212,22 @@ export function SessionTimeoutManager({ children }) {
     events.forEach(event => {
       document.addEventListener(event, activityHandler);
     });
-    console.log('✅ Event listeners added');
 
     const visibilityHandler = () => {
-      console.log(`👁️ Visibility changed: ${document.visibilityState}`);
       if (document.visibilityState === 'visible') {
-        console.log('🔄 Tab became visible - Handling activity');
         handleActivity();
       }
     };
     document.addEventListener('visibilitychange', visibilityHandler);
 
     const beforeUnloadHandler = () => {
-      console.log('🚪 Page unloading - Clearing timers');
       clearTimeout(timeoutRef.current);
       clearTimeout(warningRef.current);
       clearInterval(countdownRef.current);
     };
     window.addEventListener('beforeunload', beforeUnloadHandler);
 
-    console.log('✅ All listeners setup complete');
-    console.log('🟢 Session timeout is now active!');
-
     return () => {
-      console.log('🔴🔴🔴 CLEANUP: Removing event listeners 🔴🔴🔴');
       events.forEach(event => {
         document.removeEventListener(event, activityHandler);
       });
@@ -302,60 +237,35 @@ export function SessionTimeoutManager({ children }) {
       clearTimeout(timeoutRef.current);
       clearTimeout(warningRef.current);
       clearInterval(countdownRef.current);
-      console.log('✅ Cleanup complete');
     };
   }, [resetTimers, handleActivity]);
 
   // ✅ Update timeout when user changes or timeouts update
   useEffect(() => {
-    console.log('🔵 useEffect (user/timeouts change) RUNNING');
-    console.log('👤 User:', user);
-    console.log('📦 Session timeouts:', sessionTimeouts);
     if (user && !timeoutsLoading) {
-      console.log('👤 User changed - Resetting timers with new timeouts');
       resetTimers();
     }
   }, [user, sessionTimeouts, timeoutsLoading, resetTimers]);
 
   // ✅ Add debug div for testing
   useEffect(() => {
-    console.log('🔵 Adding debug div to DOM');
     const debugDiv = document.createElement('div');
     debugDiv.setAttribute('data-session-timeout', 'mounted');
     debugDiv.style.display = 'none';
     document.body.appendChild(debugDiv);
-    console.log('✅ Debug div added');
     
     return () => {
       if (debugDiv.parentNode) {
         debugDiv.parentNode.removeChild(debugDiv);
-        console.log('🔴 Debug div removed');
       }
     };
   }, []);
 
-  // ✅ Track showWarning changes
-  useEffect(() => {
-    console.log('🔴🔴🔴 showWarning CHANGED TO:', showWarning);
-    
-    if (showWarning === true) {
-      console.log('✅✅✅ WARNING SHOULD BE VISIBLE! ✅✅✅');
-      
-      setTimeout(() => {
-        const modal = document.querySelector('.fixed.inset-0.z-\\[9999\\]');
-        console.log('Modal in DOM:', modal ? '✅ YES' : '❌ NO');
-      }, 100);
-    }
-  }, [showWarning]);
-
   // ✅ Function to create emergency modal directly in DOM
   const createEmergencyModal = useCallback(() => {
-    console.log('🔴🔴🔴 Creating emergency modal in DOM 🔴🔴🔴');
-    
     const existingModal = document.querySelector('#emergency-modal');
     if (existingModal) {
       existingModal.remove();
-      console.log('✅ Old emergency modal removed');
     }
     
     const modalContainer = document.createElement('div');
@@ -394,7 +304,6 @@ export function SessionTimeoutManager({ children }) {
     `;
     
     document.body.appendChild(modalContainer);
-    console.log('✅ Emergency modal added to DOM');
     
     let count = 30;
     const countdownEl = document.getElementById('emergencyCountdown');
@@ -426,7 +335,6 @@ export function SessionTimeoutManager({ children }) {
         const modal = document.querySelector('#emergency-modal');
         if (modal) modal.remove();
         extendSession();
-        console.log('🔄 Session extended via emergency modal!');
       };
     }
     
@@ -436,29 +344,22 @@ export function SessionTimeoutManager({ children }) {
         const modal = document.querySelector('#emergency-modal');
         if (modal) modal.remove();
         handleAutoLogout();
-        console.log('🚪 Logging out via emergency modal!');
       };
     }
-    
-    console.log('✅ Emergency modal fully functional!');
   }, [handleAutoLogout, extendSession]);
 
   // ✅ Expose test functions
   useEffect(() => {
-    console.log('🔵 Setting up test commands');
-    
     window.showEmergencyModal = createEmergencyModal;
     
     window.__testSession = {
       forceWarning: createEmergencyModal,
       extendSession: () => {
-        console.log('🔄 EXTENDING SESSION');
         const modal = document.querySelector('#emergency-modal');
         if (modal) modal.remove();
         extendSession();
       },
       forceLogout: () => {
-        console.log('🚪 FORCE LOGOUT');
         const modal = document.querySelector('#emergency-modal');
         if (modal) modal.remove();
         handleAutoLogout();
@@ -474,20 +375,12 @@ export function SessionTimeoutManager({ children }) {
         timeoutsSource: sessionTimeouts ? 'backend' : 'default'
       })
     };
-    
-    console.log('🧪 Test commands available:');
-    console.log('  window.showEmergencyModal() - Show emergency modal');
-    console.log('  window.__testSession.getStatus() - Get status');
   }, [createEmergencyModal, extendSession, handleAutoLogout, showWarning, timeRemaining, isIdle, user, getUserTimeout, sessionTimeouts]);
 
   // ✅ Don't render until timeouts are loaded
   if (timeoutsLoading) {
-    console.log('⏳ Waiting for timeouts to load...');
     return <>{children}</>;
   }
-
-  console.log('✅ SessionTimeoutManager render complete');
-  console.log('🟢🟢🟢 COMPONENT RENDER END 🟢🟢🟢');
 
   return (
     <>

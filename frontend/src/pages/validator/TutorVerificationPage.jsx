@@ -9,8 +9,10 @@ import {
 import GlassCard from "../../components/ui/GlassCard";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
+import { useAuth } from "../../context/AuthContext";
 
 export default function TutorVerificationPage() {
+  const { user } = useAuth();
   const [tutors, setTutors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDoc, setSelectedDoc] = useState(null);
@@ -25,6 +27,10 @@ export default function TutorVerificationPage() {
     reason: ''
   });
 
+  // ✅ Get validator's language scope
+  const languageScope = user?.languageScope || user?.languageGroup || 'All';
+  const languageGroup = (languageScope || 'japanese').toLowerCase();
+
   // Helper Function for Toast Notification
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -33,17 +39,28 @@ export default function TutorVerificationPage() {
     }, 4000);
   };
 
-  // FETCH PENDING TUTORS
+  // FETCH PENDING TUTORS with Language Filter
   const fetchPendingTutors = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch("http://localhost:5000/api/validator/tutors/pending-queue", {
+      // ✅ Pass language filter to API
+      const response = await fetch(`http://localhost:5000/api/validator/tutors/pending-queue?language=${languageGroup}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const result = await response.json();
       if (result.success) {
-        setTutors(result.data || []);
+        // ✅ Filter tutors by language (if they have a language field)
+        const filteredTutors = (result.data || []).filter(tutor => {
+          const tutorLanguage = (tutor.language || tutor.languageGroup || '').toLowerCase();
+          // If validator has 'All' language scope, show all tutors
+          if (languageGroup === 'all') return true;
+          return tutorLanguage === languageGroup || tutorLanguage === '';
+        });
+        setTutors(filteredTutors);
+        console.log(`✅ Loaded ${filteredTutors.length} tutors for language: ${languageGroup}`);
+      } else {
+        showNotification(result.message || "Failed to fetch pending tutors", "error");
       }
     } catch (error) {
       console.error("Error fetching pending tutors:", error);
@@ -55,6 +72,7 @@ export default function TutorVerificationPage() {
 
   useEffect(() => {
     fetchPendingTutors();
+    // eslint-disable-next-line
   }, []);
 
   // HANDLE APPROVE
@@ -305,6 +323,16 @@ export default function TutorVerificationPage() {
               Tutor Credentials Verification
             </h1>
             <p className="text-gray-400 mt-1">Review academic qualifications, university degrees, and language accreditations</p>
+            {languageScope && languageScope !== 'All' && (
+              <p className="text-xs text-blue-400 mt-1">
+                🔍 Filtering tutors for: <span className="font-bold">{languageScope}</span>
+              </p>
+            )}
+            {languageScope === 'All' && (
+              <p className="text-xs text-blue-400 mt-1">
+                🌐 Showing all language tutors
+              </p>
+            )}
           </div>
           {tutors.length > 0 && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-500/15 border border-blue-500/30 rounded-xl">
@@ -321,6 +349,11 @@ export default function TutorVerificationPage() {
           <GlassCard className="p-8 text-center text-gray-500 text-sm border-dashed">
             <AlertTriangle className="mx-auto mb-2 text-gray-600 animate-pulse" size={24} />
             No instructors currently pending qualification verification gates. All clusters clear.
+            {languageScope && languageScope !== 'All' && (
+              <p className="text-xs text-blue-400 mt-2">
+                Language filter: {languageScope}
+              </p>
+            )}
           </GlassCard>
         ) : (
           tutors.map((t, idx) => (
@@ -340,6 +373,11 @@ export default function TutorVerificationPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-bold text-white text-base tracking-tight truncate capitalize">{t.name}</h4>
                     <Badge color="blue">{t.qualifications || "JLPT Level Unspecified"}</Badge>
+                    {t.language && (
+                      <Badge color="cyan" className="text-xs">
+                        🌐 {t.language}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex flex-col gap-0.5 text-xs text-gray-400 pt-0.5">
                     <span className="flex items-center gap-1.5"><Mail size={12} className="text-gray-500"/> {t.email}</span>

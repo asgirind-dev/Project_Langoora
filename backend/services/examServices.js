@@ -1,4 +1,4 @@
-const { db } = require('../config/firebase');
+const { db } = require("../config/firebase");
 
 /**
  * Small helper to keep field defaults consistent across create/update paths.
@@ -6,8 +6,8 @@ const { db } = require('../config/firebase');
  * flow through the same normalization so they are written identically.
  */
 const normalizeCategoryId = (categoryId) => {
-  if (!categoryId) return '';
-  return categoryId.toUpperCase().replace(/[\s_]/g, '-').trim();
+  if (!categoryId) return "";
+  return categoryId.toUpperCase().replace(/[\s_]/g, "-").trim();
 };
 
 /**
@@ -46,54 +46,58 @@ const writeProblemsBatch = (examRef, problems, subQuestionsByProblem) => {
   const batch = db.batch();
 
   problems.forEach((problem, index) => {
-    const problemId = `problem_${String(index + 1).padStart(2, '0')}`;
-    const problemRef = examRef.collection('problems').doc(problemId);
+    const problemId = `problem_${String(index + 1).padStart(2, "0")}`;
+    const problemRef = examRef.collection("problems").doc(problemId);
 
     const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
 
     const problemData = {
       problem_number: index + 1,
       section: problem.section,
-      problem_title: problem.problem_title ? problem.problem_title.trim() : `Problem ${index + 1}`,
-      explanation: problem.explanation || '',
+      problem_title: problem.problem_title
+        ? problem.problem_title.trim()
+        : `Problem ${index + 1}`,
+      explanation: problem.explanation || "",
       problem_image_url: problem.problem_image_url || null,
       total_sub_questions: problemSubQuestions.length,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     };
 
     batch.set(problemRef, problemData);
 
     if (problem.example_question) {
-      const exampleRef = problemRef.collection('example_question').doc('example');
+      const exampleRef = problemRef
+        .collection("example_question")
+        .doc("example");
       const exampleData = {
         text: problem.example_question.trim(),
-        options: problem.options || ['', '', '', ''],
+        options: problem.options || ["", "", "", ""],
         correct_answer_index: Number(problem.example_correct_option || 0),
-        explanation: problem.example_explanation || '',
+        explanation: problem.example_explanation || "",
         image_url: problem.example_image_url || null,
         audio_url: problem.example_audio_url || null,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
       };
       batch.set(exampleRef, exampleData);
     }
 
     if (problemSubQuestions.length > 0) {
-      const subQuestionsCollectionRef = problemRef.collection('sub_questions');
+      const subQuestionsCollectionRef = problemRef.collection("sub_questions");
 
       problemSubQuestions.forEach((sub, subIndex) => {
-        const subId = `sub_${String(subIndex + 1).padStart(2, '0')}`;
+        const subId = `sub_${String(subIndex + 1).padStart(2, "0")}`;
         const subRef = subQuestionsCollectionRef.doc(subId);
 
         const subData = {
           sub_number: subIndex + 1,
-          text: sub.text ? sub.text.trim() : '',
-          type: sub.type || 'mcq',
-          options: sub.options || ['', '', '', ''],
+          text: sub.text ? sub.text.trim() : "",
+          type: sub.type || "mcq",
+          options: sub.options || ["", "", "", ""],
           correct_answer_index: Number(sub.correct || 0),
-          explanation: sub.explanation || '',
+          explanation: sub.explanation || "",
           image_url: sub.image_url || null,
           audio_url: sub.audio_url || null,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
         };
 
         batch.set(subRef, subData);
@@ -111,6 +115,8 @@ const writeProblemsBatch = (examRef, problems, subQuestionsByProblem) => {
  *   exams/{examId}/problems/{problemId}              -> problem block
  *   exams/{examId}/problems/{problemId}/example_question/example
  *   exams/{examId}/problems/{problemId}/sub_questions/{subId}
+ *
+ * Language detection added for Quality Audits.
  */
 const createExamInDB = async (examData) => {
   try {
@@ -125,25 +131,32 @@ const createExamInDB = async (examData) => {
       questions = [],
       thumbnail,
       tutor_id,
-      tutor_name
+      tutor_name,
     } = examData;
 
+    // 🚀 Determine language from category (default: japanese)
+    let language = "japanese";
+    if (category_id && category_id.toLowerCase().includes("topik")) {
+      language = "korean";
+    }
+
     const normalizedCategoryId = normalizeCategoryId(category_id);
-    const validTutorId = tutor_id || 'mock_tutor_id';
-    const validTutorName = tutor_name || 'Expert Tutor';
+    const validTutorId = tutor_id || "mock_tutor_id";
+    const validTutorName = tutor_name || "Expert Tutor";
 
-    const cleanExamId = `exam_${normalizedCategoryId || 'general'}_${level_id || 'no_level'}_${Date.now()}`;
-    const examRef = db.collection('exams').doc(cleanExamId);
+    const cleanExamId = `exam_${normalizedCategoryId || "general"}_${level_id || "no_level"}_${Date.now()}`;
+    const examRef = db.collection("exams").doc(cleanExamId);
 
-    const { problems, subQuestions, subQuestionsByProblem } = splitQuestionsByProblem(questions);
+    const { problems, subQuestions, subQuestionsByProblem } =
+      splitQuestionsByProblem(questions);
 
     const examMetadata = {
-      title: (title || '').trim(),
+      title: (title || "").trim(),
       category_id: normalizedCategoryId,
-      level_id: level_id || '',
+      level_id: level_id || "",
       duration_minutes: Number(duration_minutes) || 0,
-      description: description ? description.trim() : '',
-      status: status || 'draft',
+      description: description ? description.trim() : "",
+      status: status || "draft",
       sections: sections || [],
       thumbnail: thumbnail || null,
       tutor_id: validTutorId,
@@ -156,21 +169,28 @@ const createExamInDB = async (examData) => {
       rating: 0,
       reviews: 0,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      language: language, // ✅ Added language field for Quality Audits
     };
 
     await examRef.set(examMetadata);
 
     if (problems.length > 0) {
-      const batch = writeProblemsBatch(examRef, problems, subQuestionsByProblem);
+      const batch = writeProblemsBatch(
+        examRef,
+        problems,
+        subQuestionsByProblem,
+      );
       await batch.commit();
     }
 
-    console.log(`Exam created: ${cleanExamId} for tutor: ${validTutorId} (problems: ${problems.length}, sub-questions: ${subQuestions.length})`);
+    console.log(
+      `Exam created: ${cleanExamId} for tutor: ${validTutorId} (problems: ${problems.length}, sub-questions: ${subQuestions.length})`,
+    );
 
     return { success: true, examId: cleanExamId };
   } catch (error) {
-    console.error('Exam Creation Service Error:', error);
+    console.error("Exam Creation Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -181,11 +201,14 @@ const createExamInDB = async (examData) => {
 const getTutorExamsFromDB = async (tutorId) => {
   try {
     if (!tutorId) {
-      console.warn('No tutor ID provided, returning empty array');
+      console.warn("No tutor ID provided, returning empty array");
       return [];
     }
 
-    const snapshot = await db.collection('exams').where('tutor_id', '==', tutorId).get();
+    const snapshot = await db
+      .collection("exams")
+      .where("tutor_id", "==", tutorId)
+      .get();
     const examsList = [];
 
     snapshot.forEach((doc) => {
@@ -197,11 +220,13 @@ const getTutorExamsFromDB = async (tutorId) => {
     // field at all, which is treated as "not deleted".
     const activeExamsList = examsList.filter((exam) => exam.isDeleted !== true);
 
-    activeExamsList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    activeExamsList.sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at),
+    );
 
     return activeExamsList;
   } catch (error) {
-    console.error('Get Tutor Exams Service Error:', error);
+    console.error("Get Tutor Exams Service Error:", error);
     return [];
   }
 };
@@ -211,10 +236,10 @@ const getTutorExamsFromDB = async (tutorId) => {
  */
 const getStudentExamsFromDB = async (studentId = null) => {
   try {
-    let query = db.collection('student_exams');
+    let query = db.collection("student_exams");
 
     if (studentId) {
-      query = query.where('studentId', '==', studentId);
+      query = query.where("studentId", "==", studentId);
     }
 
     const snapshot = await query.get();
@@ -224,11 +249,15 @@ const getStudentExamsFromDB = async (studentId = null) => {
       examsList.push({ id: doc.id, ...doc.data() });
     });
 
-    examsList.sort((a, b) => new Date(b.startTime || b.created_at) - new Date(a.startTime || a.created_at));
+    examsList.sort(
+      (a, b) =>
+        new Date(b.startTime || b.created_at) -
+        new Date(a.startTime || a.created_at),
+    );
 
     return examsList;
   } catch (error) {
-    console.error('Get Student Exams Service Error:', error);
+    console.error("Get Student Exams Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -240,19 +269,23 @@ const getStudentExamsFromDB = async (studentId = null) => {
  */
 const getExamByIdFromDB = async (examId, tutorId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
+    const examDoc = await db.collection("exams").doc(examId).get();
 
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
 
     const examData = examDoc.data();
 
     if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error('You do not have permission to access this exam');
+      throw new Error("You do not have permission to access this exam");
     }
 
-    const problemsSnapshot = await db.collection('exams').doc(examId).collection('problems').get();
+    const problemsSnapshot = await db
+      .collection("exams")
+      .doc(examId)
+      .collection("problems")
+      .get();
 
     const problems = [];
 
@@ -263,12 +296,12 @@ const getExamByIdFromDB = async (examId, tutorId) => {
       let example = null;
       try {
         const exampleDoc = await db
-          .collection('exams')
+          .collection("exams")
           .doc(examId)
-          .collection('problems')
+          .collection("problems")
           .doc(problemId)
-          .collection('example_question')
-          .doc('example')
+          .collection("example_question")
+          .doc("example")
           .get();
 
         if (exampleDoc.exists) {
@@ -279,23 +312,23 @@ const getExamByIdFromDB = async (examId, tutorId) => {
       }
 
       const subQuestionsSnapshot = await db
-        .collection('exams')
+        .collection("exams")
         .doc(examId)
-        .collection('problems')
+        .collection("problems")
         .doc(problemId)
-        .collection('sub_questions')
+        .collection("sub_questions")
         .get();
 
       const subQuestions = subQuestionsSnapshot.docs.map((subDoc) => ({
         id: subDoc.id,
-        ...subDoc.data()
+        ...subDoc.data(),
       }));
 
       problems.push({
         id: problemId,
         ...problemData,
         example,
-        sub_questions: subQuestions
+        sub_questions: subQuestions,
       });
     }
 
@@ -307,11 +340,11 @@ const getExamByIdFromDB = async (examId, tutorId) => {
       exam: {
         id: examId,
         ...examData,
-        problems
-      }
+        problems,
+      },
     };
   } catch (error) {
-    console.error('Get Exam By ID Service Error:', error);
+    console.error("Get Exam By ID Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -323,26 +356,26 @@ const getExamByIdFromDB = async (examId, tutorId) => {
  */
 const softDeleteExamFromDB = async (examId, tutorId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
+    const examDoc = await db.collection("exams").doc(examId).get();
 
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
 
     const examData = examDoc.data();
 
     if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error('You do not have permission to delete this exam');
+      throw new Error("You do not have permission to delete this exam");
     }
 
-    await db.collection('exams').doc(examId).update({
+    await db.collection("exams").doc(examId).update({
       isDeleted: true,
-      deleted_at: new Date().toISOString()
+      deleted_at: new Date().toISOString(),
     });
 
-    return { success: true, message: 'Exam moved to Recycle Bin.' };
+    return { success: true, message: "Exam moved to Recycle Bin." };
   } catch (error) {
-    console.error('Soft Delete Exam Service Error:', error);
+    console.error("Soft Delete Exam Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -352,26 +385,26 @@ const softDeleteExamFromDB = async (examId, tutorId) => {
  */
 const restoreExamFromDB = async (examId, tutorId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
+    const examDoc = await db.collection("exams").doc(examId).get();
 
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
 
     const examData = examDoc.data();
 
     if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error('You do not have permission to restore this exam');
+      throw new Error("You do not have permission to restore this exam");
     }
 
-    await db.collection('exams').doc(examId).update({
+    await db.collection("exams").doc(examId).update({
       isDeleted: false,
-      deleted_at: null
+      deleted_at: null,
     });
 
-    return { success: true, message: 'Exam restored successfully.' };
+    return { success: true, message: "Exam restored successfully." };
   } catch (error) {
-    console.error('Restore Exam Service Error:', error);
+    console.error("Restore Exam Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -382,24 +415,31 @@ const restoreExamFromDB = async (examId, tutorId) => {
 const getDeletedExamsFromDB = async (tutorId) => {
   try {
     if (!tutorId) {
-      console.warn('No tutor ID provided, returning empty array');
+      console.warn("No tutor ID provided, returning empty array");
       return [];
     }
 
-    const snapshot = await db.collection('exams').where('tutor_id', '==', tutorId).get();
+    const snapshot = await db
+      .collection("exams")
+      .where("tutor_id", "==", tutorId)
+      .get();
     const examsList = [];
 
     snapshot.forEach((doc) => {
       examsList.push({ id: doc.id, ...doc.data() });
     });
 
-    const deletedExamsList = examsList.filter((exam) => exam.isDeleted === true);
+    const deletedExamsList = examsList.filter(
+      (exam) => exam.isDeleted === true,
+    );
 
-    deletedExamsList.sort((a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0));
+    deletedExamsList.sort(
+      (a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0),
+    );
 
     return deletedExamsList;
   } catch (error) {
-    console.error('Get Deleted Exams Service Error:', error);
+    console.error("Get Deleted Exams Service Error:", error);
     return [];
   }
 };
@@ -411,19 +451,23 @@ const getDeletedExamsFromDB = async (tutorId) => {
  */
 const permanentlyDeleteExamFromDB = async (examId, tutorId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
+    const examDoc = await db.collection("exams").doc(examId).get();
 
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
 
     const examData = examDoc.data();
 
     if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error('You do not have permission to delete this exam');
+      throw new Error("You do not have permission to delete this exam");
     }
 
-    const problemsSnapshot = await db.collection('exams').doc(examId).collection('problems').get();
+    const problemsSnapshot = await db
+      .collection("exams")
+      .doc(examId)
+      .collection("problems")
+      .get();
 
     const batch = db.batch();
 
@@ -432,12 +476,12 @@ const permanentlyDeleteExamFromDB = async (examId, tutorId) => {
 
       try {
         const exampleDoc = await db
-          .collection('exams')
+          .collection("exams")
           .doc(examId)
-          .collection('problems')
+          .collection("problems")
           .doc(problemId)
-          .collection('example_question')
-          .doc('example')
+          .collection("example_question")
+          .doc("example")
           .get();
 
         if (exampleDoc.exists) {
@@ -448,11 +492,11 @@ const permanentlyDeleteExamFromDB = async (examId, tutorId) => {
       }
 
       const subQuestionsSnapshot = await db
-        .collection('exams')
+        .collection("exams")
         .doc(examId)
-        .collection('problems')
+        .collection("problems")
         .doc(problemId)
-        .collection('sub_questions')
+        .collection("sub_questions")
         .get();
 
       subQuestionsSnapshot.forEach((subDoc) => batch.delete(subDoc.ref));
@@ -460,13 +504,13 @@ const permanentlyDeleteExamFromDB = async (examId, tutorId) => {
       batch.delete(problemDoc.ref);
     }
 
-    batch.delete(db.collection('exams').doc(examId));
+    batch.delete(db.collection("exams").doc(examId));
 
     await batch.commit();
 
-    return { success: true, message: 'Exam deleted successfully!' };
+    return { success: true, message: "Exam deleted successfully!" };
   } catch (error) {
-    console.error('Delete Exam Service Error:', error);
+    console.error("Delete Exam Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -476,17 +520,16 @@ const permanentlyDeleteExamFromDB = async (examId, tutorId) => {
  */
 const deleteStudentExamFromDB = async (examDocId) => {
   try {
-    const examRef = db.collection('student_exams').doc(examDocId);
+    const examRef = db.collection("student_exams").doc(examDocId);
     const doc = await examRef.get();
-
     if (!doc.exists) {
-      throw new Error('Exam not found in database');
+      throw new Error("Exam not found in database");
     }
 
     await examRef.delete();
-    return { success: true, message: 'Exam successfully deleted!' };
+    return { success: true, message: "Exam successfully deleted!" };
   } catch (error) {
-    console.error('Delete Student Exam Service Error:', error);
+    console.error("Delete Student Exam Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -496,26 +539,26 @@ const deleteStudentExamFromDB = async (examDocId) => {
  */
 const updateExamStatusInDB = async (examId, status, tutorId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
+    const examDoc = await db.collection("exams").doc(examId).get();
 
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
 
     const examData = examDoc.data();
 
     if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error('You do not have permission to update this exam');
+      throw new Error("You do not have permission to update this exam");
     }
 
-    await db.collection('exams').doc(examId).update({
+    await db.collection("exams").doc(examId).update({
       status,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     });
 
     return { success: true, message: `Exam status updated to ${status}` };
   } catch (error) {
-    console.error('Update Exam Status Error:', error);
+    console.error("Update Exam Status Error:", error);
     throw new Error(error.message);
   }
 };
@@ -529,16 +572,16 @@ const updateExamStatusInDB = async (examId, status, tutorId) => {
  */
 const updateExamDraftInDB = async (examId, draftData, tutorId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
+    const examDoc = await db.collection("exams").doc(examId).get();
 
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
 
     const examData = examDoc.data();
 
     if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error('You do not have permission to update this exam');
+      throw new Error("You do not have permission to update this exam");
     }
 
     const {
@@ -550,29 +593,32 @@ const updateExamDraftInDB = async (examId, draftData, tutorId) => {
       sections,
       questions = [],
       thumbnail,
-      status
+      status,
     } = draftData;
 
     const normalizedCategoryId = normalizeCategoryId(category_id);
     const { problems, subQuestions } = splitQuestionsByProblem(questions);
 
-    await db.collection('exams').doc(examId).update({
-      title: (title || '').trim(),
-      category_id: normalizedCategoryId,
-      level_id: level_id || '',
-      duration_minutes: Number(duration_minutes) || 0,
-      description: description || '',
-      sections: sections || [],
-      thumbnail: thumbnail || null,
-      status: status || 'draft',
-      total_problems: problems.length,
-      total_questions: subQuestions.length,
-      updated_at: new Date().toISOString()
-    });
+    await db
+      .collection("exams")
+      .doc(examId)
+      .update({
+        title: (title || "").trim(),
+        category_id: normalizedCategoryId,
+        level_id: level_id || "",
+        duration_minutes: Number(duration_minutes) || 0,
+        description: description || "",
+        sections: sections || [],
+        thumbnail: thumbnail || null,
+        status: status || "draft",
+        total_problems: problems.length,
+        total_questions: subQuestions.length,
+        updated_at: new Date().toISOString(),
+      });
 
-    return { success: true, message: 'Draft updated successfully.' };
+    return { success: true, message: "Draft updated successfully." };
   } catch (error) {
-    console.error('Update Exam Draft Service Error:', error);
+    console.error("Update Exam Draft Service Error:", error);
     throw new Error(error.message);
   }
 };
@@ -584,16 +630,16 @@ const updateExamDraftInDB = async (examId, draftData, tutorId) => {
  */
 const updateExamInDB = async (examId, examData, tutorId) => {
   try {
-    const examDoc = await db.collection('exams').doc(examId).get();
+    const examDoc = await db.collection("exams").doc(examId).get();
 
     if (!examDoc.exists) {
-      throw new Error('Exam not found');
+      throw new Error("Exam not found");
     }
 
     const existingExam = examDoc.data();
 
     if (tutorId && existingExam.tutor_id !== tutorId) {
-      throw new Error('You do not have permission to update this exam');
+      throw new Error("You do not have permission to update this exam");
     }
 
     const {
@@ -605,13 +651,17 @@ const updateExamInDB = async (examId, examData, tutorId) => {
       status,
       sections,
       questions = [],
-      thumbnail
+      thumbnail,
     } = examData;
 
     const normalizedCategoryId = normalizeCategoryId(category_id);
 
     // Delete all existing problems and sub-questions before re-inserting.
-    const problemsSnapshot = await db.collection('exams').doc(examId).collection('problems').get();
+    const problemsSnapshot = await db
+      .collection("exams")
+      .doc(examId)
+      .collection("problems")
+      .get();
 
     const deleteBatch = db.batch();
 
@@ -620,12 +670,12 @@ const updateExamInDB = async (examId, examData, tutorId) => {
 
       try {
         const exampleDoc = await db
-          .collection('exams')
+          .collection("exams")
           .doc(examId)
-          .collection('problems')
+          .collection("problems")
           .doc(problemId)
-          .collection('example_question')
-          .doc('example')
+          .collection("example_question")
+          .doc("example")
           .get();
 
         if (exampleDoc.exists) {
@@ -636,11 +686,11 @@ const updateExamInDB = async (examId, examData, tutorId) => {
       }
 
       const subQuestionsSnapshot = await db
-        .collection('exams')
+        .collection("exams")
         .doc(examId)
-        .collection('problems')
+        .collection("problems")
         .doc(problemId)
-        .collection('sub_questions')
+        .collection("sub_questions")
         .get();
 
       subQuestionsSnapshot.forEach((subDoc) => deleteBatch.delete(subDoc.ref));
@@ -650,35 +700,147 @@ const updateExamInDB = async (examId, examData, tutorId) => {
 
     await deleteBatch.commit();
 
-    const { problems, subQuestions, subQuestionsByProblem } = splitQuestionsByProblem(questions);
+    const { problems, subQuestions, subQuestionsByProblem } =
+      splitQuestionsByProblem(questions);
 
-    await db.collection('exams').doc(examId).update({
-      title: (title || '').trim(),
-      category_id: normalizedCategoryId,
-      level_id: level_id || '',
-      duration_minutes: Number(duration_minutes) || 0,
-      description: description || '',
-      status: status || 'draft',
-      sections: sections || [],
-      thumbnail: thumbnail || null,
-      total_problems: problems.length,
-      total_questions: subQuestions.length,
-      updated_at: new Date().toISOString()
-    });
+    await db
+      .collection("exams")
+      .doc(examId)
+      .update({
+        title: (title || "").trim(),
+        category_id: normalizedCategoryId,
+        level_id: level_id || "",
+        duration_minutes: Number(duration_minutes) || 0,
+        description: description || "",
+        status: status || "draft",
+        sections: sections || [],
+        thumbnail: thumbnail || null,
+        total_problems: problems.length,
+        total_questions: subQuestions.length,
+        updated_at: new Date().toISOString(),
+      });
 
     if (problems.length > 0) {
-      const examRef = db.collection('exams').doc(examId);
-      const newBatch = writeProblemsBatch(examRef, problems, subQuestionsByProblem);
+      const examRef = db.collection("exams").doc(examId);
+      const newBatch = writeProblemsBatch(
+        examRef,
+        problems,
+        subQuestionsByProblem,
+      );
       await newBatch.commit();
     }
 
-    return { success: true, message: 'Exam updated successfully.' };
+    return { success: true, message: "Exam updated successfully." };
   } catch (error) {
-    console.error('Update Exam Service Error:', error);
+    console.error("Update Exam Service Error:", error);
     throw new Error(error.message);
   }
 };
 
+// =========================================================================
+// ✅ QUALITY AUDITS FUNCTIONS (from HEAD)
+// =========================================================================
+
+/**
+ * Get pending exams filtered by validator's language
+ */
+const getPendingExamsByLanguage = async (language) => {
+  try {
+    const snapshot = await db
+      .collection("exams")
+      .where("status", "==", "pending")
+      .where("language", "==", language)
+      .get();
+
+    const examsList = [];
+    snapshot.forEach((doc) => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    return examsList;
+  } catch (error) {
+    console.error("Get Pending Exams Error:", error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * Approve exam (publish)
+ */
+const approveExam = async (examId, validatorId) => {
+  try {
+    const examRef = db.collection("exams").doc(examId);
+    await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(examRef);
+      if (!doc.exists) {
+        throw new Error("Exam not found");
+      }
+      const data = doc.data();
+      if (data.status !== "pending") {
+        throw new Error("Exam is no longer pending.");
+      }
+      transaction.update(examRef, {
+        status: "published",
+        validatorId: validatorId,
+        reviewedAt: new Date().toISOString(),
+        publishedAt: new Date().toISOString(),
+        rejectionFeedback: null, // clear any previous feedback
+      });
+    });
+    return { success: true, message: "Exam approved and published." };
+  } catch (error) {
+    console.error("Approve Exam Error:", error);
+    throw new Error(error.message);
+  }
+};
+
+/**
+ * Reject exam with feedback + create notification
+ */
+const rejectExam = async (examId, validatorId, feedback) => {
+  try {
+    const examRef = db.collection("exams").doc(examId);
+    let examData;
+
+    await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(examRef);
+      if (!doc.exists) {
+        throw new Error("Exam not found");
+      }
+      examData = doc.data();
+      if (examData.status !== "pending") {
+        throw new Error("Exam is no longer pending.");
+      }
+      transaction.update(examRef, {
+        status: "rejected",
+        validatorId: validatorId,
+        reviewedAt: new Date().toISOString(),
+        rejectionFeedback: feedback || [],
+        publishedAt: null,
+      });
+    });
+
+    // Create notification for tutor
+    const notification = {
+      userId: examData.tutor_id,
+      type: "exam_rejected",
+      examId: examId,
+      examTitle: examData.title,
+      message: `Your exam "${examData.title}" was rejected by a validator. Please review the feedback.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+    await db.collection("notifications").add(notification);
+
+    return { success: true, message: "Exam rejected. Tutor notified." };
+  } catch (error) {
+    console.error("Reject Exam Error:", error);
+    throw new Error(error.message);
+  }
+};
+
+// =========================================================================
+// 📦 EXPORT ALL
+// =========================================================================
 module.exports = {
   createExamInDB,
   getTutorExamsFromDB,
@@ -691,5 +853,9 @@ module.exports = {
   deleteStudentExamFromDB,
   updateExamStatusInDB,
   updateExamDraftInDB,
-  updateExamInDB
+  updateExamInDB,
+  // Quality Audits exports
+  getPendingExamsByLanguage,
+  approveExam,
+  rejectExam,
 };

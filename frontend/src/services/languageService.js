@@ -1,3 +1,4 @@
+// frontend/src/services/languageService.js
 import axios from 'axios';
 
 const API_URL = 'http://localhost:5000/api/languages';
@@ -34,7 +35,11 @@ export const createLanguageCategory = async (categoryData) => {
 
 export const createCategoryLevel = async (categoryId, levelData) => {
   try {
-    const response = await axios.post(`${API_URL}/categories/${categoryId}/levels`, levelData, getAuthConfig());
+    const response = await axios.post(
+      `${API_URL}/categories/${categoryId}/levels`, 
+      levelData, 
+      getAuthConfig()
+    );
     return response.data;
   } catch (error) {
     console.error('Frontend service layer error:', error);
@@ -85,7 +90,6 @@ export const fetchActiveLanguages = async () => {
   }
 };
 
-
 /**
  * 🌐 Fetch active unnested schema categories with priced level layers
  * Accessible by Tutors, Finance, and Students
@@ -97,5 +101,22 @@ export const fetchActiveExamSchema = async () => {
   } catch (error) {
     console.error('Fetch active schema error:', error);
     throw error.response?.data || new Error('Failed to fetch system active schema matrix.');
+  }
+};
+
+/**
+ * ✅ NEW: Update level with scoring configuration
+ */
+export const updateLevelScoring = async (categoryId, levelId, scoringData) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/categories/${categoryId}/levels/${levelId}`,
+      scoringData,
+      getAuthConfig()
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Update level scoring error:', error);
+    throw error.response?.data || new Error('Failed to update level scoring configuration.');
   }
 };

@@ -1,3 +1,4 @@
+// backend/services/examExecutionService.js
 const { db } = require('../config/firebase');
 
 // ── CBT System Configurations ───────────────────────────────────────────
@@ -5,7 +6,37 @@ const MAX_TAB_VIOLATIONS = 3;
 const VIOLATION_LOCK_MINUTES = 30;
 
 /**
- * 🧩 Get all sub-questions from a problem's sub_questions sub-collection
+ * 🧩 Get example question from a problem's example_question subcollection
+ */
+async function getExampleQuestion(problemRef) {
+  try {
+    const exampleDoc = await problemRef.collection('example_question').doc('example').get();
+    if (exampleDoc.exists) {
+      const data = exampleDoc.data();
+      return {
+        id: `${problemRef.id}__example`,
+        questionDocId: problemRef.id,
+        isExample: true,
+        text: data.text || '',
+        options: data.options || [],
+        image_url: data.image_url || null,
+        audio_url: data.audio_url || null,
+        _correct: data.correct_answer_index !== undefined ? data.correct_answer_index : 0,
+        _explanation: data.explanation || '',
+        problem_number: null,
+        problem_title: null,
+        section: null,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.log(`No example_question found for ${problemRef.path}`);
+    return null;
+  }
+}
+
+/**
+ * 🧩 Get all sub-questions from a problem's sub_questions subcollection
  */
 async function getSubQuestions(problemRef) {
   try {
@@ -15,9 +46,21 @@ async function getSubQuestions(problemRef) {
     
     const subQuestions = [];
     subQuestionsSnapshot.forEach(doc => {
+      const data = doc.data();
       subQuestions.push({
         id: doc.id,
-        ...doc.data()
+        questionDocId: problemRef.id,
+        isExample: false,
+        text: data.text || '',
+        options: data.options || [],
+        image_url: data.image_url || null,
+        audio_url: data.audio_url || null,
+        _correct: data.correct_answer_index !== undefined ? data.correct_answer_index : 0,
+        _explanation: data.explanation || '',
+        sub_number: data.sub_number || 0,
+        problem_number: null,
+        problem_title: null,
+        section: null,
       });
     });
     return subQuestions;
@@ -28,80 +71,62 @@ async function getSubQuestions(problemRef) {
 }
 
 /**
- * 🧩 Get ONLY sub-questions (real questions) from a problem
+ * 🧩 Get problem metadata from problem document
  */
-async function getRealQuestionsOnly(problemDoc) {
+async function getProblemMetadata(problemDoc) {
   const data = problemDoc.data();
-  const realQuestions = [];
-
-  const subQuestions = await getSubQuestions(problemDoc.ref);
-
-  subQuestions.forEach((sq) => {
-    realQuestions.push({
-      id: sq.id,
-      questionDocId: problemDoc.id,
-      problem_number: data.problem_number || null,
-      problem_title: data.problem_title || null,
-      section: data.section || 'General',
-      image_url: sq.image_url || null,
-      audio_url: sq.audio_url || null,
-      text: sq.text || '',
-      options: sq.options || [],
-      _correct: sq.correct_answer_index !== undefined ? sq.correct_answer_index : 0,
-      _explanation: sq.explanation || data.explanation || '',
-      isExample: false,
-    });
-  });
-
-  return realQuestions;
+  return {
+    problem_number: data.problem_number || null,
+    problem_title: data.problem_title || null,
+    section: data.section || 'General',
+    explanation: data.explanation || '',
+    problem_image_url: data.problem_image_url || null,
+  };
 }
 
 /**
  * 🧩 Get ALL items (including examples) for display purposes
  */
 async function getAllItemsForDisplay(problemDoc) {
-  const data = problemDoc.data();
+  const metadata = await getProblemMetadata(problemDoc);
   const items = [];
 
-  if (data.example) {
-    const example = data.example;
-    if (example.text && example.options && Array.isArray(example.options)) {
-      items.push({
-        id: `${problemDoc.id}__example`,
-        questionDocId: problemDoc.id,
-        problem_number: data.problem_number || null,
-        problem_title: data.problem_title || null,
-        section: data.section || 'General',
-        image_url: example.image_url || null,
-        audio_url: example.audio_url || null,
-        text: example.text || '',
-        options: example.options || [],
-        _correct: example.correct_answer_index !== undefined ? example.correct_answer_index : 0,
-        _explanation: example.explanation || data.explanation || '',
-        isExample: true,
-      });
-    }
+  const example = await getExampleQuestion(problemDoc.ref);
+  if (example) {
+    items.push({
+      ...example,
+      problem_number: metadata.problem_number,
+      problem_title: metadata.problem_title,
+      section: metadata.section,
+    });
   }
 
   const subQuestions = await getSubQuestions(problemDoc.ref);
-  subQuestions.forEach((sq) => {
+  subQuestions.forEach(sq => {
     items.push({
-      id: sq.id,
-      questionDocId: problemDoc.id,
-      problem_number: data.problem_number || null,
-      problem_title: data.problem_title || null,
-      section: data.section || 'General',
-      image_url: sq.image_url || null,
-      audio_url: sq.audio_url || null,
-      text: sq.text || '',
-      options: sq.options || [],
-      _correct: sq.correct_answer_index !== undefined ? sq.correct_answer_index : 0,
-      _explanation: sq.explanation || data.explanation || '',
-      isExample: false,
+      ...sq,
+      problem_number: metadata.problem_number,
+      problem_title: metadata.problem_title,
+      section: metadata.section,
     });
   });
 
   return items;
+}
+
+/**
+ * 🧩 Get ONLY gradable items (real questions only, no examples)
+ */
+async function getGradableItems(problemDoc) {
+  const metadata = await getProblemMetadata(problemDoc);
+  const subQuestions = await getSubQuestions(problemDoc.ref);
+  
+  return subQuestions.map(sq => ({
+    ...sq,
+    problem_number: metadata.problem_number,
+    problem_title: metadata.problem_title,
+    section: metadata.section,
+  }));
 }
 
 /**
@@ -111,37 +136,11 @@ function itemKey(item) {
   return `${item.questionDocId}::${item.id}`;
 }
 
+// ─── GET EXAM METADATA ──────────────────────────────────────────────────
 const getExamMetadata = async (examId) => {
   const doc = await db.collection('exams').doc(examId).get();
   if (!doc.exists) throw new Error('Exam not found');
   return { id: doc.id, ...doc.data() };
-};
-
-// ─── GET GRADABLE ITEMS ──────────────────────────────────────────────
-const getGradableItems = async (examId) => {
-  try {
-    const problemsSnapshot = await db
-      .collection(`exams/${examId}/problems`)
-      .orderBy('problem_number')
-      .get();
-
-    if (problemsSnapshot.empty) {
-      console.warn(`⚠️ No problems found for exam: ${examId}`);
-      return [];
-    }
-
-    let items = [];
-    for (const doc of problemsSnapshot.docs) {
-      const realQuestions = await getRealQuestionsOnly(doc);
-      items = items.concat(realQuestions);
-    }
-
-    console.log(`📚 Found ${items.length} gradable items (real questions only)`);
-    return items;
-  } catch (error) {
-    console.error('Error fetching gradable items:', error);
-    return [];
-  }
 };
 
 // ─── GET SECURE QUESTIONS ─────────────────────────────────────────────
@@ -181,6 +180,33 @@ const getSecureQuestions = async (examId) => {
   }
 };
 
+// ─── GET GRADABLE ITEMS (for scoring) ──────────────────────────────────
+const getGradableItemsForExam = async (examId) => {
+  try {
+    const problemsSnapshot = await db
+      .collection(`exams/${examId}/problems`)
+      .orderBy('problem_number')
+      .get();
+
+    if (problemsSnapshot.empty) {
+      console.warn(`⚠️ No problems found for exam: ${examId}`);
+      return [];
+    }
+
+    let allItems = [];
+    for (const doc of problemsSnapshot.docs) {
+      const items = await getGradableItems(doc);
+      allItems = allItems.concat(items);
+    }
+
+    console.log(`📚 Found ${allItems.length} gradable items (real questions only)`);
+    return allItems;
+  } catch (error) {
+    console.error('Error fetching gradable items:', error);
+    return [];
+  }
+};
+
 // ─── START EXAM ──────────────────────────────────────────────────────
 const startExam = async (examId, studentId) => {
   const examRef = db.collection('exams').doc(examId);
@@ -190,7 +216,7 @@ const startExam = async (examId, studentId) => {
 
   const examData = examDoc.data();
 
-  const gradableItems = await getGradableItems(examId);
+  const gradableItems = await getGradableItemsForExam(examId);
   const totalRealQuestions = gradableItems.length;
 
   const attemptPayload = {
@@ -280,19 +306,178 @@ const saveSubmission = async (submissionData) => {
   return submissionRef.id;
 };
 
-// ─── ──────────────────────────────────────────────────────────────────
-// 🎯 RESULT ENGINE - Calculates PASS/FAIL based on passingType
-// ─── ──────────────────────────────────────────────────────────────────
+// ─── ✅ UPDATE PURCHASED_EXAMS AFTER ATTEMPT ───────────────────────────
+const updatePurchasedExamAfterAttempt = async ({ studentId, examId, percentage, completedAt, attemptId }) => {
+  try {
+    const purchasedRef = db.collection('purchased_exams');
+
+    const compositeId = `${studentId}_${examId}`;
+    let targetDocRef = purchasedRef.doc(compositeId);
+    let targetDoc = await targetDocRef.get();
+
+    if (!targetDoc.exists) {
+      const camelSnap = await purchasedRef
+        .where('studentId', '==', studentId)
+        .where('examId', '==', examId)
+        .limit(1)
+        .get();
+
+      if (!camelSnap.empty) {
+        targetDocRef = camelSnap.docs[0].ref;
+        targetDoc = camelSnap.docs[0];
+      }
+    }
+
+    if (!targetDoc.exists) {
+      const snakeSnap = await purchasedRef
+        .where('student_id', '==', studentId)
+        .where('exam_id', '==', examId)
+        .limit(1)
+        .get();
+
+      if (!snakeSnap.empty) {
+        targetDocRef = snakeSnap.docs[0].ref;
+        targetDoc = snakeSnap.docs[0];
+      }
+    }
+
+    if (!targetDoc.exists) {
+      console.warn(`⚠️ No purchased_exams record found for student=${studentId} exam=${examId}. Skipping attempts/score sync.`);
+      return;
+    }
+
+    const currentData = targetDoc.data() || {};
+    const currentAttempts = currentData.attempts_count ?? currentData.attempts ?? 0;
+    const newAttempts = currentAttempts + 1;
+
+    await targetDocRef.update({
+      attempts: newAttempts,
+      attempts_count: newAttempts,
+      lastScore: percentage,
+      last_score: percentage,
+      percentage: percentage,
+      lastAttemptAt: completedAt,
+      lastAttemptId: attemptId,
+      last_attempt_id: attemptId,
+      status: 'completed',
+      is_completed: true,
+    });
+
+    console.log(`✅ purchased_exams synced for student=${studentId} exam=${examId} → attempts=${newAttempts}, lastScore=${percentage}%`);
+  } catch (error) {
+    console.error('⚠️ Failed to sync purchased_exams record after attempt:', error);
+  }
+};
+
+// ─── ✅ UPDATE EXAM AGGREGATED RATINGS ──────────────────────────────────
+const updateExamAggregatedRatings = async (examId, rating, difficulty, nps, wouldRecommend) => {
+  if (!examId) return;
+  
+  try {
+    const examRef = db.collection('exams').doc(examId);
+    const examDoc = await examRef.get();
+    
+    if (!examDoc.exists) return;
+    
+    const examData = examDoc.data();
+    const currentReviews = examData.reviews || 0;
+    const currentRating = examData.rating || 0;
+    const currentDifficultySum = examData.difficulty_sum || 0;
+    const currentNpsSum = examData.nps_sum || 0;
+    const currentRecommendSum = examData.recommend_sum || 0;
+    const currentRecommendCount = examData.recommend_count || 0;
+    
+    const newReviews = currentReviews + 1;
+    const newRating = ((currentRating * currentReviews) + rating) / newReviews;
+    
+    const difficultyMap = { 'Very Easy': 1, 'Easy': 2, 'Moderate': 3, 'Hard': 4, 'Very Hard': 5 };
+    const difficultyValue = difficultyMap[difficulty] || 0;
+    
+    const newDifficultySum = currentDifficultySum + difficultyValue;
+    const avgDifficulty = difficultyValue > 0 ? newDifficultySum / newReviews : null;
+    
+    const newNpsSum = currentNpsSum + (nps || 0);
+    const avgNps = nps !== null ? newNpsSum / newReviews : null;
+    
+    const newRecommendSum = currentRecommendSum + (wouldRecommend === true ? 1 : 0);
+    const newRecommendCount = currentRecommendCount + (wouldRecommend !== null ? 1 : 0);
+    const recommendRate = newRecommendCount > 0 ? (newRecommendSum / newRecommendCount) * 100 : null;
+    
+    await examRef.update({
+      rating: Math.round(newRating * 10) / 10,
+      reviews: newReviews,
+      difficulty_avg: avgDifficulty,
+      nps_avg: avgNps,
+      recommend_rate: recommendRate,
+      difficulty_sum: newDifficultySum,
+      nps_sum: newNpsSum,
+      recommend_sum: newRecommendSum,
+      recommend_count: newRecommendCount,
+      updated_at: new Date().toISOString()
+    });
+    
+    console.log(`✅ Updated exam ${examId} ratings: ${newRating.toFixed(1)} (${newReviews} reviews)`);
+  } catch (error) {
+    console.error('Error updating exam aggregated ratings:', error);
+  }
+};
+
+// ─── ✅ UPDATE TUTOR AGGREGATED RATINGS ──────────────────────────────────
+const updateTutorAggregatedRatings = async (tutorId, rating, difficulty) => {
+  if (!tutorId) return;
+  
+  try {
+    const tutorRef = db.collection('users').doc(tutorId);
+    const tutorDoc = await tutorRef.get();
+    
+    if (!tutorDoc.exists) return;
+    
+    const tutorData = tutorDoc.data();
+    const currentReviews = tutorData.total_reviews || 0;
+    const currentRating = tutorData.average_rating || 0;
+    const currentDifficultySum = tutorData.difficulty_sum || 0;
+    
+    const newReviews = currentReviews + 1;
+    const newRating = ((currentRating * currentReviews) + rating) / newReviews;
+    
+    const difficultyMap = { 'Very Easy': 1, 'Easy': 2, 'Moderate': 3, 'Hard': 4, 'Very Hard': 5 };
+    const difficultyValue = difficultyMap[difficulty] || 0;
+    const newDifficultySum = currentDifficultySum + difficultyValue;
+    const avgDifficulty = difficultyValue > 0 ? newDifficultySum / newReviews : null;
+    
+    await tutorRef.update({
+      average_rating: Math.round(newRating * 10) / 10,
+      total_reviews: newReviews,
+      difficulty_avg: avgDifficulty,
+      difficulty_sum: newDifficultySum,
+      updated_at: new Date().toISOString()
+    });
+    
+    console.log(`✅ Updated tutor ${tutorId} rating: ${newRating.toFixed(1)} (${newReviews} reviews)`);
+  } catch (error) {
+    console.error('Error updating tutor aggregated ratings:', error);
+  }
+};
+
+// ================================================================
+// 🎯 RESULT ENGINE - COMPLETE IMPLEMENTATION
+// ================================================================
 
 /**
- * Calculate results based on passing type
+ * 🧩 MAIN RESULT ENGINE
+ * Determines PASS/FAIL based on passingType and passingConfig
  * 
- * Supported passing types:
- * - TOTAL_AND_SECTION: JLPT (check total + each section minimum)
- * - CUT_OFF_SCORE: EPS-TOPIK (compare with cut-off score)
- * - LEVEL_RANGE: TOPIK I (determine level from score range)
+ * @param {string} passingType - 'TOTAL_AND_SECTION' | 'CUT_OFF_SCORE' | 'LEVEL_RANGE'
+ * @param {object} passingConfig - Configuration object for the passing type
+ * @param {number} totalScore - Overall percentage score (0-100)
+ * @param {object} sectionScores - Object with section names as keys and percentages as values
+ * @returns {object} Result object with passed, reason, and additional details
  */
 function calculateResult(passingType, passingConfig, totalScore, sectionScores) {
+  console.log(`🔍 Calculating result with passingType: ${passingType}`);
+  console.log(`📊 Total Score: ${totalScore}%`);
+  console.log(`📊 Section Scores:`, sectionScores);
+  
   switch (passingType) {
     case 'TOTAL_AND_SECTION':
       return calculateJLPTResult(passingConfig, totalScore, sectionScores);
@@ -304,33 +489,52 @@ function calculateResult(passingType, passingConfig, totalScore, sectionScores) 
       return calculateTOPIKResult(passingConfig, totalScore);
     
     default:
-      // Fallback: Simple percentage-based
+      console.warn(`⚠️ Unknown passing type: ${passingType}, using default`);
       return calculateDefaultResult(passingConfig, totalScore);
   }
 }
 
 /**
- * JLPT Result Calculation (TOTAL_AND_SECTION)
+ * 🎯 JLPT Result Calculation (TOTAL_AND_SECTION)
+ * 
+ * Official JLPT Rules:
  * - Total score must be >= overallPassScore
  * - Each section must be >= its minimumScore
+ * - TWO sections only: "Language Knowledge + Reading" and "Listening"
+ * - Section scores are calculated as percentages (0-100)
+ * 
+ * @param {object} config - { overallPassScore, sections: [{ name, minimumScore }] }
+ * @param {number} totalScore - Overall percentage (0-100)
+ * @param {object} sectionScores - { "Language Knowledge + Reading": 45, "Listening": 50 }
+ * @returns {object} { passed, reason, totalPassed, allSectionsPassed, sectionResults, ... }
  */
 function calculateJLPTResult(config, totalScore, sectionScores) {
-  const overallPass = config.overallPassScore || 80;
-  const sections = config.sections || [];
+  const overallPass = config?.overallPassScore || 80;
+  const sections = config?.sections || [
+    { name: 'Language Knowledge + Reading', minimumScore: 38 },
+    { name: 'Listening', minimumScore: 19 }
+  ];
+  
+  console.log(`📊 JLPT: Overall Pass = ${overallPass}%`);
   
   // Check total score
   const totalPassed = totalScore >= overallPass;
+  console.log(`📊 Total Score: ${totalScore}% ${totalPassed ? '✅ PASSED' : '❌ FAILED'}`);
   
   // Check each section
   let sectionResults = [];
   let allSectionsPassed = true;
   let failedSection = null;
+  let failedSectionScore = null;
+  let failedSectionRequired = null;
   
   sections.forEach(section => {
     const sectionName = section.name;
     const minScore = section.minimumScore || 0;
-    const achievedScore = sectionScores[sectionName] || 0;
+    const achievedScore = sectionScores[sectionName] !== undefined ? sectionScores[sectionName] : 0;
     const passed = achievedScore >= minScore;
+    
+    console.log(`📊 ${sectionName}: ${achievedScore}% (Required: ${minScore}%) ${passed ? '✅ PASSED' : '❌ FAILED'}`);
     
     sectionResults.push({
       name: sectionName,
@@ -342,19 +546,25 @@ function calculateJLPTResult(config, totalScore, sectionScores) {
     if (!passed) {
       allSectionsPassed = false;
       failedSection = sectionName;
+      failedSectionScore = achievedScore;
+      failedSectionRequired = minScore;
     }
   });
   
   const passed = totalPassed && allSectionsPassed;
   
+  // Generate detailed reason
   let reason = null;
   if (!passed) {
     if (!totalPassed) {
-      reason = `Overall score (${totalScore}) is below the required passing mark (${overallPass})`;
+      reason = `Overall score (${totalScore}%) is below the required passing mark (${overallPass}%)`;
     } else if (failedSection) {
-      reason = `${failedSection} section score is below the required minimum`;
+      reason = `${failedSection} score (${failedSectionScore}%) is below the required minimum (${failedSectionRequired}%)`;
     }
   }
+  
+  console.log(`📊 ${passed ? '✅ PASSED' : '❌ FAILED'}`);
+  if (reason) console.log(`📊 Reason: ${reason}`);
   
   return {
     passed,
@@ -363,36 +573,68 @@ function calculateJLPTResult(config, totalScore, sectionScores) {
     allSectionsPassed,
     overallPass,
     sectionResults,
-    totalScore
+    totalScore,
+    passingType: 'TOTAL_AND_SECTION'
   };
 }
 
 /**
- * EPS-TOPIK Result Calculation (CUT_OFF_SCORE)
- * - Compare total score with cut-off score
+ * 🎯 EPS-TOPIK Result Calculation (CUT_OFF_SCORE)
+ * 
+ * Official EPS-TOPIK Rules:
+ * - Each recruitment round has different cut-off score
+ * - Student passes if total score >= cut-off score
+ * - No section-wise requirements
+ * 
+ * @param {object} config - { cutOffScore }
+ * @param {number} totalScore - Overall percentage (0-100)
+ * @returns {object} { passed, reason, cutOffScore, totalScore }
  */
 function calculateEPSResult(config, totalScore) {
-  const cutOffScore = config.cutOffScore || 65;
+  const cutOffScore = config?.cutOffScore || 65;
+  
+  console.log(`📊 EPS-TOPIK: Cut-off Score = ${cutOffScore}%`);
+  console.log(`📊 Your Score: ${totalScore}%`);
+  
   const passed = totalScore >= cutOffScore;
+  
+  const reason = passed ? null : `Current recruitment cut-off score (${cutOffScore}%) not reached. Your score: ${totalScore}%`;
+  
+  console.log(`📊 ${passed ? '✅ PASSED' : '❌ FAILED'}`);
+  if (reason) console.log(`📊 Reason: ${reason}`);
   
   return {
     passed,
-    reason: passed ? null : `Current recruitment cut-off score (${cutOffScore}) not reached. Your score: ${totalScore}`,
+    reason,
     cutOffScore,
-    totalScore
+    totalScore,
+    passingType: 'CUT_OFF_SCORE'
   };
 }
 
 /**
- * TOPIK I Result Calculation (LEVEL_RANGE)
- * - Determine level based on score range
+ * 🎯 TOPIK I Result Calculation (LEVEL_RANGE)
+ * 
+ * Official TOPIK I Rules:
+ * - No section-wise passing marks
+ * - Level determined by total score range
+ * - Maximum score: 200
+ * 
+ * @param {object} config - { ranges: [{ min, max, level, passed }] }
+ * @param {number} totalScore - Overall percentage (0-100)
+ * @returns {object} { passed, level, reason, totalScore, ranges }
  */
 function calculateTOPIKResult(config, totalScore) {
-  const ranges = config.ranges || [
+  // Default TOPIK I ranges (can be overridden by admin config)
+  const defaultRanges = [
     { min: 0, max: 79, level: 'No Level', passed: false },
-    { min: 80, max: 139, level: 'Level 1', passed: true },
-    { min: 140, max: 200, level: 'Level 2', passed: true }
+    { min: 80, max: 139, level: 'TOPIK Level 1', passed: true },
+    { min: 140, max: 200, level: 'TOPIK Level 2', passed: true }
   ];
+  
+  const ranges = config?.ranges || defaultRanges;
+  
+  console.log(`📊 TOPIK I: Score = ${totalScore}%`);
   
   let matchedLevel = null;
   let passed = false;
@@ -401,6 +643,7 @@ function calculateTOPIKResult(config, totalScore) {
     if (totalScore >= range.min && totalScore <= range.max) {
       matchedLevel = range.level;
       passed = range.passed || false;
+      console.log(`📊 Matched range: ${range.min}-${range.max} → ${range.level} (${range.passed ? 'PASS' : 'FAIL'})`);
       break;
     }
   }
@@ -411,30 +654,44 @@ function calculateTOPIKResult(config, totalScore) {
     if (totalScore > lastRange.max) {
       matchedLevel = lastRange.level;
       passed = lastRange.passed || false;
+      console.log(`📊 Score above all ranges → ${lastRange.level} (${lastRange.passed ? 'PASS' : 'FAIL'})`);
     }
   }
+  
+  const reason = passed ? null : `Score (${totalScore}%) does not meet the minimum requirement for any level`;
+  
+  console.log(`📊 ${passed ? '✅ PASSED' : '❌ FAILED'}`);
+  if (matchedLevel) console.log(`📊 Level: ${matchedLevel}`);
   
   return {
     passed,
     level: matchedLevel || 'No Level',
-    reason: passed ? null : `Score (${totalScore}) does not meet any level requirement`,
+    reason,
     totalScore,
-    ranges
+    ranges,
+    passingType: 'LEVEL_RANGE'
   };
 }
 
 /**
- * Default Fallback Calculation (Simple percentage)
+ * 🎯 Default Fallback Calculation (Simple Percentage)
+ * 
+ * Used when passingType is not recognized
  */
 function calculateDefaultResult(config, totalScore) {
-  const passingScore = config.passingScore || 65;
+  const passingScore = config?.passingScore || 65;
+  
   const passed = totalScore >= passingScore;
+  const reason = passed ? null : `Score (${totalScore}%) is below the passing mark (${passingScore}%)`;
+  
+  console.log(`📊 Default: ${passed ? 'PASSED' : 'FAILED'}`);
   
   return {
     passed,
-    reason: passed ? null : `Score (${totalScore}) is below the passing mark (${passingScore})`,
+    reason,
     passingScore,
-    totalScore
+    totalScore,
+    passingType: 'DEFAULT'
   };
 }
 
@@ -448,10 +705,8 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
   const attemptData = attemptSnapshot.data();
   if (attemptData.status === 'completed') return { attemptId, ...attemptData };
 
-  // Get gradable items (real questions only)
-  const gradableItems = await getGradableItems(attemptData.examId);
+  const gradableItems = await getGradableItemsForExam(attemptData.examId);
 
-  // ─── Calculate Section Scores ──────────────────────────────────────
   let totalCorrect = 0;
   let totalAnswered = 0;
   const sectionScores = {};
@@ -463,12 +718,10 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
   const endTime = new Date();
   const timeTakenSeconds = Math.floor((endTime - startTime) / 1000);
 
-  // Process each question
   gradableItems.forEach(item => {
     const itemId = itemKey(item);
     const sec = item.section || 'General';
     
-    // Initialize section tracking
     if (!sectionScores[sec]) {
       sectionScores[sec] = 0;
       sectionTotals[sec] = 0;
@@ -528,8 +781,8 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
     formattedSectionScores[section] = Math.round((sectionScores[section] / sectionTotals[section]) * 100);
   });
 
-  // ─── Get Passing Configuration from Category/Level ─────────────────
-  let passingType = 'TOTAL_AND_SECTION'; // Default
+  // ─── Get Passing Configuration ──────────────────────────────────────
+  let passingType = 'TOTAL_AND_SECTION';
   let passingConfig = { overallPassScore: 65, sections: [] };
   let passingSource = 'default';
 
@@ -540,15 +793,15 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
       const categoryId = examData.category_id;
       const levelId = examData.level_id;
 
+      // ✅ Try to get passing config from level first, then category
       if (categoryId) {
-        // Get category document
         const categoryRef = db.collection('exam_categories').doc(categoryId);
         const categoryDoc = await categoryRef.get();
         
         if (categoryDoc.exists) {
           const categoryData = categoryDoc.data();
           
-          // Check if level has specific configuration
+          // Level-level config takes priority
           if (levelId) {
             const levelRef = db.collection('exam_categories')
               .doc(categoryId)
@@ -558,27 +811,26 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
             const levelDoc = await levelRef.get();
             if (levelDoc.exists) {
               const levelData = levelDoc.data();
-              // Level overrides category
-              if (levelData.passingType) {
-                passingType = levelData.passingType;
-                passingConfig = levelData.passingConfig || {};
+              if (levelData.passing_type && levelData.passing_config) {
+                passingType = levelData.passing_type;
+                passingConfig = levelData.passing_config;
                 passingSource = 'level';
                 console.log(`✅ Using level passing configuration: ${passingType}`);
-              } else if (categoryData.passingType) {
-                passingType = categoryData.passingType;
-                passingConfig = categoryData.passingConfig || {};
+              } else if (categoryData.passing_type && categoryData.passing_config) {
+                passingType = categoryData.passing_type;
+                passingConfig = categoryData.passing_config;
                 passingSource = 'category';
                 console.log(`✅ Using category passing configuration: ${passingType}`);
               }
-            } else if (categoryData.passingType) {
-              passingType = categoryData.passingType;
-              passingConfig = categoryData.passingConfig || {};
+            } else if (categoryData.passing_type && categoryData.passing_config) {
+              passingType = categoryData.passing_type;
+              passingConfig = categoryData.passing_config;
               passingSource = 'category';
               console.log(`✅ Using category passing configuration: ${passingType}`);
             }
-          } else if (categoryData.passingType) {
-            passingType = categoryData.passingType;
-            passingConfig = categoryData.passingConfig || {};
+          } else if (categoryData.passing_type && categoryData.passing_config) {
+            passingType = categoryData.passing_type;
+            passingConfig = categoryData.passing_config;
             passingSource = 'category';
             console.log(`✅ Using category passing configuration: ${passingType}`);
           }
@@ -593,8 +845,8 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
   const result = calculateResult(
     passingType,
     passingConfig,
-    percentage, // Total score as percentage
-    formattedSectionScores // Section scores as percentages
+    percentage,
+    formattedSectionScores
   );
 
   console.log(`📊 Result: ${result.passed ? 'PASS' : 'FAIL'}`);
@@ -633,18 +885,26 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
     autoSubmitted: !!autoSubmitted,
     timeTakenSeconds,
     completedAt: endTime.toISOString(),
-    // JLPT specific
+    // ✅ Result Engine specific fields
     totalPassed: result.totalPassed,
     allSectionsPassed: result.allSectionsPassed,
     overallPass: result.overallPass,
-    // EPS-TOPIK specific
     cutOffScore: result.cutOffScore,
-    // TOPIK specific
     achievedLevel: result.level,
     failReason: result.reason,
+    sectionResults: result.sectionResults || [],
+    attempts: (attemptData.attempts || 0) + 1,
   };
 
   await attemptRef.update(updateData);
+
+  await updatePurchasedExamAfterAttempt({
+    studentId: finalStudentId,
+    examId: attemptData.examId,
+    percentage,
+    completedAt: endTime.toISOString(),
+    attemptId,
+  });
 
   // ─── Save to submissions collection ────────────────────────────────
   const submissionPayload = {
@@ -665,13 +925,10 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
     passingConfig: passingConfig,
     passingSource: passingSource,
     section_scores: sectionData,
-    // JLPT specific
     overallPass: result.overallPass,
     allSectionsPassed: result.allSectionsPassed,
     sectionResults: result.sectionResults || [],
-    // EPS-TOPIK specific
     cutOffScore: result.cutOffScore,
-    // TOPIK specific
     achievedLevel: result.level,
     failReason: result.reason,
     time_taken_seconds: timeTakenSeconds,
@@ -709,29 +966,56 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
 };
 
 // ─── GET RESULTS ──────────────────────────────────────────────────────
-const getResults = async (attemptId) => {
-  const doc = await db.collection('student_exams').doc(attemptId).get();
+const getResults = async (attemptId, studentId = null) => {
+  let doc = await db.collection('student_exams').doc(attemptId).get();
+
+  if (!doc.exists) {
+    let query = db.collection('student_exams')
+      .where('examId', '==', attemptId)
+      .where('status', '==', 'completed');
+
+    if (studentId) {
+      query = query.where('studentId', '==', studentId);
+    }
+
+    const snapshot = await query.get();
+
+    if (!snapshot.empty) {
+      const sorted = snapshot.docs.sort((a, b) => {
+        const aTime = new Date(a.data().completedAt || a.data().endTime || 0).getTime();
+        const bTime = new Date(b.data().completedAt || b.data().endTime || 0).getTime();
+        return bTime - aTime;
+      });
+      doc = sorted[0];
+      attemptId = doc.id;
+      console.log(`ℹ️ Resolved results request via examId fallback → attemptId=${attemptId}`);
+    }
+  }
+
   if (!doc.exists) throw new Error('Attempt results report not found');
-  
+
   const data = doc.data();
-  
+
   const submissionSnapshot = await db.collection('submissions')
     .where('attempt_id', '==', attemptId)
     .get();
-  
+
   let submissionId = null;
   if (!submissionSnapshot.empty) {
     submissionId = submissionSnapshot.docs[0].id;
   }
-  
+
   return {
     ...data,
+    attemptId,
     submissionId,
     examTitle: data.title || 'Language Examination',
+    tutor_id: data.tutor_id || null,
+    tutor_name: data.tutor_name || 'Expert Tutor',
   };
 };
 
-// ─── GET SUBMISSIONS HISTORY ──────────────────────────────────────────
+// ─── GET STUDENT SUBMISSIONS ──────────────────────────────────────────
 const getStudentSubmissions = async (studentId, examId = null) => {
   try {
     let query = db.collection('submissions')
@@ -758,7 +1042,7 @@ module.exports = {
   startExam,
   getExamMetadata,
   getSecureQuestions,
-  getGradableItems,
+  getGradableItemsForExam,
   logViolation,
   getAttemptStatus,
   submitExam,

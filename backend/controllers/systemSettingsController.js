@@ -1,5 +1,13 @@
 const systemSettingsService = require('../services/systemSettingsService');
-const { db } = require('../config/firebase'); 
+const { db } = require('../config/firebase');
+
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
 
 // Helper function defined outside the class to avoid 'this' binding issues
 function isValidEmail(email) {
@@ -13,6 +21,7 @@ class SystemSettingsController {
   // 1. HOMEPAGE CMS - HERO BANNERS
   // =============================================
 
+  // GET BANNERS (NO AUDIT - READ ONLY)
   async getBanners(req, res) {
     try {
       const banners = await systemSettingsService.getHeroBanners();
@@ -23,13 +32,34 @@ class SystemSettingsController {
     }
   }
 
+  // SAVE BANNERS - WITH AUDIT LOG
   async saveBanners(req, res) {
     try {
       const { banners } = req.body;
       if (!Array.isArray(banners)) {
         return res.status(400).json({ success: false, message: 'Invalid format.' });
       }
+
+      // Get old banners for comparison
+      const oldBanners = await systemSettingsService.getHeroBanners();
+
       const updatedBanners = await systemSettingsService.updateHeroBanners(banners);
+
+      // ✅ SYSTEM CONFIG AUDIT LOG - BANNERS UPDATED
+      logAudit(auditLogService.logSystemConfig, {
+        actorId: req.user?.uid || 'system',
+        actorEmail: req.user?.email || 'system@langoora.com',
+        action: 'banner_updated',
+        settingType: 'hero_banners',
+        changes: {
+          oldCount: oldBanners.length,
+          newCount: banners.length,
+          banners: banners.map(b => ({ id: b.id, title: b.title || 'Untitled' }))
+        },
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+
       return res.status(200).json({ success: true, data: updatedBanners });
     } catch (error) {
       console.error("Error in saveBanners:", error);
@@ -41,6 +71,7 @@ class SystemSettingsController {
   // 2. GOVERNANCE & SECURITY
   // =============================================
 
+  // GET SECURITY SETTINGS (NO AUDIT - READ ONLY)
   async getSecuritySettings(req, res) {
     try {
       const policies = await systemSettingsService.getSecurityPolicies();
@@ -51,17 +82,21 @@ class SystemSettingsController {
     }
   }
 
+  // SAVE SECURITY SETTINGS - WITH AUDIT LOG
   async saveSecuritySettings(req, res) {
     try {
-      const { 
-        enableAntiCheat, 
-        maxViolationWarnings, 
-        maintenanceMode, 
-        maintenanceEstimatedTime, 
-        maintenanceMessage, 
-        sessionTimeouts 
+      const {
+        enableAntiCheat,
+        maxViolationWarnings,
+        maintenanceMode,
+        maintenanceEstimatedTime,
+        maintenanceMessage,
+        sessionTimeouts
       } = req.body;
-      
+
+      // Get old security policies for comparison
+      const oldPolicies = await systemSettingsService.getSecurityPolicies();
+
       const updatedPolicies = await systemSettingsService.updateSecurityPolicies({
         enableAntiCheat,
         maxViolationWarnings,
@@ -70,7 +105,29 @@ class SystemSettingsController {
         maintenanceMessage,
         sessionTimeouts
       });
-      
+
+      // ✅ SYSTEM CONFIG AUDIT LOG - SECURITY SETTINGS UPDATED
+      const changes = {};
+      if (oldPolicies.enableAntiCheat !== enableAntiCheat) {
+        changes.enableAntiCheat = { old: oldPolicies.enableAntiCheat, new: enableAntiCheat };
+      }
+      if (oldPolicies.maxViolationWarnings !== maxViolationWarnings) {
+        changes.maxViolationWarnings = { old: oldPolicies.maxViolationWarnings, new: maxViolationWarnings };
+      }
+      if (oldPolicies.maintenanceMode !== maintenanceMode) {
+        changes.maintenanceMode = { old: oldPolicies.maintenanceMode, new: maintenanceMode };
+      }
+
+      logAudit(auditLogService.logSystemConfig, {
+        actorId: req.user?.uid || 'system',
+        actorEmail: req.user?.email || 'system@langoora.com',
+        action: 'settings_updated',
+        settingType: 'security_policies',
+        changes: changes,
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+
       return res.status(200).json({
         success: true,
         message: 'Security policies committed successfully.',
@@ -86,6 +143,7 @@ class SystemSettingsController {
   // 3. GLOBAL CONFIGURATIONS
   // =============================================
 
+  // GET GLOBAL SETTINGS (NO AUDIT - READ ONLY)
   async getGlobalSettings(req, res) {
     try {
       const config = await systemSettingsService.getGlobalConfig();
@@ -102,6 +160,7 @@ class SystemSettingsController {
     }
   }
 
+  // SAVE GLOBAL SETTINGS - WITH AUDIT LOG
   async saveGlobalSettings(req, res) {
     try {
       console.log('📝 saveGlobalSettings called with body:', req.body);
@@ -146,6 +205,7 @@ class SystemSettingsController {
         });
       }
 
+      // Validate Email
       if (senderEmail && !isValidEmail(senderEmail)) {
         return res.status(400).json({
           success: false,
@@ -160,6 +220,10 @@ class SystemSettingsController {
         });
       }
 
+      // Get old config for comparison
+      const oldConfig = await systemSettingsService.getGlobalConfig();
+
+      // Save configurations
       const updatedConfig = await systemSettingsService.updateGlobalConfig({
         creditPrice,
         signupBonus,
@@ -170,6 +234,27 @@ class SystemSettingsController {
         showAnnouncement,
         announcementText,
         announcementColor
+      });
+
+      // ✅ SYSTEM CONFIG AUDIT LOG - GLOBAL SETTINGS UPDATED
+      const changes = {};
+      const fieldsToTrack = ['creditPrice', 'signupBonus', 'platformCommission', 'minPayoutThreshold', 'senderEmail', 'senderName', 'showAnnouncement'];
+      fieldsToTrack.forEach(field => {
+        const oldVal = oldConfig[field];
+        const newVal = req.body[field];
+        if (oldVal !== newVal && newVal !== undefined) {
+          changes[field] = { old: oldVal, new: newVal };
+        }
+      });
+
+      logAudit(auditLogService.logSystemConfig, {
+        actorId: req.user?.uid || 'system',
+        actorEmail: req.user?.email || 'system@langoora.com',
+        action: 'settings_updated',
+        settingType: 'global_config',
+        changes: changes,
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
       });
 
       console.log('✅ Global config saved successfully:', updatedConfig);
@@ -193,6 +278,10 @@ class SystemSettingsController {
   // 4. EXCHANGE RATE & PLATFORM COMMISSION ⭐
   // =============================================
 
+  /**
+   * ⭐ Get Both Exchange Rate & Platform Commission (NO AUDIT - READ ONLY)
+   * GET /api/system-settings/rates
+   */
   async getRates(req, res) {
     try {
       const docRef = db.collection('system_settings').doc('global_config');
@@ -227,6 +316,10 @@ class SystemSettingsController {
     }
   }
 
+  /**
+   * Get Exchange Rate (creditPrice) Only (NO AUDIT - READ ONLY)
+   * GET /api/system-settings/exchange-rate
+   */
   async getExchangeRate(req, res) {
     try {
       const docRef = db.collection('system_settings').doc('global_config');
@@ -259,6 +352,10 @@ class SystemSettingsController {
     }
   }
 
+  /**
+   * Get Platform Commission Only (NO AUDIT - READ ONLY)
+   * GET /api/system-settings/platform-commission
+   */
   async getPlatformCommission(req, res) {
     try {
       const docRef = db.collection('system_settings').doc('global_config');
@@ -290,6 +387,10 @@ class SystemSettingsController {
     }
   }
 
+  /**
+   * Update Exchange Rate (creditPrice) - WITH AUDIT LOG
+   * PUT /api/system-settings/exchange-rate
+   */
   async updateExchangeRate(req, res) {
     try {
       const { creditPrice } = req.body;
@@ -309,6 +410,8 @@ class SystemSettingsController {
       }
 
       const docRef = db.collection('system_settings').doc('global_config');
+      const oldDoc = await docRef.get();
+      const oldData = oldDoc.exists ? oldDoc.data() : { creditPrice: 5 };
 
       await docRef.update({
         creditPrice: Number(creditPrice),
@@ -317,6 +420,19 @@ class SystemSettingsController {
 
       const updatedDoc = await docRef.get();
       const data = updatedDoc.data();
+
+      // ✅ SYSTEM CONFIG AUDIT LOG - EXCHANGE RATE UPDATED
+      logAudit(auditLogService.logSystemConfig, {
+        actorId: req.user?.uid || 'system',
+        actorEmail: req.user?.email || 'system@langoora.com',
+        action: 'commission_updated',
+        settingType: 'exchange_rate',
+        changes: {
+          creditPrice: { old: oldData.creditPrice || 5, new: Number(creditPrice) }
+        },
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
 
       res.status(200).json({
         success: true,
@@ -337,6 +453,10 @@ class SystemSettingsController {
     }
   }
 
+  /**
+   * Update Platform Commission - WITH AUDIT LOG
+   * PUT /api/system-settings/platform-commission
+   */
   async updatePlatformCommission(req, res) {
     try {
       const { platformCommission } = req.body;
@@ -356,6 +476,8 @@ class SystemSettingsController {
       }
 
       const docRef = db.collection('system_settings').doc('global_config');
+      const oldDoc = await docRef.get();
+      const oldData = oldDoc.exists ? oldDoc.data() : { platformCommission: 10 };
 
       await docRef.update({
         platformCommission: Number(platformCommission),
@@ -364,6 +486,19 @@ class SystemSettingsController {
 
       const updatedDoc = await docRef.get();
       const data = updatedDoc.data();
+
+      // ✅ SYSTEM CONFIG AUDIT LOG - PLATFORM COMMISSION UPDATED
+      logAudit(auditLogService.logSystemConfig, {
+        actorId: req.user?.uid || 'system',
+        actorEmail: req.user?.email || 'system@langoora.com',
+        action: 'commission_updated',
+        settingType: 'platform_commission',
+        changes: {
+          platformCommission: { old: oldData.platformCommission || 10, new: Number(platformCommission) }
+        },
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
 
       res.status(200).json({
         success: true,
@@ -387,6 +522,7 @@ class SystemSettingsController {
   // 5. SEND TEST EMAIL
   // =============================================
 
+  // SEND TEST EMAIL (NO AUDIT - Just a test action)
   async sendTestEmail(req, res) {
     try {
       console.log('📧 sendTestEmail called with body:', req.body);
@@ -425,7 +561,7 @@ class SystemSettingsController {
       });
     }
   }
-} // 👈 මෙන්න මේ Class එක වහන Bracket එක එකතු කරලා හදලා තියෙනවා!
+}
 
 // Export as singleton instance
 module.exports = new SystemSettingsController();

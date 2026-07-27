@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Play, BarChart2, Clock, Trash2, Plus,
+  BookOpen, Play, BarChart2, Clock, Plus,
   CalendarPlus, Check, GraduationCap, FileText,
-  Filter, Grid3x3, List, ShoppingBag, Layers
+  Filter, Grid3x3, List, ShoppingBag, Layers, Award, TrendingUp, Repeat
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -30,25 +30,38 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ─── Loading Spinner Component ──────────────────────────────────────────────
-function LoadingSpinner({ message = "Loading your exams..." }) {
+// ✅ Inline skeleton card — renders inside the normal page shell (same
+// background as the rest of the app) instead of replacing the whole page
+// with a separate full-screen loader. This mirrors how StudentDashboard.jsx
+// keeps its layout mounted and only pulses individual widgets while loading.
+function ExamCardSkeleton({ viewMode }) {
   return (
-    <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-4 text-white">
-      <div className="relative w-14 h-14">
-        <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-        <motion.div
-          className="absolute inset-0 rounded-full border-2 border-t-transparent"
-          style={{ borderColor: `${BRAND.primary} transparent transparent transparent` }}
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-        />
+    <GlassCard className={`overflow-hidden border-white/5 h-full ${viewMode === 'list' ? 'flex' : ''}`}>
+      <div className={`flex ${viewMode === 'list' ? 'w-full' : 'h-full min-h-[210px]'}`}>
+        <div className={`relative ${viewMode === 'list' ? 'w-48 flex-shrink-0' : 'w-32 flex-shrink-0'} bg-white/5 animate-pulse`} />
+        <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-white/10 animate-pulse flex-shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3 w-24 bg-white/10 rounded animate-pulse" />
+                <div className="h-2.5 w-16 bg-white/5 rounded animate-pulse" />
+              </div>
+            </div>
+            <div className="h-4 w-3/4 bg-white/10 rounded animate-pulse" />
+            <div className="h-3 w-full bg-white/5 rounded animate-pulse" />
+            <div className="h-3 w-5/6 bg-white/5 rounded animate-pulse" />
+          </div>
+          <div className="flex gap-2 mt-3 pt-3 border-t border-white/5">
+            <div className="h-8 w-20 bg-white/10 rounded-xl animate-pulse" />
+            <div className="h-8 w-20 bg-white/5 rounded-xl animate-pulse" />
+          </div>
+        </div>
       </div>
-      <p className="text-gray-400 text-sm tracking-wide">{message}</p>
-    </div>
+    </GlassCard>
   );
 }
 
-// ─── Tutor Avatar Component ─────────────────────────────────────────────────
 function TutorAvatar({ tutor, name, size = 36 }) {
   const [imgError, setImgError] = useState(false);
   const initials = (name || 'T').trim().charAt(0).toUpperCase();
@@ -80,7 +93,30 @@ function TutorAvatar({ tutor, name, size = 36 }) {
   );
 }
 
-// ─── Main Page Component ───────────────────────────────────────────────────
+function ScoreDisplay({ score, total, percentage }) {
+  const isPassed = percentage >= 70;
+  
+  return (
+    <div className="flex items-center gap-3 bg-white/[0.03] rounded-xl px-3 py-2 border border-white/5">
+      <div className="flex items-center gap-2">
+        <Award size={16} className={isPassed ? 'text-emerald-400' : 'text-amber-400'} />
+        <span className="text-xs font-medium text-gray-300">
+          Score: <span className="text-white font-bold">{score}/{total}</span>
+        </span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <TrendingUp size={14} className={isPassed ? 'text-emerald-400' : 'text-amber-400'} />
+        <span className={`text-xs font-bold ${isPassed ? 'text-emerald-400' : 'text-amber-400'}`}>
+          {percentage}%
+        </span>
+      </div>
+      <Badge color={isPassed ? 'green' : 'yellow'} size="sm">
+        {isPassed ? 'Passed' : 'Needs Practice'}
+      </Badge>
+    </div>
+  );
+}
+
 export default function MyExamsPage() {
   const navigate = useNavigate();
   const [exams, setExams] = useState([]);
@@ -89,13 +125,10 @@ export default function MyExamsPage() {
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedExamId, setSelectedExamId] = useState(null);
   const [schedulingExamId, setSchedulingExamId] = useState(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [successExamId, setSuccessExamId] = useState(null);
 
-  // Dynamic Categories & Levels Extractor (Handles multiple potential backend naming conventions)
   const categories = [...new Set(exams.map(e => e.category_id || e.category || e.category_name).filter(Boolean))];
   const levels = [...new Set(exams.map(e => e.level_id || e.level || e.level_name).filter(Boolean))];
 
@@ -110,7 +143,6 @@ export default function MyExamsPage() {
         const examList = res.data.exams || res.data.data || [];
         setExams(examList);
 
-        // Fetch tutor profiles dynamically
         const tutorIds = [...new Set(examList.map(e => e.tutor_id).filter(Boolean))];
         if (tutorIds.length > 0) {
           const tutorEntries = await Promise.all(
@@ -136,27 +168,6 @@ export default function MyExamsPage() {
     fetchPurchasedExams();
   }, []);
 
-  const openDeleteConfirm = (id) => {
-    setSelectedExamId(id);
-    setIsModalOpen(true);
-  };
-
-  const handleConfirmDelete = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:5000/api/exams/my-exams/${selectedExamId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setExams(prev => prev.filter(exam => (exam.exam_id || exam.id) !== selectedExamId));
-    } catch (error) {
-      console.error("Delete error:", error);
-      // Fallback UI deletion
-      setExams(prev => prev.filter(exam => (exam.exam_id || exam.id) !== selectedExamId));
-    } finally {
-      setIsModalOpen(false);
-    }
-  };
-
   const handleAddToPlanner = async (exam) => {
     if (!selectedDate) return alert("Please select a valid study execution date.");
     const targetId = exam.exam_id || exam.id;
@@ -169,7 +180,7 @@ export default function MyExamsPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          title: `Complete ${exam.title}`,
+          title: `Complete ${cleanTitle(exam.title)}`,
           description: `Tutor: ${exam.tutor_name || 'Expert'} · Expected duration: ${exam.duration_minutes || exam.duration || 60} min.`,
           scheduled_date: selectedDate
         })
@@ -189,8 +200,14 @@ export default function MyExamsPage() {
   };
 
   const filteredExams = exams.filter(exam => {
-    const attempts = exam.attempts_count || 0;
-    const isCompleted = attempts > 0 || exam.status === 'completed' || exam.is_completed;
+    const attempts = exam.attempts_count || exam.attempts || 0;
+    const hasScore = exam.lastScore !== null && exam.lastScore !== undefined || 
+                     exam.percentage !== null && exam.percentage !== undefined ||
+                     exam.last_score !== null && exam.last_score !== undefined;
+    const isCompleted = attempts > 0 || 
+                        exam.status === 'completed' || 
+                        exam.is_completed === true ||
+                        hasScore;
 
     if (filter === 'all') return true;
     if (filter === 'completed') return isCompleted;
@@ -208,10 +225,6 @@ export default function MyExamsPage() {
     }
     return true;
   });
-
-  if (loading) {
-    return <LoadingSpinner message="Loading your exams..." />;
-  }
 
   return (
     <div className="space-y-8 relative">
@@ -291,7 +304,6 @@ export default function MyExamsPage() {
           )}
         </div>
 
-        {/* View Mode Switcher */}
         <div className="flex ml-auto gap-1 bg-white/5 rounded-xl p-1 border border-white/10">
           <button
             onClick={() => setViewMode('grid')}
@@ -312,8 +324,14 @@ export default function MyExamsPage() {
         </div>
       </div>
 
-      {/* Empty State */}
-      {filteredExams.length === 0 ? (
+      {/* Content: loading skeletons → empty state → real grid */}
+      {loading ? (
+        <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'} gap-5`}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <ExamCardSkeleton key={i} viewMode={viewMode} />
+          ))}
+        </div>
+      ) : filteredExams.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -333,17 +351,33 @@ export default function MyExamsPage() {
           </Button>
         </motion.div>
       ) : (
-        /* Exam List / Grid */
         <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'} gap-5`}>
           {filteredExams.map((exam, i) => {
             const tutor = tutors[exam.tutor_id];
             const tutorName = tutor?.name || exam.tutor_name || 'Expert Tutor';
             const targetExamId = exam.exam_id || exam.id;
 
-            // Duration & Question Fallback Calculations
             const duration = exam.duration_minutes || exam.duration || exam.time || "N/A";
             const totalQuestions = exam.total_questions || exam.questions_count || exam.totalQuestions || exam.questions?.length || 0;
-            const isCompleted = (exam.attempts_count || 0) > 0 || exam.status === 'completed' || exam.is_completed;
+            
+            // ✅ Enhanced completion detection
+            const attempts = exam.attempts_count || exam.attempts || 0;
+            const lastScore = exam.lastScore || exam.last_score || exam.percentage || null;
+            const hasScore = lastScore !== null && lastScore !== undefined;
+            const isCompleted = attempts > 0 || 
+                                exam.status === 'completed' || 
+                                exam.is_completed === true ||
+                                hasScore;
+
+            // ✅ Get score percentage from exam data
+            const scorePercentage = exam.percentage || exam.lastScore || exam.last_score || null;
+
+            // ✅ Prefer a real attemptId for the Results link (student_exams doc id).
+            // Falls back to targetExamId — the backend now resolves an examId to
+            // that student's latest completed attempt automatically.
+            const lastAttemptId = exam.attemptId || exam.attempt_id ||
+                                   exam.lastAttemptId || exam.last_attempt_id || null;
+            const resultsTargetId = lastAttemptId || targetExamId;
 
             return (
               <motion.div key={targetExamId || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
@@ -352,7 +386,7 @@ export default function MyExamsPage() {
                     <div className={`relative ${viewMode === 'list' ? 'w-48 flex-shrink-0' : 'w-32 flex-shrink-0'} overflow-hidden`}>
                       <img
                         src={exam.thumbnail || 'https://images.pexels.com/photos/11075249/pexels-photo-11075249.jpeg?w=400'}
-                        alt={exam.title}
+                        alt={cleanTitle(exam.title)}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
@@ -373,14 +407,25 @@ export default function MyExamsPage() {
                             )}
                           </div>
                           <div className="flex-shrink-0">
-                            <Badge color={statusColors[exam.status] || 'green'}>{exam.status || 'active'}</Badge>
+                            <Badge color={isCompleted ? 'green' : 'blue'}>
+                              {isCompleted ? 'Completed' : 'Active'}
+                            </Badge>
                           </div>
                         </div>
 
-                        {/* Title */}
+                        {/* Title (Clean HTML Tags) */}
                         <h3 className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words">
-                          {exam.title}
+                          {cleanTitle(exam.title)}
                         </h3>
+
+                        {/* ✅ Show Score if completed and has score */}
+                        {isCompleted && scorePercentage !== null && (
+                          <ScoreDisplay 
+                            score={Math.round((scorePercentage / 100) * totalQuestions)} 
+                            total={totalQuestions} 
+                            percentage={scorePercentage} 
+                          />
+                        )}
 
                         {/* Description */}
                         {exam.description && (
@@ -403,6 +448,11 @@ export default function MyExamsPage() {
                           <span className="flex items-center gap-1 text-xs text-gray-400 font-mono bg-white/[0.03] py-1 px-2 rounded-lg border border-white/5">
                             <FileText size={11} />{totalQuestions} Q
                           </span>
+                          {isCompleted && attempts > 0 && (
+                            <span className="flex items-center gap-1 text-xs text-gray-400 font-mono bg-white/[0.03] py-1 px-2 rounded-lg border border-white/5">
+                              <Repeat size={11} />{attempts} attempt{attempts > 1 ? 's' : ''}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -414,14 +464,15 @@ export default function MyExamsPage() {
                             size="sm" 
                             onClick={() => navigate(`/exam/${targetExamId}/take`)}
                           >
-                            <Play size={12} fill="currentColor" /> {isCompleted ? 'Retake' : 'Start'}
+                            <Play size={12} fill="currentColor" /> 
+                            {isCompleted ? 'Retake' : 'Start'}  {/* ✅ Retake button shows when completed */}
                           </Button>
 
                           {isCompleted && (
                             <Button 
                               variant="secondary" 
                               size="sm" 
-                              onClick={() => navigate(`/exam/${targetExamId}/results`)}
+                              onClick={() => navigate(`/exam/${resultsTargetId}/results`)}
                             >
                               <BarChart2 size={12} /> Results
                             </Button>
@@ -463,14 +514,6 @@ export default function MyExamsPage() {
                             </button>
                           )}
                         </div>
-
-                        <button
-                          onClick={() => openDeleteConfirm(targetExamId)}
-                          className="p-2 bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 text-gray-500 hover:text-red-400 rounded-xl transition-all flex-shrink-0"
-                          title="Remove Exam"
-                        >
-                          <Trash2 size={13} />
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -480,42 +523,6 @@ export default function MyExamsPage() {
           })}
         </div>
       )}
-
-      {/* Confirmation Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#111827]/90 border border-white/10 backdrop-blur-md p-6 rounded-2xl max-w-sm w-full mx-4 shadow-2xl text-center"
-            >
-              <div className="w-12 h-12 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trash2 size={22} />
-              </div>
-              <h3 className="text-lg font-semibold text-white mb-2">Remove Exam?</h3>
-              <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-                Are you sure you want to remove this exam from your list? This action cannot be undone.
-              </p>
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-sm font-medium bg-white/5 text-gray-400 hover:text-white border border-white/10 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmDelete}
-                  className="px-4 py-2 rounded-xl text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-all shadow-lg shadow-red-500/20"
-                >
-                  Yes, Remove
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

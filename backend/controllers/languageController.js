@@ -1,8 +1,74 @@
 // backend/controllers/languageController.js
 const { db } = require('../config/firebase');
 
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ ADD: Notification Service
+const notificationService = require('../services/NotificationService');
+
+// ✅ ADD: Email Service
+const emailService = require('../services/emailService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
+
+// ✅ Helper for non-blocking notification sending
+const sendNotification = async (fn, data) => {
+  try {
+    await fn(data);
+  } catch (err) {
+    console.error('Notification error:', err);
+  }
+};
+
 // =========================================================================
-// 📚 1. Get Active Languages (Public - No Auth)
+// 📚 Helper: Get Finance Admin Emails
+// =========================================================================
+const getFinanceAdminEmails = async () => {
+  try {
+    const usersSnapshot = await db.collection('users')
+      .where('role', 'in', ['finance', 'finance_admin'])
+      .get();
+    
+    const emails = [];
+    usersSnapshot.forEach(doc => {
+      const userData = doc.data();
+      if (userData.email) {
+        emails.push(userData.email);
+      }
+    });
+    return emails;
+  } catch (error) {
+    console.error('Error fetching finance admin emails:', error);
+    return [];
+  }
+};
+
+// =========================================================================
+// 📚 Helper: Get Finance Admin User IDs
+// =========================================================================
+const getFinanceAdminIds = async () => {
+  try {
+    const usersSnapshot = await db.collection('users')
+      .where('role', 'in', ['finance', 'finance_admin'])
+      .get();
+    
+    const userIds = [];
+    usersSnapshot.forEach(doc => {
+      userIds.push(doc.id);
+    });
+    return userIds;
+  } catch (error) {
+    console.error('Error fetching finance admin IDs:', error);
+    return [];
+  }
+};
+
+// =========================================================================
+// 📚 1. Get Active Languages (Public - No Auth) - NO AUDIT (READ ONLY)
 // =========================================================================
 const getActiveLanguages = async (req, res) => {
   try {
@@ -60,7 +126,7 @@ const getActiveLanguages = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 2. Get Active Schema with Categories and Levels
+// 📚 2. Get Active Schema (NO AUDIT - READ ONLY)
 // =========================================================================
 const getActiveSchemaForSystem = async (req, res) => {
   try {
@@ -102,6 +168,8 @@ const getActiveSchemaForSystem = async (req, res) => {
             passing_score: levelData.passing_score || categoryPassingScore,
             passing_type: levelData.passing_type || categoryData.passing_type || null,
             passing_config: levelData.passing_config || categoryData.passing_config || null,
+            scoring_method: levelData.scoring_method || categoryData.scoring_method || null,
+            scoring_config: levelData.scoring_config || categoryData.scoring_config || null,
             ...levelData
           };
         });
@@ -126,6 +194,8 @@ const getActiveSchemaForSystem = async (req, res) => {
         passing_score: categoryPassingScore,
         passing_type: categoryData.passing_type || null,
         passing_config: categoryData.passing_config || null,
+        scoring_method: categoryData.scoring_method || null,
+        scoring_config: categoryData.scoring_config || null,
         hasLevels: levels.length > 0,
         levels: levels,
         created_at: categoryData.created_at || null,
@@ -153,7 +223,7 @@ const getActiveSchemaForSystem = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 3. Get Full Language Cluster Schema (Admin Only)
+// 📚 3. Get Full Language Cluster Schema (NO AUDIT - READ ONLY)
 // =========================================================================
 const getLanguageClusterSchema = async (req, res) => {
   try {
@@ -207,7 +277,7 @@ const getLanguageClusterSchema = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 4. Add New Category (Admin Only)
+// 📚 4. Add New Category - WITH AUDIT LOG & NOTIFICATIONS
 // =========================================================================
 const addCategory = async (req, res) => {
   try {
@@ -218,7 +288,9 @@ const addCategory = async (req, res) => {
       status,
       passing_score,
       passing_type,
-      passing_config
+      passing_config,
+      scoring_method,
+      scoring_config
     } = req.body;
     
     if (!category_name || !language) {
@@ -246,6 +318,8 @@ const addCategory = async (req, res) => {
       passing_score: passing_score || 65,
       passing_type: passing_type || null,
       passing_config: passing_config || null,
+      scoring_method: scoring_method || null,
+      scoring_config: scoring_config || null,
       created_at: new Date().toISOString(),
       created_by: req.user?.email || req.user?.uid || 'admin',
       updated_at: new Date().toISOString(),
@@ -255,10 +329,66 @@ const addCategory = async (req, res) => {
     await db.collection('exam_categories').doc(categoryId).set(categoryData);
     
     console.log(`✅ Category created: ${categoryId}`);
-    
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - CATEGORY CREATED
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'created',
+      entityType: 'category',
+      entityId: categoryId,
+      entityName: category_name,
+      changes: categoryData,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    // ✅ NOTIFICATION: Send to Finance Admins
+    try {
+      const financeAdminIds = await getFinanceAdminIds();
+      if (financeAdminIds.length > 0) {
+        await sendNotification(notificationService.sendToMany, [
+          financeAdminIds,
+          {
+            type: 'category_created',
+            title: '📚 New Exam Category Created',
+            message: `A new exam category "${category_name}" (${language}) has been created by ${req.user?.email || 'Admin'}. Please review and configure credit values.`,
+            actionUrl: '/finance-admin/exam-credits',
+            categoryId: categoryId,
+            categoryName: category_name,
+            language: language
+          }
+        ]);
+        console.log(`✅ Notifications sent to ${financeAdminIds.length} finance admins`);
+      }
+    } catch (notifError) {
+      console.error('❌ Failed to send notifications:', notifError);
+    }
+
+    // ✅ EMAIL: Send to Finance Admins
+    try {
+      const financeEmails = await getFinanceAdminEmails();
+      if (financeEmails.length > 0) {
+        for (const email of financeEmails) {
+          await emailService.sendCategoryCreatedEmail(
+            email,
+            category_name,
+            language,
+            categoryId,
+            req.user?.email || 'Admin'
+          );
+        }
+        console.log(`✅ Emails sent to ${financeEmails.length} finance admins`);
+      }
+    } catch (emailError) {
+      console.error('❌ Failed to send emails:', emailError);
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Category created successfully.',
+      message: 'Category created successfully. Finance Admin has been notified.',
       categoryId,
       category: {
         id: categoryId,
@@ -277,7 +407,7 @@ const addCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 5. Update Category - ✅ FIXED: Handles passing_type and passing_config
+// 📚 5. Update Category - WITH AUDIT LOG
 // =========================================================================
 const updateCategory = async (req, res) => {
   try {
@@ -289,11 +419,13 @@ const updateCategory = async (req, res) => {
       status,
       passing_score,
       passing_type,
-      passing_config
+      passing_config,
+      scoring_method,
+      scoring_config
     } = req.body;
     
     console.log('📝 Updating category:', categoryId);
-    console.log('📝 Received data:', { passing_type, passing_config, passing_score });
+    console.log('📝 Received data:', { passing_type, passing_config, passing_score, scoring_method, scoring_config });
     
     const categoryRef = db.collection('exam_categories').doc(categoryId);
     const categoryDoc = await categoryRef.get();
@@ -304,6 +436,8 @@ const updateCategory = async (req, res) => {
         message: 'Category not found.'
       });
     }
+
+    const oldData = categoryDoc.data();
     
     const updateData = {
       updated_at: new Date().toISOString()
@@ -315,7 +449,6 @@ const updateCategory = async (req, res) => {
     if (status !== undefined) updateData.status = status;
     if (passing_score !== undefined) updateData.passing_score = passing_score;
     
-    // ✅ CRITICAL: Handle passing_type and passing_config
     if (passing_type !== undefined) {
       updateData.passing_type = passing_type;
       console.log('✅ Adding passing_type:', passing_type);
@@ -324,12 +457,45 @@ const updateCategory = async (req, res) => {
       updateData.passing_config = passing_config;
       console.log('✅ Adding passing_config:', passing_config);
     }
+    if (scoring_method !== undefined) {
+      updateData.scoring_method = scoring_method;
+      console.log('✅ Adding scoring_method:', scoring_method);
+    }
+    if (scoring_config !== undefined) {
+      updateData.scoring_config = scoring_config;
+      console.log('✅ Adding scoring_config:', scoring_config);
+    }
     
     console.log('📝 Final update data:', JSON.stringify(updateData, null, 2));
     
     await categoryRef.update(updateData);
     
     const updatedDoc = await categoryRef.get();
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - CATEGORY UPDATED
+    const changes = {};
+    const fieldsToTrack = ['category_name', 'language', 'description', 'status', 'passing_score', 'passing_type', 'passing_config', 'scoring_method', 'scoring_config'];
+    fieldsToTrack.forEach(field => {
+      const oldVal = oldData[field];
+      const newVal = req.body[field];
+      if (oldVal !== newVal && newVal !== undefined) {
+        changes[field] = { old: oldVal, new: newVal };
+      }
+    });
+
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'updated',
+      entityType: 'category',
+      entityId: categoryId,
+      entityName: category_name || oldData.category_name || categoryId,
+      changes: changes,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
     
     return res.status(200).json({
       success: true,
@@ -351,7 +517,11 @@ const updateCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 6. Add Level to Category
+// 📚 6. Add Level to Category - WITH AUDIT LOG & NOTIFICATIONS
+// ✅ FIXED: Admin cannot set credit_cost or isCreditSet
+// ✅ FIXED: Default values are 0 and false (pending Finance approval)
+// ✅ NEW: Supports scoring_method and scoring_config
+// ✅ NEW: Sends notifications and emails to Finance Admin
 // =========================================================================
 const addLevelToCategory = async (req, res) => {
   try {
@@ -360,11 +530,12 @@ const addLevelToCategory = async (req, res) => {
       level_name, 
       description, 
       status, 
-      credit_cost, 
-      isCreditSet,
+      // ❌ REMOVED: credit_cost, isCreditSet - Admin cannot set these
       passing_score,
       passing_type,
-      passing_config
+      passing_config,
+      scoring_method,
+      scoring_config
     } = req.body;
     
     if (!level_name) {
@@ -384,19 +555,24 @@ const addLevelToCategory = async (req, res) => {
     
     const categoryData = categoryDoc.data();
     const categoryPassingScore = categoryData.passing_score || 65;
+    const categoryName = categoryData.category_name || categoryId;
     
     const levelId = level_name.toLowerCase().replace(/\s+/g, '-');
     
+    // ✅ FIXED: Always set credit_cost to 0 and isCreditSet to false
+    // Finance Admin will set these values later via ExamCreditValuation
     const levelData = {
       level_name,
       description: description || '',
       status: status || 'active',
       is_active: status === 'active' ? 1 : 0,
-      credit_cost: credit_cost || 0,
-      isCreditSet: isCreditSet || false,
+      credit_cost: 0,
+      isCreditSet: false,
       passing_score: passing_score || categoryPassingScore,
       passing_type: passing_type || null,
       passing_config: passing_config || null,
+      scoring_method: scoring_method || null,
+      scoring_config: scoring_config || null,
       created_at: new Date().toISOString(),
       created_by: req.user?.email || req.user?.uid || 'admin',
       updated_at: new Date().toISOString()
@@ -409,10 +585,74 @@ const addLevelToCategory = async (req, res) => {
       .set(levelData);
     
     console.log(`✅ Level created: ${levelId} in category: ${categoryId}`);
-    
+    console.log(`⏳ Credit valuation pending for level: ${level_name}`);
+    console.log(`📊 Scoring method: ${levelData.scoring_method || 'Inherited from category'}`);
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - LEVEL CREATED
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'created',
+      entityType: 'level',
+      entityId: levelId,
+      entityName: level_name,
+      changes: { 
+        categoryId, 
+        ...levelData,
+        credit_status: 'pending_finance_approval'
+      },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    // ✅ NOTIFICATION: Send to Finance Admins
+    try {
+      const financeAdminIds = await getFinanceAdminIds();
+      if (financeAdminIds.length > 0) {
+        await sendNotification(notificationService.sendToMany, [
+          financeAdminIds,
+          {
+            type: 'level_created',
+            title: '📝 New Exam Level Created',
+            message: `A new level "${level_name}" has been added to category "${categoryName}" by ${req.user?.email || 'Admin'}. Credit valuation is pending.`,
+            actionUrl: '/finance-admin/exam-credits',
+            categoryId: categoryId,
+            categoryName: categoryName,
+            levelId: levelId,
+            levelName: level_name
+          }
+        ]);
+        console.log(`✅ Notifications sent to ${financeAdminIds.length} finance admins`);
+      }
+    } catch (notifError) {
+      console.error('❌ Failed to send notifications:', notifError);
+    }
+
+    // ✅ EMAIL: Send to Finance Admins
+    try {
+      const financeEmails = await getFinanceAdminEmails();
+      if (financeEmails.length > 0) {
+        for (const email of financeEmails) {
+          await emailService.sendLevelCreatedEmail(
+            email,
+            level_name,
+            categoryName,
+            categoryId,
+            levelId,
+            req.user?.email || 'Admin'
+          );
+        }
+        console.log(`✅ Emails sent to ${financeEmails.length} finance admins`);
+      }
+    } catch (emailError) {
+      console.error('❌ Failed to send emails:', emailError);
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Level added successfully.',
+      message: 'Level added successfully. Credit valuation pending from Finance Admin. Finance Admin has been notified.',
       levelId,
       level: {
         id: levelId,
@@ -431,7 +671,8 @@ const addLevelToCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 7. Update Level - ✅ FIXED: Handles passing_type and passing_config
+// 📚 7. Update Level - WITH AUDIT LOG
+// ✅ NEW: Supports scoring_method and scoring_config
 // =========================================================================
 const updateLevel = async (req, res) => {
   try {
@@ -444,11 +685,13 @@ const updateLevel = async (req, res) => {
       isCreditSet,
       passing_score,
       passing_type,
-      passing_config
+      passing_config,
+      scoring_method,
+      scoring_config
     } = req.body;
     
     console.log('📝 Updating level:', levelId, 'in category:', categoryId);
-    console.log('📝 Received data:', { passing_type, passing_config, passing_score });
+    console.log('📝 Received data:', { passing_type, passing_config, passing_score, credit_cost, isCreditSet, scoring_method, scoring_config });
     
     const levelRef = db.collection('exam_categories')
       .doc(categoryId)
@@ -462,6 +705,8 @@ const updateLevel = async (req, res) => {
         message: 'Level not found.'
       });
     }
+
+    const oldData = levelDoc.data();
     
     const updateData = {
       updated_at: new Date().toISOString()
@@ -477,7 +722,6 @@ const updateLevel = async (req, res) => {
     if (isCreditSet !== undefined) updateData.isCreditSet = isCreditSet;
     if (passing_score !== undefined) updateData.passing_score = passing_score;
     
-    // ✅ CRITICAL: Handle passing_type and passing_config
     if (passing_type !== undefined) {
       updateData.passing_type = passing_type;
       console.log('✅ Adding passing_type:', passing_type);
@@ -485,6 +729,14 @@ const updateLevel = async (req, res) => {
     if (passing_config !== undefined) {
       updateData.passing_config = passing_config;
       console.log('✅ Adding passing_config:', JSON.stringify(passing_config, null, 2));
+    }
+    if (scoring_method !== undefined) {
+      updateData.scoring_method = scoring_method;
+      console.log('✅ Adding scoring_method:', scoring_method);
+    }
+    if (scoring_config !== undefined) {
+      updateData.scoring_config = scoring_config;
+      console.log('✅ Adding scoring_config:', JSON.stringify(scoring_config, null, 2));
     }
     
     console.log('📝 Final update data:', JSON.stringify(updateData, null, 2));
@@ -495,6 +747,31 @@ const updateLevel = async (req, res) => {
     const updatedData = updatedDoc.data();
     
     console.log('📝 Updated level data from Firestore:', JSON.stringify(updatedData, null, 2));
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - LEVEL UPDATED
+    const changes = {};
+    const fieldsToTrack = ['level_name', 'description', 'status', 'credit_cost', 'isCreditSet', 'passing_score', 'passing_type', 'passing_config', 'scoring_method', 'scoring_config'];
+    fieldsToTrack.forEach(field => {
+      const oldVal = oldData[field];
+      const newVal = req.body[field];
+      if (oldVal !== newVal && newVal !== undefined) {
+        changes[field] = { old: oldVal, new: newVal };
+      }
+    });
+
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'updated',
+      entityType: 'level',
+      entityId: levelId,
+      entityName: level_name || oldData.level_name || levelId,
+      changes: changes,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
     
     return res.status(200).json({
       success: true,
@@ -516,7 +793,7 @@ const updateLevel = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 8. Update Category Status
+// 📚 8. Update Category Status - WITH AUDIT LOG
 // =========================================================================
 const updateCategoryStatus = async (req, res) => {
   try {
@@ -537,6 +814,8 @@ const updateCategoryStatus = async (req, res) => {
         message: 'Category not found.'
       });
     }
+
+    const oldStatus = categoryDoc.data().status || 'active';
     
     await db.collection('exam_categories')
       .doc(categoryId)
@@ -546,6 +825,21 @@ const updateCategoryStatus = async (req, res) => {
       });
     
     console.log(`✅ Category ${categoryId} status updated to: ${status}`);
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - CATEGORY STATUS UPDATED
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'updated',
+      entityType: 'category_status',
+      entityId: categoryId,
+      entityName: categoryDoc.data().category_name || categoryId,
+      changes: { status: { old: oldStatus, new: status } },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
     
     return res.status(200).json({
       success: true,
@@ -564,7 +858,7 @@ const updateCategoryStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 9. Delete Category (Archive)
+// 📚 9. Delete Category (Archive) - WITH AUDIT LOG
 // =========================================================================
 const deleteCategory = async (req, res) => {
   try {
@@ -577,6 +871,8 @@ const deleteCategory = async (req, res) => {
         message: 'Category not found.'
       });
     }
+
+    const categoryData = categoryDoc.data();
     
     await db.collection('exam_categories')
       .doc(categoryId)
@@ -586,6 +882,20 @@ const deleteCategory = async (req, res) => {
       });
     
     console.log(`✅ Category ${categoryId} archived`);
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - CATEGORY ARCHIVED
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'deleted',
+      entityType: 'category',
+      entityId: categoryId,
+      entityName: categoryData.category_name || categoryId,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
     
     return res.status(200).json({
       success: true,
@@ -603,7 +913,7 @@ const deleteCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 10. Hard Delete Category
+// 📚 10. Hard Delete Category - WITH AUDIT LOG
 // =========================================================================
 const hardDeleteCategory = async (req, res) => {
   try {
@@ -616,6 +926,8 @@ const hardDeleteCategory = async (req, res) => {
         message: 'Category not found.'
       });
     }
+
+    const categoryData = categoryDoc.data();
     
     const levelsSnapshot = await db.collection('exam_categories')
       .doc(categoryId)
@@ -623,7 +935,10 @@ const hardDeleteCategory = async (req, res) => {
       .get();
     
     const batch = db.batch();
+    const levelNames = [];
     levelsSnapshot.forEach(doc => {
+      const levelData = doc.data();
+      levelNames.push(levelData.level_name || levelData.name || doc.id);
       batch.delete(doc.ref);
     });
     
@@ -632,6 +947,21 @@ const hardDeleteCategory = async (req, res) => {
     await batch.commit();
     
     console.log(`🗑️ Category ${categoryId} and all levels hard deleted`);
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - CATEGORY HARD DELETED
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'deleted',
+      entityType: 'category',
+      entityId: categoryId,
+      entityName: categoryData.category_name || categoryId,
+      changes: { levels_deleted: levelNames, hard_delete: true },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
     
     return res.status(200).json({
       success: true,
@@ -649,7 +979,7 @@ const hardDeleteCategory = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 11. Update Level Status
+// 📚 11. Update Level Status - WITH AUDIT LOG
 // =========================================================================
 const updateLevelStatus = async (req, res) => {
   try {
@@ -675,6 +1005,9 @@ const updateLevelStatus = async (req, res) => {
         message: 'Level not found.'
       });
     }
+
+    const oldStatus = levelDoc.data().status || 'active';
+    const levelName = levelDoc.data().level_name || levelId;
     
     await levelRef.update({
       status,
@@ -683,6 +1016,21 @@ const updateLevelStatus = async (req, res) => {
     });
     
     console.log(`✅ Level ${levelId} in category ${categoryId} updated to: ${status}`);
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - LEVEL STATUS UPDATED
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'updated',
+      entityType: 'level_status',
+      entityId: levelId,
+      entityName: levelName,
+      changes: { status: { old: oldStatus, new: status } },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
     
     return res.status(200).json({
       success: true,
@@ -701,7 +1049,7 @@ const updateLevelStatus = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 12. Get All Categories
+// 📚 12. Get All Categories (NO AUDIT - READ ONLY)
 // =========================================================================
 const getAllCategories = async (req, res) => {
   try {
@@ -731,7 +1079,7 @@ const getAllCategories = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 13. Get Category by ID
+// 📚 13. Get Category by ID (NO AUDIT - READ ONLY)
 // =========================================================================
 const getCategoryById = async (req, res) => {
   try {
@@ -782,7 +1130,7 @@ const getCategoryById = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 14. Get Level by ID
+// 📚 14. Get Level by ID (NO AUDIT - READ ONLY)
 // =========================================================================
 const getLevelById = async (req, res) => {
   try {
