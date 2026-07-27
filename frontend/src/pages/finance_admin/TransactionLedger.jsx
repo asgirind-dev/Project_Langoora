@@ -1,4 +1,3 @@
-// frontend/src/pages/finance_admin/TransactionLedger.jsx
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -172,16 +171,16 @@ export default function TransactionLedger() {
   };
 
   const formatDate = (dateStr) => {
-    if (!dateStr) return 'N/A';
+    if (!dateStr || dateStr === 'N/A') return 'N/A';
     try {
       const date = new Date(dateStr);
-      return date.toLocaleString('en-LK', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      if (isNaN(date.getTime())) return dateStr;
+
+      // Local Time (Sri Lanka Timezone) එකට හරවා YYYY-MM-DD hh:mm AM/PM ලෙස සැකසීම
+      const dateFormatted = date.toLocaleDateString('en-CA'); // e.g. 2026-07-25
+      const timeFormatted = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }); // e.g. 07:41 PM
+
+      return `${dateFormatted} ${timeFormatted}`;
     } catch {
       return dateStr;
     }
@@ -362,7 +361,7 @@ export default function TransactionLedger() {
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               type="text"
-              placeholder="Search by student, reference or email..."
+              placeholder="Search student, ref or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-11 pr-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white placeholder:text-gray-500 focus:border-blue-500/50 focus:outline-none transition-all duration-300 w-72"

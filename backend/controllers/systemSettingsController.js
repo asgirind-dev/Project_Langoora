@@ -1,4 +1,3 @@
-// backend/controllers/systemSettingsController.js
 const systemSettingsService = require('../services/systemSettingsService');
 const { db } = require('../config/firebase');
 
@@ -10,7 +9,7 @@ const logAudit = (fn, data) => {
   fn(data).catch(err => console.error('Audit log error:', err));
 };
 
-// ✅ Helper function defined outside the class to avoid 'this' binding issues
+// Helper function defined outside the class to avoid 'this' binding issues
 function isValidEmail(email) {
   if (!email) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -178,7 +177,6 @@ class SystemSettingsController {
         announcementColor
       } = req.body;
 
-      // Validate credit price
       if (creditPrice !== undefined && (creditPrice < 10 || creditPrice > 1000)) {
         return res.status(400).json({
           success: false,
@@ -186,7 +184,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate signup bonus
       if (signupBonus !== undefined && (signupBonus < 0 || signupBonus > 100)) {
         return res.status(400).json({
           success: false,
@@ -194,7 +191,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate platform commission
       if (platformCommission !== undefined && (platformCommission < 0 || platformCommission > 100)) {
         return res.status(400).json({
           success: false,
@@ -202,7 +198,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate min payout threshold
       if (minPayoutThreshold !== undefined && (minPayoutThreshold < 100 || minPayoutThreshold > 100000)) {
         return res.status(400).json({
           success: false,
@@ -218,7 +213,6 @@ class SystemSettingsController {
         });
       }
 
-      // Validate sender name
       if (senderName && senderName.length > 50) {
         return res.status(400).json({
           success: false,
@@ -535,7 +529,6 @@ class SystemSettingsController {
 
       const { senderEmail, senderName } = req.body;
 
-      // Validate sender email
       if (!senderEmail) {
         return res.status(400).json({
           success: false,
@@ -550,7 +543,6 @@ class SystemSettingsController {
         });
       }
 
-      // Send test email
       const result = await systemSettingsService.sendTestEmail(senderEmail, senderName);
 
       console.log('✅ Test email sent successfully:', result);

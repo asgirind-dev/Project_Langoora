@@ -1,3 +1,6 @@
+const { db, storage } = require('../config/firebase');
+const cloudinary = require('cloudinary').v2;
+const path = require('path');
 // backend/controllers/examController.js
 const { db } = require("../config/firebase");
 const cloudinary = require("cloudinary").v2;

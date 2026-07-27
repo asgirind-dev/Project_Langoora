@@ -7,7 +7,6 @@ const getTotalCreditsPool = async () => {
   try {
     const catsSnapshot = await db.collection('exam_categories').get();
     
-    // 🚀 Parallel execution for sub-collections reading
     const poolPromises = catsSnapshot.docs.map(async (catDoc) => {
       const catId = catDoc.id;
       const catData = catDoc.data();
@@ -85,7 +84,6 @@ exports.getFinanceStats = async (req, res) => {
     const startPrev = new Date(prevYear, prevMonth, 1);
     const endPrev = new Date(prevYear, prevMonth + 1, 1);
 
-    // 🚀 Parallel Execution for Independent Database Queries
     const [txSnapshot, activeCredits, activeUsers] = await Promise.all([
       db.collection('transactions').get(),
       getTotalCreditsPool(),
@@ -305,9 +303,10 @@ exports.getAllTransactions = async (req, res) => {
 
       let statusFormatted = 'Pending';
       if (data.status) {
-        const s = String(data.status).toLowerCase();
+        const s = String(data.status).toLowerCase().trim();
         if (s === 'completed' || s === 'success') statusFormatted = 'Success';
         else if (s === 'failed' || s === 'declined') statusFormatted = 'Failed';
+        else if (s === 'pending') statusFormatted = 'Pending';
       }
 
       let formattedTimestamp = 'N/A';
@@ -317,7 +316,12 @@ exports.getAllTransactions = async (req, res) => {
         const dateObj = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
         if (!isNaN(dateObj.getTime())) {
           rawDateObj = dateObj;
-          formattedTimestamp = dateObj.toISOString().replace('T', ' ').slice(0, 16);
+          
+          // ⭐ Overview එකේ වගේම Local Time (12-hour AM/PM) එක සකස් කිරීම
+          const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const dateStr = dateObj.toISOString().slice(0, 10); // YYYY-MM-DD
+          
+          formattedTimestamp = `${dateStr} ${timeStr}`; // 결과: "2026-07-25 07:41 PM"
         }
       }
 
@@ -350,11 +354,10 @@ exports.getAllTransactions = async (req, res) => {
 };
 
 // ==========================================
-// 5. GET ALL TUTORS WITH TOKENS FROM PURCHASED_EXAMS ⭐ NEW
+// 6. GET ALL TUTORS WITH TOKENS FROM PURCHASED_EXAMS
 // ==========================================
 exports.getAllTutorsWithTokens = async (req, res) => {
   try {
-    // Get all completed purchased exams
     const purchasedSnapshot = await db.collection('purchased_exams')
       .where('status', '==', 'completed')
       .get();
@@ -378,7 +381,6 @@ exports.getAllTutorsWithTokens = async (req, res) => {
         };
       }
       
-      // credits_deducted එක tokens ලෙස එකතු කරන්න
       tutorMap[tutorId].totalTokens += data.credits_deducted || 0;
       tutorMap[tutorId].paperCount += 1;
       
@@ -390,14 +392,12 @@ exports.getAllTutorsWithTokens = async (req, res) => {
       }
     });
 
-    // Get system settings
     const settingsRef = db.collection('system_settings').doc('global_config');
     const settingsDoc = await settingsRef.get();
     const settings = settingsDoc.data() || {};
     const exchangeRate = settings.creditPrice || 10;
     const commission = settings.platformCommission || 20;
 
-    // Calculate for each tutor
     const tutors = Object.values(tutorMap).map(tutor => {
       const grossAmount = tutor.totalTokens * exchangeRate;
       const commissionAmount = grossAmount * (commission / 100);

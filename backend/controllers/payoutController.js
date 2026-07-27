@@ -1044,16 +1044,8 @@ exports.getDeclinedPayouts = async (req, res) => {
             .where('status', '==', 'Declined')
             .get();
 
-        const payouts = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-
-        res.status(200).json({
-            success: true,
-            payouts: payouts,
-            count: payouts.length
-        });
+        const payouts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.status(200).json({ success: true, payouts, count: payouts.length });
     } catch (error) {
         console.error("Error in getDeclinedPayouts:", error);
         res.status(500).json({
@@ -1068,8 +1060,6 @@ exports.getDeclinedPayouts = async (req, res) => {
 // ============================================
 exports.getTotalUsedCredits = async (req, res) => {
     try {
-        console.log("🔍 Fetching total used credits from transactions...");
-        
         const snapshot = await db.collection('transactions')
             .where('status', '==', 'completed')
             .where('type', '==', 'Payout')
@@ -1084,20 +1074,9 @@ exports.getTotalUsedCredits = async (req, res) => {
             totalAmount += data.amount || 0;
         });
 
-        console.log(`✅ Total used credits: ${totalCredits}, Total amount: ${totalAmount}`);
-
-        res.status(200).json({
-            success: true,
-            totalCredits: totalCredits,
-            totalAmount: totalAmount,
-            count: snapshot.size
-        });
+        res.status(200).json({ success: true, totalCredits, totalAmount, count: snapshot.size });
     } catch (error) {
-        console.error("Error in getTotalUsedCredits:", error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
@@ -1113,10 +1092,7 @@ exports.updatePayoutStatus = async (req, res) => {
 
         const payoutDoc = await db.collection('tutor_payouts').doc(id).get();
         if (!payoutDoc.exists) {
-            return res.status(404).json({
-                success: false,
-                message: "Payout not found"
-            });
+            return res.status(404).json({ success: false, message: "Payout not found" });
         }
 
         const payoutData = payoutDoc.data();
@@ -1150,7 +1126,6 @@ exports.updatePayoutStatus = async (req, res) => {
             };
 
             const transactionRef = await db.collection('transactions').add(transactionData);
-            console.log(`✅ Transaction created: ${transactionRef.id}`);
 
             await db.collection('tutor_payouts').doc(id).update({
                 status: 'Settled',
@@ -1230,11 +1205,7 @@ exports.updatePayoutStatus = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error in updatePayoutStatus:", error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
@@ -1334,11 +1305,7 @@ exports.deletePayout = async (req, res) => {
             message: "Payout deleted successfully!"
         });
     } catch (error) {
-        console.error("Error in deletePayout:", error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
@@ -1404,11 +1371,7 @@ exports.deleteAllDeclinedPayouts = async (req, res) => {
             deletedTransactions: deletedTransactions
         });
     } catch (error) {
-        console.error("Error in deleteAllDeclinedPayouts:", error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
@@ -1477,13 +1440,9 @@ exports.getPayoutStatistics = async (req, res) => {
 exports.revertSettledPayout = async (req, res) => {
     try {
         const { id } = req.params;
-        
         const payoutDoc = await db.collection('tutor_payouts').doc(id).get();
         if (!payoutDoc.exists) {
-            return res.status(404).json({
-                success: false,
-                message: "Payout not found"
-            });
+            return res.status(404).json({ success: false, message: "Payout not found" });
         }
         
         const payoutData = payoutDoc.data();
@@ -1595,11 +1554,7 @@ exports.bulkUpdatePayoutStatus = async (req, res) => {
             results: results
         });
     } catch (error) {
-        console.error("Error in bulkUpdatePayoutStatus:", error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
