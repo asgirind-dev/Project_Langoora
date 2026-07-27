@@ -1,4 +1,13 @@
+// backend/controllers/payoutController.js
 const { db } = require('../config/firebase');
+
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
 
 // ============================================
 // HELPER: Get Exchange Rate from global_config
@@ -1188,6 +1197,22 @@ exports.updatePayoutStatus = async (req, res) => {
                 updatedAt: new Date().toISOString()
             });
 
+            // ✅ FINANCIAL AUDIT LOG - PAYOUT DECLINED
+            logAudit(auditLogService.logFinancial, {
+                userId: payoutData.tutorId,
+                userEmail: req.user?.email || 'unknown',
+                actorId: req.user?.uid || 'system',
+                actorEmail: req.user?.email || 'system@langoora.com',
+                action: 'payout',
+                entityType: 'payout',
+                entityId: id,
+                amount: payoutData.totalAmount,
+                credits: payoutData.totalTokens,
+                status: 'declined',
+                ip: req.ip || req.connection.remoteAddress,
+                userAgent: req.headers['user-agent'] || 'unknown'
+            });
+
             return res.status(200).json({
                 success: true,
                 message: "Payout declined successfully!"
@@ -1287,6 +1312,22 @@ exports.deletePayout = async (req, res) => {
         }
         
         await db.collection('tutor_payouts').doc(id).delete();
+
+        // ✅ FINANCIAL AUDIT LOG - PAYOUT DELETED
+        logAudit(auditLogService.logFinancial, {
+            userId: payoutData.tutorId || 'unknown',
+            userEmail: req.user?.email || 'unknown',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'payout',
+            entityType: 'payout',
+            entityId: id,
+            amount: payoutData.totalAmount || 0,
+            credits: payoutData.totalTokens || 0,
+            status: 'deleted',
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
         
         res.status(200).json({
             success: true,
@@ -1320,9 +1361,16 @@ exports.deleteAllDeclinedPayouts = async (req, res) => {
         
         let deletedCount = 0;
         let deletedTransactions = 0;
+        const deletedPayouts = [];
         
         for (const doc of snapshot.docs) {
             const data = doc.data();
+            deletedPayouts.push({
+                id: doc.id,
+                tutorId: data.tutorId,
+                totalTokens: data.totalTokens || 0,
+                totalAmount: data.totalAmount || 0
+            });
             
             if (data.transactionId) {
                 await db.collection('transactions').doc(data.transactionId).delete();
@@ -1332,6 +1380,22 @@ exports.deleteAllDeclinedPayouts = async (req, res) => {
             await db.collection('tutor_payouts').doc(doc.id).delete();
             deletedCount++;
         }
+
+        // ✅ FINANCIAL AUDIT LOG - BULK PAYOUT DELETE
+        logAudit(auditLogService.logFinancial, {
+            userId: 'system',
+            userEmail: req.user?.email || 'system@langoora.com',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'payout',
+            entityType: 'payout',
+            action: 'bulk_delete',
+            entityId: 'bulk',
+            status: 'deleted',
+            changes: { count: deletedCount, payouts: deletedPayouts },
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
         
         res.status(200).json({
             success: true,
@@ -1486,6 +1550,8 @@ exports.bulkUpdatePayoutStatus = async (req, res) => {
         }
         
         const results = [];
+        const updatedPayouts = [];
+        
         for (const id of payoutIds) {
             try {
                 await db.collection('tutor_payouts').doc(id).update({
@@ -1494,11 +1560,34 @@ exports.bulkUpdatePayoutStatus = async (req, res) => {
                     ...(status === 'Settled' ? { settledAt: new Date().toISOString() } : {}),
                     ...(status === 'Declined' ? { declinedAt: new Date().toISOString() } : {})
                 });
+                
                 results.push({ id, success: true });
+                if (payoutData) {
+                    updatedPayouts.push({
+                        id,
+                        tutorId: payoutData.tutorId,
+                        totalAmount: payoutData.totalAmount || 0,
+                        totalTokens: payoutData.totalTokens || 0
+                    });
+                }
             } catch (error) {
                 results.push({ id, success: false, error: error.message });
             }
         }
+
+        // ✅ FINANCIAL AUDIT LOG - BULK STATUS UPDATE
+        logAudit(auditLogService.logFinancial, {
+            userId: 'system',
+            userEmail: req.user?.email || 'system@langoora.com',
+            actorId: req.user?.uid || 'system',
+            actorEmail: req.user?.email || 'system@langoora.com',
+            action: 'bulk_update',
+            entityType: 'payout',
+            status: status,
+            changes: { count: results.filter(r => r.success).length, payouts: updatedPayouts },
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || 'unknown'
+        });
         
         res.status(200).json({
             success: true,

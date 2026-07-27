@@ -1,13 +1,25 @@
+// backend/controllers/authController.js
 const { db, auth } = require('../config/firebase'); 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
 // Service Layer Link integration
 const authService = require('../services/authService');
-const tutorValidationService = require('../services/tutorValidationService'); 
+const tutorValidationService = require('../services/tutorValidationService');
+
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
 
 // ==========================================
 // 1. REGISTER LOGIC - FIXED FOR PRE-AUTHORIZED STAFF & USERS
+// ✅ FIXED: CORRECT ROLE DETECTION, organization for Finance Admin
+// ✅ FIXED: Remove institution and languageScope for Finance Admin
+// ✅ FIXED: Validator Language Scope Save
 // ==========================================
 exports.registerUser = async (req, res) => {
   const { email, password, role, userData } = req.body;
@@ -27,19 +39,36 @@ exports.registerUser = async (req, res) => {
     const preAuthDoc = await preAuthRef.get();
 
     let finalRole = userRole;
-    let additionalStaffData = { privileges: [] };
+    let additionalStaffData = { 
+      privileges: [],
+      organization: '',
+      institution: '',
+      languageScope: ''
+    };
     let isPreAuthStaff = false;
 
     if (preAuthDoc.exists) {
       const preAuthData = preAuthDoc.data();
-      finalRole = preAuthData.role || userRole;
+      
+      // ✅ CRITICAL FIX: Use roleId if available, fallback to role
+      const preAuthRole = preAuthData.roleId || preAuthData.role || userRole;
+      finalRole = preAuthRole;
+      
+      // ✅ Check if this is a Finance Admin
+      const isFinance = finalRole === 'finance' || finalRole === 'finance_admin';
+      
       additionalStaffData = {
-        institution: preAuthData.institution || 'Langoora',
         privileges: preAuthData.privileges || [],
-        languageScope: preAuthData.languageScope || 'All'
+        // ✅ Finance Admin: use organization, no institution/languageScope
+        organization: isFinance ? (preAuthData.organization || 'Novacore Solutions') : '',
+        institution: isFinance ? '' : (preAuthData.institution || 'Langoora'),
+        languageScope: isFinance ? '' : (preAuthData.languageScope || 'All'),
+        roleId: preAuthData.roleId || preAuthData.role || null
       };
       isPreAuthStaff = true;
-      console.log(`✅ Pre-authorized staff found: ${formattedEmail} with role ${finalRole}`);
+      console.log(`✅ Pre-authorized staff found: ${formattedEmail} with role: ${finalRole}`);
+      console.log(`📋 Organization: ${additionalStaffData.organization}`);
+      console.log(`📋 Language Scope: ${additionalStaffData.languageScope}`);
     }
 
     // Back-end Enterprise Validation
@@ -69,6 +98,16 @@ exports.registerUser = async (req, res) => {
       });
     } catch (authError) {
       if (authError.code === 'auth/email-already-exists') {
+        // ✅ LOG FAILED REGISTRATION - Email already exists
+        logAudit(auditLogService.logAuthentication, {
+          userId: null,
+          userEmail: formattedEmail,
+          action: 'register',
+          success: false,
+          error: 'Email already exists',
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown'
+        });
         return res.status(400).json({ message: 'The email address is already registered in our system.' });
       } else {
         throw authError;
@@ -79,14 +118,18 @@ exports.registerUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Build user profile with proper role
+    // ✅✅✅ CRITICAL FIX: Build user profile with CORRECT role
+    const isFinance = finalRole === 'finance' || finalRole === 'finance_admin';
+    const isValidator = finalRole === 'validator';
+    
     const userProfile = {
       uid: userRecord.uid,
       email: formattedEmail,
       password: hashedPassword,
       role: finalRole || 'student',
+      roleId: finalRole || 'student',
       status: finalRole === 'tutor' ? 'pending' : 'active',
-      credits: finalRole === 'student' ? 300 : 0, // Students get default 300 credits
+      credits: finalRole === 'student' ? 300 : 0,
       joined: new Date().toISOString().split('T')[0],
       name: userData.name?.trim() || 'User',
       phone: userData.phone?.trim() || '',
@@ -96,16 +139,30 @@ exports.registerUser = async (req, res) => {
 
     // Add staff-specific fields for pre-authorized staff
     if (isPreAuthStaff) {
-      userProfile.institution = additionalStaffData.institution || 'Langoora';
-      userProfile.privileges = additionalStaffData.privileges;
-      userProfile.languageScope = additionalStaffData.languageScope || 'All';
-      userProfile.isPreAuthorized = true;
-      
-      // Special handling for validator role
-      if (finalRole === 'validator') {
+      // ✅ Finance Admin: use organization, no institution/languageScope
+      if (isFinance) {
+        userProfile.organization = additionalStaffData.organization || 'Novacore Solutions';
+        // ❌ Finance Adminට institution එපා
+        // ❌ Finance Adminට languageScope එපා
+        console.log(`💰 Finance Admin detected: ${formattedEmail} - Organization: ${userProfile.organization}`);
+      } 
+      // ✅ Validator: Save languageScope and languageGroup
+      else if (isValidator) {
         userProfile.validatorStatus = 'active';
         userProfile.languageScope = additionalStaffData.languageScope || 'Japanese';
+        // ✅ languageGroup එකත් save කරන්න (lowercase)
+        userProfile.languageGroup = (additionalStaffData.languageScope || 'Japanese').toLowerCase();
+        userProfile.institution = additionalStaffData.institution || 'Langoora';
+        console.log(`✅ Validator detected: ${formattedEmail} - Language Scope: ${userProfile.languageScope}`);
+      } 
+      else {
+        // ✅ Other staff roles: institution and languageScope
+        userProfile.institution = additionalStaffData.institution || 'Langoora';
+        userProfile.languageScope = additionalStaffData.languageScope || 'All';
       }
+      
+      userProfile.privileges = additionalStaffData.privileges;
+      userProfile.isPreAuthorized = true;
     }
 
     // Add tutor-specific fields
@@ -123,6 +180,15 @@ exports.registerUser = async (req, res) => {
         delete userProfile[key];
       }
     });
+
+    console.log(`📝 Creating user profile with role: ${userProfile.role}, roleId: ${userProfile.roleId}`);
+    if (isFinance) {
+      console.log(`📝 Organization: ${userProfile.organization}`);
+    }
+    if (isValidator) {
+      console.log(`📝 Language Scope: ${userProfile.languageScope}`);
+      console.log(`📝 Language Group: ${userProfile.languageGroup}`);
+    }
 
     // Save user to Firestore
     await db.collection('users').doc(userRecord.uid).set(userProfile);
@@ -145,12 +211,23 @@ exports.registerUser = async (req, res) => {
     // Remove password hash before sending response
     delete userProfile.password;
 
-    // Generate JWT token
+    // ✅ Generate JWT token with CORRECT role
     const appToken = jwt.sign(
-      { id: userRecord.uid, role: finalRole || 'student' },
+      { id: userRecord.uid, role: finalRole || 'student', roleId: finalRole || 'student' },
       process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
       { expiresIn: '1d' }
     );
+
+    // ✅ LOG SUCCESSFUL REGISTRATION
+    logAudit(auditLogService.logAuthentication, {
+      userId: userRecord.uid,
+      userEmail: formattedEmail,
+      action: 'register',
+      role: finalRole || 'student',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown',
+      success: true
+    });
 
     return res.status(201).json({ 
       success: true,
@@ -165,6 +242,18 @@ exports.registerUser = async (req, res) => {
 
   } catch (error) {
     console.error('Registration Failure:', error);
+    
+    // ✅ LOG FAILED REGISTRATION
+    logAudit(auditLogService.logAuthentication, {
+      userId: null,
+      userEmail: req.body.email,
+      action: 'register',
+      success: false,
+      error: error.message,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(500).json({ message: error.message || 'Server error during registration.' });
   }
 };
@@ -186,6 +275,17 @@ exports.loginUser = async (req, res) => {
       let userDoc = await db.collection('users').doc(uid).get();
 
       if (!userDoc.exists) {
+        // ✅ LOG: Profile incomplete (user exists in Firebase but not Firestore)
+        logAudit(auditLogService.logAuthentication, {
+          userId: uid,
+          userEmail: emailFromToken,
+          action: 'login',
+          role: 'unregistered',
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown',
+          success: false,
+          error: 'Profile incomplete - needs registration completion'
+        });
         return res.status(200).json({
           status: 'profile_incomplete',
           uid: uid,
@@ -195,9 +295,23 @@ exports.loginUser = async (req, res) => {
       }
 
       const userData = userDoc.data();
+      
+      // ✅ Use roleId if available, fallback to role
+      const userRole = userData.roleId || userData.role || 'student';
 
       const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
-      if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
+      if (restrictedPublicRoles.includes(userRole?.toLowerCase().trim())) {
+        // ✅ LOG: Restricted role attempted to login via public endpoint
+        logAudit(auditLogService.logAuthentication, {
+          userId: uid,
+          userEmail: emailFromToken,
+          action: 'login',
+          role: userRole,
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown',
+          success: false,
+          error: 'Restricted role - use staff login'
+        });
         return res.status(403).json({ 
           success: false, 
           message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
@@ -205,16 +319,38 @@ exports.loginUser = async (req, res) => {
       }
 
       if (userData.status === 'suspended') {
+        // ✅ LOG: Suspended user attempted login
+        logAudit(auditLogService.logAuthentication, {
+          userId: uid,
+          userEmail: emailFromToken,
+          action: 'login',
+          role: userRole,
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown',
+          success: false,
+          error: 'Account suspended'
+        });
         return res.status(403).json({ message: 'Your account has been suspended!' });
       }
 
       const appToken = jwt.sign(
-        { id: uid, role: userData.role },
+        { id: uid, role: userRole, roleId: userRole },
         process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
         { expiresIn: '1d' }
       );
 
       delete userData.password;
+
+      // ✅ LOG SUCCESSFUL LOGIN
+      logAudit(auditLogService.logAuthentication, {
+        userId: uid,
+        userEmail: emailFromToken,
+        action: 'login',
+        role: userRole || 'student',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown',
+        success: true
+      });
 
       return res.status(200).json({ 
         token: appToken, 
@@ -224,8 +360,20 @@ exports.loginUser = async (req, res) => {
 
     // Option B: Legacy Email & Password Authentication
     if (email && password) {
-      const userSnapshot = await db.collection('users').where('email', '==', email.toLowerCase().trim()).get();
+      const formattedEmail = email.toLowerCase().trim();
+      const userSnapshot = await db.collection('users').where('email', '==', formattedEmail).get();
+      
       if (userSnapshot.empty) {
+        // ✅ LOG: User not found
+        logAudit(auditLogService.logAuthentication, {
+          userId: null,
+          userEmail: formattedEmail,
+          action: 'login',
+          success: false,
+          error: 'User not found',
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown'
+        });
         return res.status(404).json({ message: 'User not found!' });
       }
 
@@ -236,8 +384,22 @@ exports.loginUser = async (req, res) => {
         userId = doc.id;
       });
 
+      // ✅ Use roleId if available, fallback to role
+      const userRole = userData.roleId || userData.role || 'student';
+
       const restrictedPublicRoles = ['admin', 'validator', 'finance', 'finance_admin'];
-      if (restrictedPublicRoles.includes(userData.role?.toLowerCase().trim())) {
+      if (restrictedPublicRoles.includes(userRole?.toLowerCase().trim())) {
+        // ✅ LOG: Restricted role attempted to login via public endpoint
+        logAudit(auditLogService.logAuthentication, {
+          userId: userId,
+          userEmail: formattedEmail,
+          action: 'login',
+          role: userRole,
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown',
+          success: false,
+          error: 'Restricted role - use staff login'
+        });
         return res.status(403).json({ 
           success: false, 
           message: 'Access Denied: Administrative roles must authenticate via the dedicated Staff Secure Gateway Terminal.' 
@@ -245,22 +407,54 @@ exports.loginUser = async (req, res) => {
       }
 
       if (userData.status === 'suspended') {
+        // ✅ LOG: Suspended user attempted login
+        logAudit(auditLogService.logAuthentication, {
+          userId: userId,
+          userEmail: formattedEmail,
+          action: 'login',
+          role: userRole,
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown',
+          success: false,
+          error: 'Account suspended'
+        });
         return res.status(403).json({ message: 'Your account has been suspended!' });
       }
 
       const isMatch = await bcrypt.compare(password, userData.password || '');
       if (!isMatch) {
+        // ✅ LOG: Invalid password
+        logAudit(auditLogService.logAuthentication, {
+          userId: userId,
+          userEmail: formattedEmail,
+          action: 'login',
+          success: false,
+          error: 'Invalid credentials',
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown'
+        });
         return res.status(400).json({ message: 'Invalid credentials!' });
       }
 
       const appToken = jwt.sign(
-        { id: userId, role: userData.role },
+        { id: userId, role: userRole, roleId: userRole },
         process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
         { expiresIn: '1d' }
       );
 
       delete userData.password; 
       
+      // ✅ LOG SUCCESSFUL LOGIN
+      logAudit(auditLogService.logAuthentication, {
+        userId: userId,
+        userEmail: formattedEmail,
+        action: 'login',
+        role: userRole || 'student',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown',
+        success: true
+      });
+
       return res.status(200).json({ 
         token: appToken, 
         user: { id: userId, uid: userId, ...userData } 
@@ -271,6 +465,18 @@ exports.loginUser = async (req, res) => {
 
   } catch (error) {
     console.error('Login Failure:', error);
+    
+    // ✅ LOG: Unexpected error during login
+    logAudit(auditLogService.logAuthentication, {
+      userId: null,
+      userEmail: req.body.email || 'unknown',
+      action: 'login',
+      success: false,
+      error: error.message,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     res.status(500).json({ message: 'Server error during authentication processing phase' });
   }
 };
@@ -298,32 +504,64 @@ exports.completeGoogleRegistration = async (req, res) => {
       return res.status(400).json({ message: 'Profile configuration already established.' });
     }
 
+    const finalRole = role || 'student';
     const newGoogleProfile = {
       uid: uid,
       email: email.toLowerCase().trim(),
       name: name || 'User',
       phone: phone.trim(),
       dob: dob,
-      role: role || 'student',
+      role: finalRole,
+      roleId: finalRole,
       status: 'active',
-      credits: role === 'student' ? 300 : 0,
+      credits: finalRole === 'student' ? 300 : 0,
       joined: new Date().toISOString().split('T')[0], 
       privileges: [],
       createdAt: new Date().toISOString()
     };
 
+    // ✅ If Validator, add languageScope
+    if (finalRole === 'validator') {
+      newGoogleProfile.languageScope = 'Japanese';
+      newGoogleProfile.languageGroup = 'japanese';
+      newGoogleProfile.validatorStatus = 'active';
+    }
+
     await db.collection('users').doc(uid).set(newGoogleProfile);
 
     const appToken = jwt.sign(
-      { id: uid, role: newGoogleProfile.role },
+      { id: uid, role: newGoogleProfile.role, roleId: newGoogleProfile.roleId },
       process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
       { expiresIn: '1d' }
     );
+
+    // ✅ LOG SUCCESSFUL GOOGLE REGISTRATION
+    logAudit(auditLogService.logAuthentication, {
+      userId: uid,
+      userEmail: email.toLowerCase().trim(),
+      action: 'register',
+      role: finalRole,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown',
+      success: true
+    });
 
     return res.status(201).json({ token: appToken, user: { id: uid, ...newGoogleProfile } });
 
   } catch (error) {
     console.error('Google Profile Finalization Failure:', error);
+    
+    // ✅ LOG: Failed Google registration
+    logAudit(auditLogService.logAuthentication, {
+      userId: req.body.uid || null,
+      userEmail: req.body.email || 'unknown',
+      action: 'register',
+      success: false,
+      error: error.message,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(500).json({ message: 'Server error finalizing profile setups.' });
   }
 };
@@ -343,6 +581,16 @@ exports.loginStaff = async (req, res) => {
 
     const userSnapshot = await db.collection('users').where('email', '==', formattedEmail).get();
     if (userSnapshot.empty) {
+      // ✅ LOG: Staff user not found
+      logAudit(auditLogService.logAuthentication, {
+        userId: null,
+        userEmail: formattedEmail,
+        action: 'staff_login',
+        success: false,
+        error: 'User not found',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
       return res.status(404).json({ message: 'Access Denied: Terminal records mismatch.' });
     }
 
@@ -354,8 +602,21 @@ exports.loginStaff = async (req, res) => {
       userId = doc.id;
     });
 
-    const allowedStaffRoles = ['super_admin', 'admin', 'validator', 'finance'];
-    if (!allowedStaffRoles.includes(userData.role)) {
+    // ✅ Use roleId if available, fallback to role
+    const userRole = userData.roleId || userData.role || 'student';
+
+    const allowedStaffRoles = ['super_admin', 'admin', 'validator', 'finance', 'finance_admin'];
+    if (!allowedStaffRoles.includes(userRole)) {
+      // ✅ LOG: Unauthorized role attempted staff login
+      logAudit(auditLogService.logAuthentication, {
+        userId: userId,
+        userEmail: formattedEmail,
+        action: 'staff_login',
+        success: false,
+        error: `Unauthorized role: ${userRole}`,
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
       return res.status(403).json({
         success: false,
         message: 'Security Violation: Unauthorized personnel entry attempt logged.'
@@ -363,27 +624,68 @@ exports.loginStaff = async (req, res) => {
     }
 
     if (userData.status === 'suspended') {
+      // ✅ LOG: Suspended staff attempted login
+      logAudit(auditLogService.logAuthentication, {
+        userId: userId,
+        userEmail: formattedEmail,
+        action: 'staff_login',
+        success: false,
+        error: 'Account suspended',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
       return res.status(403).json({ message: 'Operational Notice: Administrative freeze active on node.' });
     }
 
     const savedPassword = userData.password || userData.passwordHash;
     if (!savedPassword) {
+      // ✅ LOG: Missing password hash
+      logAudit(auditLogService.logAuthentication, {
+        userId: userId,
+        userEmail: formattedEmail,
+        action: 'staff_login',
+        success: false,
+        error: 'Missing password hash',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
       return res.status(400).json({ message: 'Authentication registry trace missing valid password hash.' });
     }
 
     const isMatch = await bcrypt.compare(password, savedPassword);
     if (!isMatch) {
+      // ✅ LOG: Invalid staff password
+      logAudit(auditLogService.logAuthentication, {
+        userId: userId,
+        userEmail: formattedEmail,
+        action: 'staff_login',
+        success: false,
+        error: 'Invalid credentials',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
       return res.status(400).json({ message: 'Invalid credentials!' });
     }
 
     const appToken = jwt.sign(
-      { id: userId, role: userData.role },
+      { id: userId, role: userRole, roleId: userRole },
       process.env.JWT_SECRET || 'fallback_secret_key_production_2026',
       { expiresIn: '1d' }
     );
 
     delete userData.password;
     delete userData.passwordHash;
+
+    // ✅ LOG SUCCESSFUL STAFF LOGIN
+    logAudit(auditLogService.logAuthentication, {
+      userId: userId,
+      userEmail: formattedEmail,
+      action: 'staff_login',
+      role: userRole,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown',
+      success: true
+    });
 
     return res.status(200).json({
       success: true,
@@ -393,6 +695,18 @@ exports.loginStaff = async (req, res) => {
 
   } catch (error) {
     console.error('Staff Gateway Critical Runtime Failure:', error.message);
+    
+    // ✅ LOG: Unexpected error during staff login
+    logAudit(auditLogService.logAuthentication, {
+      userId: null,
+      userEmail: req.body.email || 'unknown',
+      action: 'staff_login',
+      success: false,
+      error: error.message,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(500).json({
       success: false,
       message: 'Internal Server Error during gateway verification setup phase.'

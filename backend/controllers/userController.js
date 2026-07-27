@@ -5,6 +5,7 @@ const auditLogService = require('../services/auditLogService');
 // ----------------------------------------------------------------------
 // 1. Fetch All Registered Users & Pre-Authorized Staff Nodes
 //    (Includes role data from the roles collection)
+// ✅ FIXED: Keep original role for filtering, add roleName for display
 // ----------------------------------------------------------------------
 const getAllUsers = async (req, res) => {
   try {
@@ -23,8 +24,11 @@ const getAllUsers = async (req, res) => {
       registeredUsers.push({
         id: doc.id,
         ...userData,
-        role: roleName, // Keep for backward compatibility
-        roleName
+        // ✅ CRITICAL FIX: Keep original role for filtering, don't overwrite
+        role: userData.role || userData.roleId || 'student',
+        roleId: userData.roleId || userData.role || 'student',
+        roleName: roleName, // Display name for UI
+        displayRole: roleName // For UI display
       });
     }
 
@@ -37,6 +41,9 @@ const getAllUsers = async (req, res) => {
         ...data,
         status: 'invited',
         activityCount: 0,
+        // ✅ Keep original role for filtering
+        role: data.roleId || data.role || 'unknown',
+        roleId: data.roleId || data.role || 'unknown',
         roleName: data.role || 'unknown'
       });
     });
@@ -56,6 +63,8 @@ const getAllUsers = async (req, res) => {
 
 // ----------------------------------------------------------------------
 // 2. Provision Internal System Staff Node (Pre-Authorize) with RBAC
+// ✅ FIXED: Properly save privileges, organization for Finance Admin
+// ✅ FIXED: Remove institution and languageScope for Finance Admin
 // ----------------------------------------------------------------------
 const provisionStaffNode = async (req, res) => {
   try {
@@ -64,10 +73,21 @@ const provisionStaffNode = async (req, res) => {
       email,
       roleId,
       institution,
+      organization,  // ✅ New field for Finance Admin
       languageScope,
       privileges
     } = req.body;
     const formattedEmail = email.toLowerCase().trim();
+
+    console.log('📋 ===== PROVISION REQUEST =====');
+    console.log('📋 Full request body:', req.body);
+    console.log('📋 Name:', name);
+    console.log('📋 Email:', formattedEmail);
+    console.log('📋 RoleId:', roleId);
+    console.log('📋 Organization:', organization);
+    console.log('📋 Institution:', institution);
+    console.log('📋 Language Scope:', languageScope);
+    console.log('📋 Privileges received:', privileges);
 
     if (!name || !formattedEmail || !roleId) {
       return res.status(400).json({ success: false, message: 'Name, email, and roleId are mandatory.' });
@@ -76,44 +96,75 @@ const provisionStaffNode = async (req, res) => {
     // Verify that the role exists
     const roleDoc = await db.collection('roles').doc(roleId).get();
     if (!roleDoc.exists) {
-      return res.status(400).json({ success: false, message: 'Invalid roleId.' });
+      console.log(`❌ Role not found: ${roleId}`);
+      return res.status(400).json({ success: false, message: 'Invalid roleId. Please select a valid role.' });
     }
     const roleData = roleDoc.data();
+    console.log(`✅ Role found: ${roleData.name} (${roleId})`);
+    console.log(`📋 Role level: ${roleData.level}`);
 
     // Security: Check that the actor has permission to assign this role
     const actorRoleId = req.user.roleId;
     if (!actorRoleId) {
+      console.log('❌ Actor has no roleId');
       return res.status(403).json({ success: false, message: 'Your role does not allow assigning roles.' });
     }
     const actorRoleDoc = await db.collection('roles').doc(actorRoleId).get();
     if (!actorRoleDoc.exists) {
+      console.log(`❌ Actor role not found: ${actorRoleId}`);
       return res.status(403).json({ success: false, message: 'Your role not found.' });
     }
     const actorRoleData = actorRoleDoc.data();
-    if (actorRoleData.level >= roleData.level) {
-      return res.status(403).json({
-        success: false,
-        message: `Cannot assign role '${roleData.name}' – your privilege level (${actorRoleData.level}) is not sufficient.`
-      });
+    console.log(`🔍 Actor role: ${actorRoleData.name} (level: ${actorRoleData.level})`);
+    console.log(`🔍 Target role: ${roleData.name} (level: ${roleData.level})`);
+
+    // ✅ FIXED: Level check with undefined handling
+    if (actorRoleData.level !== undefined && roleData.level !== undefined) {
+      if (actorRoleData.level >= roleData.level) {
+        console.log(`❌ Insufficient level: Actor ${actorRoleData.level} >= Target ${roleData.level}`);
+        return res.status(403).json({
+          success: false,
+          message: `Cannot assign role '${roleData.name}' – your privilege level (${actorRoleData.level}) is not sufficient.`
+        });
+      }
+    } else {
+      console.log('⚠️ Role level missing, skipping level check');
     }
 
     // Check if user already exists in users or pre_authorized_staff
     const userDoc = await db.collection('users').doc(formattedEmail).get();
     const preAuthDoc = await db.collection('pre_authorized_staff').doc(formattedEmail).get();
     if (userDoc.exists || preAuthDoc.exists) {
+      console.log(`❌ Email already exists: ${formattedEmail}`);
       return res.status(400).json({ success: false, message: 'Email already exists in terminal records.' });
     }
 
+    // ✅ IMPORTANT: Ensure privileges is an array
+    const finalPrivileges = Array.isArray(privileges) ? privileges : [];
+    console.log(`📋 Final privileges to save: ${finalPrivileges.length} items`, finalPrivileges);
+
+    // ✅✅✅ CRITICAL FIX: Use roleId as the role field, NOT roleData.name
+    const finalRole = roleId;
+
+    // ✅ Check if this is a Finance Admin
+    const isFinance = roleId === 'finance';
+
+    // ✅ Build staff node with CORRECT role and fields
     const newStaffNode = {
       name,
       email: formattedEmail,
-      roleId,
+      roleId: roleId,
       joined: new Date().toISOString().split('T')[0],
-      institution: institution || 'Langoora',
-      languageScope: roleData.name === 'finance' ? 'All' : languageScope,
-      privileges: privileges || [],
-      status: 'invited'
+      // ✅ Finance Admin: use organization, no institution/languageScope
+      organization: isFinance ? (organization || 'Novacore Solutions') : '',
+      institution: isFinance ? '' : (institution || 'Langoora'),
+      languageScope: isFinance ? '' : (languageScope || 'All'),
+      privileges: finalPrivileges,
+      status: 'invited',
+      role: finalRole
     };
+
+    console.log('📝 Creating staff node:', JSON.stringify(newStaffNode, null, 2));
 
     await db.collection('pre_authorized_staff').doc(formattedEmail).set(newStaffNode);
 
@@ -124,10 +175,13 @@ const provisionStaffNode = async (req, res) => {
       actorId: req.user.uid,
       actorEmail: req.user.email,
       action: 'provisioned',
-      reason: `Staff provisioned with role: ${roleData.name}`,
+      reason: `Staff provisioned with role: ${finalRole} (${roleId}) and ${finalPrivileges.length} privileges`,
       ip: req.ip || req.connection.remoteAddress,
       userAgent: req.headers['user-agent'] || 'unknown'
     });
+
+    console.log(`✅ Staff provisioned successfully: ${formattedEmail} with role ${finalRole}`);
+    console.log(`✅ Privileges saved: ${finalPrivileges.length} items`);
 
     return res.status(201).json({
       success: true,
@@ -136,11 +190,12 @@ const provisionStaffNode = async (req, res) => {
         ...newStaffNode,
         status: 'invited',
         activityCount: 0,
-        roleName: roleData.name
+        roleName: finalRole,
+        privileges: finalPrivileges
       }
     });
   } catch (error) {
-    console.error('Provisioning failed:', error.message);
+    console.error('❌ Provisioning failed:', error.message);
     return res.status(500).json({ success: false, message: 'Database connectivity failed during node provisioning.' });
   }
 };
@@ -223,6 +278,10 @@ const updatePrivileges = async (req, res) => {
     const actorEmail = req.user.email;
     const actorRole = req.user.role;
 
+    console.log('📋 Updating privileges for user:', uid);
+    console.log('📋 New privileges:', privileges);
+    console.log('📋 Language scope:', languageScope);
+
     // Get old privileges first
     let oldPrivileges = [];
     let userEmail = email || '';
@@ -244,7 +303,12 @@ const updatePrivileges = async (req, res) => {
       }
     }
 
-    const updateData = { privileges, languageScope };
+    console.log('📋 Old privileges:', oldPrivileges);
+
+    const updateData = { 
+      privileges: Array.isArray(privileges) ? privileges : [],
+      languageScope 
+    };
 
     if (status === 'invited') {
       await db.collection('pre_authorized_staff').doc(email).update(updateData);
@@ -280,6 +344,8 @@ const updatePrivileges = async (req, res) => {
       ip: req.ip || req.connection.remoteAddress,
       userAgent: req.headers['user-agent'] || 'unknown'
     });
+
+    console.log('✅ Privileges updated successfully');
 
     return res.status(200).json({ 
       success: true, 
