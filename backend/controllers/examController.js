@@ -684,7 +684,14 @@ const getTutorExams = async (req, res) => {
 const getExamById = async (req, res) => {
   try {
     const { examId } = req.params;
-    const tutorId = req.user?.id || req.user?.uid;
+    const user = req.user;
+
+    // Only tutors need to be restricted to their own exams.
+    // Admins and validators can view any exam.
+    let tutorId = null;
+    if (user.role !== "validator" && user.role !== "admin") {
+      tutorId = user?.id || user?.uid;
+    }
 
     const result = await examServices.getExamByIdFromDB(examId, tutorId);
 
@@ -1290,6 +1297,31 @@ const rejectExam = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to reject exam.",
+    });
+  }
+};
+
+// =========================================================================
+// 📋 NEW: Get my audits (exams validated by this validator)
+// =========================================================================
+const getMyAudits = async (req, res) => {
+  try {
+    const validatorId = req.user?.uid;
+    if (!validatorId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const examsList = await examServices.getMyAuditsFromDB(validatorId);
+    return res.status(200).json({
+      success: true,
+      exams: examsList,
+    });
+  } catch (error) {
+    console.error("Get My Audits Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch audits.",
+      error: error.message,
     });
   }
 };

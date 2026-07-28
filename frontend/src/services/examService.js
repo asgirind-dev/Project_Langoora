@@ -386,7 +386,7 @@ export const deleteExamAsset = async (fileUrl) => {
 };
 
 // ============================================================
-// ✅ QUALITY AUDITS FUNCTIONS (from your branch)
+// ✅ QUALITY AUDITS FUNCTIONS
 // ============================================================
 
 /**
@@ -443,6 +443,27 @@ export const rejectExam = async (examId, feedback) => {
     throw (
       error.response?.data || {
         message: "Failed to reject exam.",
+      }
+    );
+  }
+};
+
+// ============================================================
+// ✅ MY AUDITS FUNCTION
+// ============================================================
+
+/**
+ * 📋 Get my audits (exams I've validated)
+ */
+export const getMyAudits = async () => {
+  try {
+    const config = await getAuthConfig();
+    const response = await axios.get(`${API_URL}/my-audits`, config);
+    return response.data;
+  } catch (error) {
+    throw (
+      error.response?.data || {
+        message: "Failed to fetch my audits.",
       }
     );
   }

@@ -24,6 +24,7 @@ const {
   getPendingExams, // ✅ Quality Audits
   approveExam, // ✅ Quality Audits
   rejectExam, // ✅ Quality Audits
+  getMyAudits, // ✅ My Audits
 } = require("../controllers/examController");
 
 // 🛡️ Middlewares
@@ -137,14 +138,62 @@ router.get(
 );
 
 // ============================================================
-// ⚠️ 5. DYNAMIC ROUTES (/:examId) - MUST ALWAYS BE AT THE END
+// ✅ 5. QUALITY AUDITS & MY AUDITS (Validator only)
+// ============================================================
+
+/**
+ * 📋 Get pending exams (filtered by validator's language)
+ * GET /api/exams/quality/pending
+ */
+router.get(
+  "/quality/pending",
+  protect,
+  authorizeRoles("validator"),
+  getPendingExams,
+);
+
+/**
+ * ✅ Approve an exam
+ * POST /api/exams/quality/approve/:examId
+ */
+router.post(
+  "/quality/approve/:examId",
+  protect,
+  authorizeRoles("validator"),
+  approveExam,
+);
+
+/**
+ * ❌ Reject an exam with feedback
+ * POST /api/exams/quality/reject/:examId
+ */
+router.post(
+  "/quality/reject/:examId",
+  protect,
+  authorizeRoles("validator"),
+  rejectExam,
+);
+
+/**
+ * 📋 Get my audits (exams I've reviewed)
+ * GET /api/exams/my-audits
+ */
+router.get("/my-audits", protect, authorizeRoles("validator"), getMyAudits);
+
+// ============================================================
+// ⚠️ 6. DYNAMIC ROUTES (/:examId) - MUST ALWAYS BE AT THE END
 // ============================================================
 
 /**
  * Get exam details by ID
  * GET /api/exams/:examId
  */
-router.get("/:examId", protect, authorizeRoles("tutor", "admin"), getExamById);
+router.get(
+  "/:examId",
+  protect,
+  authorizeRoles("tutor", "admin", "validator"),
+  getExamById,
+);
 
 /**
  * Delete exam
@@ -206,42 +255,5 @@ router.put(
  * PUT /api/exams/:examId
  */
 router.put("/:examId", protect, authorizeRoles("tutor", "admin"), updateExam);
-
-// ============================================================
-// ✅ 6. QUALITY AUDITS (Validator only)
-// ============================================================
-
-/**
- * 📋 Get pending exams (filtered by validator's language)
- * GET /api/exams/quality/pending
- */
-router.get(
-  "/quality/pending",
-  protect,
-  authorizeRoles("validator"),
-  getPendingExams,
-);
-
-/**
- * ✅ Approve an exam
- * POST /api/exams/quality/approve/:examId
- */
-router.post(
-  "/quality/approve/:examId",
-  protect,
-  authorizeRoles("validator"),
-  approveExam,
-);
-
-/**
- * ❌ Reject an exam with feedback
- * POST /api/exams/quality/reject/:examId
- */
-router.post(
-  "/quality/reject/:examId",
-  protect,
-  authorizeRoles("validator"),
-  rejectExam,
-);
 
 module.exports = router;
