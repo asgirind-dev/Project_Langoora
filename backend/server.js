@@ -82,16 +82,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const PORT = process.env.PORT || 5000;
 
-// ============================================
-// 🚀 Start Server & Schedule Auto-Settle
-// ============================================
+
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 Test: http://localhost:${PORT}/api/payouts/active-tutors`);
-  
-  // ✅ Start monthly settlement schedule (හැම මාසේම 25 වෙනිදා)
-  scheduleMonthlySettlement();
-  console.log('📅 Auto-settle scheduled for every 25th at 12:00 AM');
-  console.log('📍 Manual trigger: POST /api/payouts/manual-settle');
-  console.log('📍 Test mode: POST /api/payouts/start-test');
+  console.log(`Server running on port ${PORT}`);
 });

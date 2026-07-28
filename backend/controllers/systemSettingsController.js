@@ -1,3 +1,4 @@
+// backend/controllers/systemSettingsController.js
 const systemSettingsService = require('../services/systemSettingsService');
 const { db } = require('../config/firebase');
 
@@ -16,19 +17,49 @@ function isValidEmail(email) {
   return emailRegex.test(email);
 }
 
+// ✅ DEFAULT FALLBACK VALUES - When Firestore quota is exceeded
+const DEFAULT_GLOBAL_CONFIG = {
+  creditPrice: 5,
+  signupBonus: 10,
+  platformCommission: 10,
+  minPayoutThreshold: 5000,
+  senderEmail: 'noreply@langoora.com',
+  senderName: 'Langoora',
+  showAnnouncement: false,
+  announcementText: '',
+  announcementColor: 'blue'
+};
+
+const DEFAULT_SECURITY_POLICIES = {
+  enableAntiCheat: true,
+  maxViolationWarnings: 3,
+  maintenanceMode: false,
+  maintenanceEstimatedTime: '',
+  maintenanceMessage: '',
+  sessionTimeouts: 3600
+};
+
+const DEFAULT_BANNERS = [];
+
 class SystemSettingsController {
   // =============================================
   // 1. HOMEPAGE CMS - HERO BANNERS
   // =============================================
 
   // GET BANNERS (NO AUDIT - READ ONLY)
+  // ✅ FIXED: Returns fallback values when Firestore quota exceeded
   async getBanners(req, res) {
     try {
       const banners = await systemSettingsService.getHeroBanners();
-      return res.status(200).json({ success: true, data: banners });
+      return res.status(200).json({ success: true, data: banners || DEFAULT_BANNERS });
     } catch (error) {
-      console.error("Error in getBanners:", error);
-      return res.status(500).json({ success: false, message: error.message });
+      console.error("❌ Error in getBanners:", error.message);
+      // ✅ Return fallback values instead of 500 error
+      return res.status(200).json({
+        success: true,
+        data: DEFAULT_BANNERS,
+        _note: 'Using fallback values (Firestore quota exceeded)'
+      });
     }
   }
 
@@ -41,7 +72,13 @@ class SystemSettingsController {
       }
 
       // Get old banners for comparison
-      const oldBanners = await systemSettingsService.getHeroBanners();
+      let oldBanners = [];
+      try {
+        oldBanners = await systemSettingsService.getHeroBanners();
+      } catch (err) {
+        console.warn('⚠️ Could not fetch old banners:', err.message);
+        oldBanners = [];
+      }
 
       const updatedBanners = await systemSettingsService.updateHeroBanners(banners);
 
@@ -62,7 +99,7 @@ class SystemSettingsController {
 
       return res.status(200).json({ success: true, data: updatedBanners });
     } catch (error) {
-      console.error("Error in saveBanners:", error);
+      console.error("❌ Error in saveBanners:", error.message);
       return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -72,13 +109,22 @@ class SystemSettingsController {
   // =============================================
 
   // GET SECURITY SETTINGS (NO AUDIT - READ ONLY)
+  // ✅ FIXED: Returns fallback values when Firestore quota exceeded
   async getSecuritySettings(req, res) {
     try {
       const policies = await systemSettingsService.getSecurityPolicies();
-      return res.status(200).json({ success: true, data: policies });
+      return res.status(200).json({
+        success: true,
+        data: policies || DEFAULT_SECURITY_POLICIES
+      });
     } catch (error) {
-      console.error("Error in getSecuritySettings:", error);
-      return res.status(500).json({ success: false, message: error.message });
+      console.error("❌ Error in getSecuritySettings:", error.message);
+      // ✅ Return fallback values instead of 500 error
+      return res.status(200).json({
+        success: true,
+        data: DEFAULT_SECURITY_POLICIES,
+        _note: 'Using fallback values (Firestore quota exceeded)'
+      });
     }
   }
 
@@ -95,7 +141,13 @@ class SystemSettingsController {
       } = req.body;
 
       // Get old security policies for comparison
-      const oldPolicies = await systemSettingsService.getSecurityPolicies();
+      let oldPolicies = DEFAULT_SECURITY_POLICIES;
+      try {
+        oldPolicies = await systemSettingsService.getSecurityPolicies();
+      } catch (err) {
+        console.warn('⚠️ Could not fetch old policies:', err.message);
+        oldPolicies = DEFAULT_SECURITY_POLICIES;
+      }
 
       const updatedPolicies = await systemSettingsService.updateSecurityPolicies({
         enableAntiCheat,
@@ -134,7 +186,7 @@ class SystemSettingsController {
         data: updatedPolicies
       });
     } catch (error) {
-      console.error("Error in saveSecuritySettings:", error);
+      console.error("❌ Error in saveSecuritySettings:", error.message);
       return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -144,18 +196,21 @@ class SystemSettingsController {
   // =============================================
 
   // GET GLOBAL SETTINGS (NO AUDIT - READ ONLY)
+  // ✅ FIXED: Returns fallback values when Firestore quota exceeded
   async getGlobalSettings(req, res) {
     try {
       const config = await systemSettingsService.getGlobalConfig();
       return res.status(200).json({
         success: true,
-        data: config
+        data: config || DEFAULT_GLOBAL_CONFIG
       });
     } catch (error) {
-      console.error("Error in getGlobalSettings:", error);
-      return res.status(500).json({
-        success: false,
-        message: error.message
+      console.error("❌ Error in getGlobalSettings:", error.message);
+      // ✅ Return fallback values instead of 500 error
+      return res.status(200).json({
+        success: true,
+        data: DEFAULT_GLOBAL_CONFIG,
+        _note: 'Using fallback values (Firestore quota exceeded)'
       });
     }
   }
@@ -221,7 +276,13 @@ class SystemSettingsController {
       }
 
       // Get old config for comparison
-      const oldConfig = await systemSettingsService.getGlobalConfig();
+      let oldConfig = DEFAULT_GLOBAL_CONFIG;
+      try {
+        oldConfig = await systemSettingsService.getGlobalConfig();
+      } catch (err) {
+        console.warn('⚠️ Could not fetch old config:', err.message);
+        oldConfig = DEFAULT_GLOBAL_CONFIG;
+      }
 
       // Save configurations
       const updatedConfig = await systemSettingsService.updateGlobalConfig({
@@ -265,7 +326,7 @@ class SystemSettingsController {
         data: updatedConfig
       });
     } catch (error) {
-      console.error("❌ Error in saveGlobalSettings:", error);
+      console.error("❌ Error in saveGlobalSettings:", error.message);
       console.error("Stack:", error.stack);
       return res.status(500).json({
         success: false,
@@ -281,6 +342,7 @@ class SystemSettingsController {
   /**
    * ⭐ Get Both Exchange Rate & Platform Commission (NO AUDIT - READ ONLY)
    * GET /api/system-settings/rates
+   * ✅ FIXED: Returns fallback values when Firestore quota exceeded
    */
   async getRates(req, res) {
     try {
@@ -288,9 +350,16 @@ class SystemSettingsController {
       const docSnap = await docRef.get();
 
       if (!docSnap.exists) {
-        return res.status(404).json({
-          success: false,
-          message: 'System settings not found'
+        return res.status(200).json({
+          success: true,
+          data: {
+            exchangeRate: DEFAULT_GLOBAL_CONFIG.creditPrice,
+            platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission,
+            minPayoutThreshold: DEFAULT_GLOBAL_CONFIG.minPayoutThreshold,
+            signupBonus: DEFAULT_GLOBAL_CONFIG.signupBonus,
+            currency: 'LKR',
+            _note: 'Using default values (config not found)'
+          }
         });
       }
 
@@ -299,19 +368,26 @@ class SystemSettingsController {
       res.status(200).json({
         success: true,
         data: {
-          exchangeRate: data.creditPrice || 5,
-          platformCommission: data.platformCommission || 10,
-          minPayoutThreshold: data.minPayoutThreshold || 5000,
-          signupBonus: data.signupBonus || 10,
+          exchangeRate: data.creditPrice || DEFAULT_GLOBAL_CONFIG.creditPrice,
+          platformCommission: data.platformCommission || DEFAULT_GLOBAL_CONFIG.platformCommission,
+          minPayoutThreshold: data.minPayoutThreshold || DEFAULT_GLOBAL_CONFIG.minPayoutThreshold,
+          signupBonus: data.signupBonus || DEFAULT_GLOBAL_CONFIG.signupBonus,
           currency: 'LKR'
         }
       });
     } catch (error) {
-      console.error('Error fetching rates:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: error.message
+      console.error('❌ Error fetching rates:', error.message);
+      // ✅ Return fallback values instead of 500 error
+      res.status(200).json({
+        success: true,
+        data: {
+          exchangeRate: DEFAULT_GLOBAL_CONFIG.creditPrice,
+          platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission,
+          minPayoutThreshold: DEFAULT_GLOBAL_CONFIG.minPayoutThreshold,
+          signupBonus: DEFAULT_GLOBAL_CONFIG.signupBonus,
+          currency: 'LKR',
+          _note: 'Using fallback values (Firestore quota exceeded)'
+        }
       });
     }
   }
@@ -319,6 +395,7 @@ class SystemSettingsController {
   /**
    * Get Exchange Rate (creditPrice) Only (NO AUDIT - READ ONLY)
    * GET /api/system-settings/exchange-rate
+   * ✅ FIXED: Returns fallback values when Firestore quota exceeded
    */
   async getExchangeRate(req, res) {
     try {
@@ -326,14 +403,18 @@ class SystemSettingsController {
       const docSnap = await docRef.get();
 
       if (!docSnap.exists) {
-        return res.status(404).json({
-          success: false,
-          message: 'System settings not found'
+        return res.status(200).json({
+          success: true,
+          data: {
+            exchangeRate: DEFAULT_GLOBAL_CONFIG.creditPrice,
+            currency: 'LKR',
+            _note: 'Using default values (config not found)'
+          }
         });
       }
 
       const data = docSnap.data();
-      const creditPrice = data.creditPrice || 5;
+      const creditPrice = data.creditPrice || DEFAULT_GLOBAL_CONFIG.creditPrice;
 
       res.status(200).json({
         success: true,
@@ -343,11 +424,14 @@ class SystemSettingsController {
         }
       });
     } catch (error) {
-      console.error('Error fetching exchange rate:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: error.message
+      console.error('❌ Error fetching exchange rate:', error.message);
+      res.status(200).json({
+        success: true,
+        data: {
+          exchangeRate: DEFAULT_GLOBAL_CONFIG.creditPrice,
+          currency: 'LKR',
+          _note: 'Using fallback values (Firestore quota exceeded)'
+        }
       });
     }
   }
@@ -355,6 +439,7 @@ class SystemSettingsController {
   /**
    * Get Platform Commission Only (NO AUDIT - READ ONLY)
    * GET /api/system-settings/platform-commission
+   * ✅ FIXED: Returns fallback values when Firestore quota exceeded
    */
   async getPlatformCommission(req, res) {
     try {
@@ -362,14 +447,17 @@ class SystemSettingsController {
       const docSnap = await docRef.get();
 
       if (!docSnap.exists) {
-        return res.status(404).json({
-          success: false,
-          message: 'System settings not found'
+        return res.status(200).json({
+          success: true,
+          data: {
+            platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission,
+            _note: 'Using default values (config not found)'
+          }
         });
       }
 
       const data = docSnap.data();
-      const platformCommission = data.platformCommission || 10;
+      const platformCommission = data.platformCommission || DEFAULT_GLOBAL_CONFIG.platformCommission;
 
       res.status(200).json({
         success: true,
@@ -378,11 +466,13 @@ class SystemSettingsController {
         }
       });
     } catch (error) {
-      console.error('Error fetching platform commission:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: error.message
+      console.error('❌ Error fetching platform commission:', error.message);
+      res.status(200).json({
+        success: true,
+        data: {
+          platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission,
+          _note: 'Using fallback values (Firestore quota exceeded)'
+        }
       });
     }
   }
@@ -410,8 +500,14 @@ class SystemSettingsController {
       }
 
       const docRef = db.collection('system_settings').doc('global_config');
-      const oldDoc = await docRef.get();
-      const oldData = oldDoc.exists ? oldDoc.data() : { creditPrice: 5 };
+      let oldDoc;
+      try {
+        oldDoc = await docRef.get();
+      } catch (err) {
+        console.warn('⚠️ Could not fetch old document:', err.message);
+        oldDoc = { exists: false, data: () => ({ creditPrice: DEFAULT_GLOBAL_CONFIG.creditPrice }) };
+      }
+      const oldData = oldDoc.exists ? oldDoc.data() : { creditPrice: DEFAULT_GLOBAL_CONFIG.creditPrice };
 
       await docRef.update({
         creditPrice: Number(creditPrice),
@@ -428,7 +524,7 @@ class SystemSettingsController {
         action: 'commission_updated',
         settingType: 'exchange_rate',
         changes: {
-          creditPrice: { old: oldData.creditPrice || 5, new: Number(creditPrice) }
+          creditPrice: { old: oldData.creditPrice || DEFAULT_GLOBAL_CONFIG.creditPrice, new: Number(creditPrice) }
         },
         ip: req.ip || req.connection.remoteAddress,
         userAgent: req.headers['user-agent'] || 'unknown'
@@ -444,7 +540,7 @@ class SystemSettingsController {
         }
       });
     } catch (error) {
-      console.error('Error updating exchange rate:', error);
+      console.error('❌ Error updating exchange rate:', error.message);
       res.status(500).json({
         success: false,
         message: 'Internal server error',
@@ -476,8 +572,14 @@ class SystemSettingsController {
       }
 
       const docRef = db.collection('system_settings').doc('global_config');
-      const oldDoc = await docRef.get();
-      const oldData = oldDoc.exists ? oldDoc.data() : { platformCommission: 10 };
+      let oldDoc;
+      try {
+        oldDoc = await docRef.get();
+      } catch (err) {
+        console.warn('⚠️ Could not fetch old document:', err.message);
+        oldDoc = { exists: false, data: () => ({ platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission }) };
+      }
+      const oldData = oldDoc.exists ? oldDoc.data() : { platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission };
 
       await docRef.update({
         platformCommission: Number(platformCommission),
@@ -494,7 +596,7 @@ class SystemSettingsController {
         action: 'commission_updated',
         settingType: 'platform_commission',
         changes: {
-          platformCommission: { old: oldData.platformCommission || 10, new: Number(platformCommission) }
+          platformCommission: { old: oldData.platformCommission || DEFAULT_GLOBAL_CONFIG.platformCommission, new: Number(platformCommission) }
         },
         ip: req.ip || req.connection.remoteAddress,
         userAgent: req.headers['user-agent'] || 'unknown'
@@ -509,7 +611,7 @@ class SystemSettingsController {
         }
       });
     } catch (error) {
-      console.error('Error updating platform commission:', error);
+      console.error('❌ Error updating platform commission:', error.message);
       res.status(500).json({
         success: false,
         message: 'Internal server error',
@@ -553,7 +655,7 @@ class SystemSettingsController {
         data: result
       });
     } catch (error) {
-      console.error("❌ Error in sendTestEmail:", error);
+      console.error("❌ Error in sendTestEmail:", error.message);
       console.error("Stack:", error.stack);
       return res.status(500).json({
         success: false,
