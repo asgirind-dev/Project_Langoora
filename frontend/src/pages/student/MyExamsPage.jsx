@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   BookOpen, Play, BarChart2, Clock, Plus,
   CalendarPlus, Check, GraduationCap, FileText,
@@ -11,16 +11,6 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import axios from 'axios';
 
-const statusColors = {
-  published: 'green',
-  draft: 'gray',
-  archived: 'red',
-  active: 'green',
-  completed: 'green',
-  'in-progress': 'yellow',
-  'not-started': 'gray'
-};
-
 const BRAND = {
   primary: '#6366F1',
   secondary: '#8B5CF6',
@@ -30,14 +20,18 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ✅ Helper function to clean HTML tags from titles (used for planner and alt text)
-function cleanTitle(title) {
+// ✅ HELPER FUNCTION: HTML Entities Clean කිරීමට
+const cleanTitle = (title) => {
   if (!title) return '';
-  // Remove HTML tags
-  return title.replace(/<[^>]*>/g, '').trim();
-}
+  return String(title)
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+};
 
-// ✅ Inline skeleton card
+// Inline skeleton card
 function ExamCardSkeleton({ viewMode }) {
   return (
     <GlassCard className={`overflow-hidden border-white/5 h-full ${viewMode === 'list' ? 'flex' : ''}`}>
@@ -147,15 +141,18 @@ export default function MyExamsPage() {
         const examList = res.data.exams || res.data.data || [];
         setExams(examList);
 
+        // ✅ Tutor Profile Fetching එක Safe කර 404 Error Silent කිරීම
         const tutorIds = [...new Set(examList.map(e => e.tutor_id).filter(Boolean))];
         if (tutorIds.length > 0) {
           const tutorEntries = await Promise.all(
             tutorIds.map(async (id) => {
               try {
-                const tRes = await axios.get(`http://localhost:5000/api/tutor-profile/${id}`);
+                const tRes = await axios.get(`http://localhost:5000/api/tutor-profile/${id}`, {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
                 return [id, tRes.data?.data || null];
               } catch (err) {
-                console.error(`Failed to fetch tutor profile for ${id}:`, err);
+                // 404/Error ආවත් Console එකේ පෙන්වන්නේ නැතිව Safe එකේ null Return කරයි
                 return [id, null];
               }
             })
@@ -205,9 +202,9 @@ export default function MyExamsPage() {
 
   const filteredExams = exams.filter(exam => {
     const attempts = exam.attempts_count || exam.attempts || 0;
-    const hasScore = exam.lastScore !== null && exam.lastScore !== undefined || 
-                     exam.percentage !== null && exam.percentage !== undefined ||
-                     exam.last_score !== null && exam.last_score !== undefined;
+    const hasScore = (exam.lastScore !== null && exam.lastScore !== undefined) || 
+                     (exam.percentage !== null && exam.percentage !== undefined) ||
+                     (exam.last_score !== null && exam.last_score !== undefined);
     const isCompleted = attempts > 0 || 
                         exam.status === 'completed' || 
                         exam.is_completed === true ||
@@ -328,7 +325,7 @@ export default function MyExamsPage() {
         </div>
       </div>
 
-      {/* Content: loading skeletons → empty state → real grid */}
+      {/* Content */}
       {loading ? (
         <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'} gap-5`}>
           {Array.from({ length: 4 }).map((_, i) => (
@@ -375,7 +372,7 @@ export default function MyExamsPage() {
             const scorePercentage = exam.percentage || exam.lastScore || exam.last_score || null;
 
             const lastAttemptId = exam.attemptId || exam.attempt_id ||
-                                   exam.lastAttemptId || exam.last_attempt_id || null;
+                                  exam.lastAttemptId || exam.last_attempt_id || null;
             const resultsTargetId = lastAttemptId || targetExamId;
 
             return (
@@ -418,7 +415,7 @@ export default function MyExamsPage() {
                           dangerouslySetInnerHTML={{ __html: exam.title || '' }}
                         />
 
-                        {/* ✅ Show Score if completed and has score */}
+                        {/* Score Display */}
                         {isCompleted && scorePercentage !== null && (
                           <ScoreDisplay 
                             score={Math.round((scorePercentage / 100) * totalQuestions)} 

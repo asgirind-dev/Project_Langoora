@@ -1,6 +1,7 @@
 // frontend/src/components/ui/AnnouncementBanner.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { X } from 'lucide-react';
 import { fetchGlobalConfig } from '../../services/globalConfigService';
 
 // Central color themes matching backend keys
@@ -20,6 +21,11 @@ export default function AnnouncementBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const handleDismiss = useCallback(() => {
+    sessionStorage.setItem('announcement_dismissed', 'true');
+    setDismissed(true);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -31,11 +37,25 @@ export default function AnnouncementBanner() {
       return;
     }
 
+    // Session cache එක පරීක්ෂා කිරීම (තවත් API call වීම් නතර කිරීමට)
+    const cachedConfig = sessionStorage.getItem('announcement_config');
+    if (cachedConfig) {
+      try {
+        setGlobalConfig(JSON.parse(cachedConfig));
+        setLoading(false);
+        return;
+      } catch (e) {
+        sessionStorage.removeItem('announcement_config');
+      }
+    }
+
     const loadConfig = async () => {
       try {
         const config = await fetchGlobalConfig();
         if (isMounted && config) {
           setGlobalConfig(config);
+          // Session storage එකේ cache කර තැබීම
+          sessionStorage.setItem('announcement_config', JSON.stringify(config));
         }
       } catch (err) {
         console.error('Failed to load global config for announcement banner:', err);
@@ -64,37 +84,46 @@ export default function AnnouncementBanner() {
 
   return (
     <AnimatePresence>
-      <motion.aside
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -10 }}
-        transition={{ duration: 0.3 }}
-        aria-label="Announcement"
-        className={`relative w-full border-b backdrop-blur-xl bg-gradient-to-r shadow-lg overflow-hidden z-20 ${themeClasses}`}
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3">
-          {/* Container with Edge Masks for Smooth Edge Fade in / Fade out */}
-          <div className="relative w-full overflow-hidden flex items-center justify-center [mask-image:linear-gradient(to_right,transparent_0%,black_10%,black_90%,transparent_100%)]">
-            
-            <motion.div
-              className="whitespace-nowrap inline-block font-semibold text-xs sm:text-sm text-white drop-shadow-md"
-              animate={{
-                x: ['100%', '-100%'],
-                opacity: [0, 1, 1, 0],
-              }}
-              transition={{
-                duration: 12, // Slide වෙන සම්පූර්ණ කාලය (Seconds වලින් - අවශ්‍ය නම් අඩු වැඩි කරගත හැක)
-                repeat: Infinity,
-                ease: 'linear',
-                times: [0, 0.1, 0.9, 1], // Slide එකේ මුලදී Fade in වී අගදී Fade out වීම සාලාසයි
-              }}
-            >
-              {globalConfig.announcementText}
-            </motion.div>
+      {!dismissed && (
+        <motion.aside
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.3 }}
+          aria-label="Announcement"
+          className={`relative w-full border-b backdrop-blur-xl bg-gradient-to-r shadow-lg overflow-hidden z-20 ${themeClasses}`}
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-2.5 flex items-center justify-between">
+            {/* Container with Edge Masks for Smooth Edge Fade in / Fade out */}
+            <div className="relative w-full overflow-hidden flex items-center justify-center [mask-image:linear-gradient(to_right,transparent_0%,black_10%,black_90%,transparent_100%)]">
+              <motion.div
+                className="whitespace-nowrap inline-block font-semibold text-xs sm:text-sm text-white drop-shadow-md"
+                animate={{
+                  x: ['100%', '-100%'],
+                  opacity: [0, 1, 1, 0],
+                }}
+                transition={{
+                  duration: 14,
+                  repeat: Infinity,
+                  ease: 'linear',
+                  times: [0, 0.1, 0.9, 1],
+                }}
+              >
+                {globalConfig.announcementText}
+              </motion.div>
+            </div>
 
+            {/* Dismiss Button */}
+            <button
+              onClick={handleDismiss}
+              className="ml-3 p-1 rounded-full hover:bg-white/10 transition-colors flex-shrink-0 text-white/70 hover:text-white"
+              aria-label="Close announcement"
+            >
+              <X size={16} />
+            </button>
           </div>
-        </div>
-      </motion.aside>
+        </motion.aside>
+      )}
     </AnimatePresence>
   );
 }

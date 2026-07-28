@@ -2,15 +2,27 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Download, CheckCircle, XCircle, Clock, AlertCircle, Printer,
-  Activity, DollarSign, CreditCard, TrendingUp, Crown, Copy, Loader2
+  Activity, DollarSign, CreditCard, TrendingUp, Crown, Copy, Loader2,
+  RefreshCw, Star, Coins, Percent, Shield, Users
 } from 'lucide-react';
+import GlassCard from '../../components/ui/GlassCard';
+import { getRates } from '../../services/globalConfigService';
+import { createPayout, getActiveTutors } from '../../services/payoutService';
+import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import GlassCard from '../../components/ui/GlassCard';
+
+// Import your FinanceService
 import FinanceService from '../../services/financeService';
 
-export default function TransactionLedger() {
-  const [logs, setLogs] = useState([]);
+const EXCHANGE_RATE = 20.00;
+const PLATFORM_COMMISSION = 0.20;
+
+export default function TutorPayoutsPage() {
+  const [creditRate, setCreditRate] = useState(EXCHANGE_RATE);
+  const [platformCommission, setPlatformCommission] = useState(PLATFORM_COMMISSION);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [tutors, setTutors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -19,14 +31,32 @@ export default function TransactionLedger() {
   const [selectedLog, setSelectedLog] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [declinedCount, setDeclinedCount] = useState(0);
+  const [processingId, setProcessingId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [newPayout, setNewPayout] = useState({
+    tutorId: '',
+    tutorName: '',
+    totalTokens: '',
+    netPayout: '',
+    bankName: '',
+    accountNo: '',
+    tutorEmail: '',
+    tutorPhone: '',
+    university: '',
+    qualifications: ''
+  });
 
   // ============================================
-  // ⭐ OPTIMIZED SINGLE FETCH FUNCTION
+  // ⭐ FETCH LEDGER DATA
   // ============================================
   const fetchLedgerData = useCallback(async () => {
     setLoading(true);
     try {
-      // Direct Axios duplicate call එක අයින් කර FinanceService එක විතරක් භාවිත කර ඇත.
       const data = await FinanceService.getAllTransactions();
       const rawLogs = Array.isArray(data) ? data : [];
       
@@ -48,15 +78,45 @@ export default function TransactionLedger() {
     } catch (error) {
       console.error("Failed to load transaction audit logs:", error);
       setLogs([]);
-    } finally { // Fixed fontFinally typo
+    } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // ⭐ FETCH TUTORS
+  const fetchTutors = useCallback(async () => {
+    try {
+      const data = await getActiveTutors();
+      setTutors(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching tutors:', error);
+      setTutors([]);
     }
   }, []);
 
   // Run initial fetch ONCE on mount
   useEffect(() => {
     fetchLedgerData();
-  }, [fetchLedgerData]);
+    fetchTutors();
+  }, [fetchLedgerData, fetchTutors]);
+
+  // ⭐ Fetch settings
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const rates = await getRates();
+        if (rates) {
+          setCreditRate(rates.creditRate || EXCHANGE_RATE);
+          setPlatformCommission(rates.commission || PLATFORM_COMMISSION);
+        }
+      } catch (error) {
+        console.error('Error fetching settings:', error);
+      } finally {
+        setSettingsLoading(false);
+      }
+    };
+    fetchSettings();
+  }, []);
 
   // SUMMARY STATS
   const totalTransactions = logs.length;
@@ -75,6 +135,14 @@ export default function TransactionLedger() {
     return matchSearch && matchStatus && matchGateway;
   });
 
+  // ⭐ Copy to clipboard
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // ⭐ Get status config - Single function
   const getStatusConfig = (status) => {
     const statusMap = {
       'Success': { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', icon: CheckCircle, label: 'Success' },
@@ -82,15 +150,10 @@ export default function TransactionLedger() {
       'Failed': { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400', icon: XCircle, label: 'Failed' },
       'Declined': { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400', icon: XCircle, label: 'Declined' },
       'Pending': { bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-400', icon: Clock, label: 'Pending' },
-      'Error': { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400', icon: XCircle, label: 'Error' }
+      'Error': { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400', icon: XCircle, label: 'Error' },
+      'Settled': { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', icon: CheckCircle, label: 'Settled' }
     };
     return statusMap[status] || statusMap['Pending'];
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const formatDate = (dateStr) => {
@@ -106,36 +169,38 @@ export default function TransactionLedger() {
     }
   };
 
+  // ⭐ Export PDF - Fixed
   const handleExportPDF = () => {
-    if (filteredLogs.length === 0) return alert("No transaction records available to export.");
+    if (filteredLogs.length === 0) {
+      alert("No transaction records available to export.");
+      return;
+    }
 
     setExporting(true);
     try {
       const doc = new jsPDF();
       const timestamp = new Date().toLocaleString();
 
+      // Header
       doc.setFillColor(15, 22, 41);
       doc.rect(0, 0, 210, 42, 'F');
-
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
       doc.text('LANGOORA EDUCATIONAL PLATFORM', 14, 18);
-
       doc.setFontSize(11);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(156, 163, 175);
       doc.text('Transaction Ledger Audit & Financial Statement', 14, 28);
-
       doc.setFontSize(8);
       doc.text(`Generated: ${timestamp}`, 140, 28);
 
+      // Summary
       const successfulTxs = filteredLogs.filter(t => t.status === 'Success' || t.status === 'Completed');
       const filteredRev = successfulTxs.reduce((sum, log) => sum + Number(log.amount || 0), 0);
 
       doc.setFillColor(241, 245, 249);
       doc.rect(14, 47, 182, 14, 'F');
-
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(15, 23, 42);
@@ -143,6 +208,7 @@ export default function TransactionLedger() {
       doc.text(`Successful Sales: ${successfulTxs.length}`, 80, 56);
       doc.text(`Total Revenue: LKR ${filteredRev.toLocaleString()}`, 140, 56);
 
+      // Table
       const tableRows = filteredLogs.map(l => [
         l.ref || 'N/A',
         l.student || 'Unknown',
@@ -179,35 +245,143 @@ export default function TransactionLedger() {
             } else if (data.cell.raw === 'Failed' || data.cell.raw === 'Declined') {
               data.cell.styles.textColor = [239, 68, 68];
               data.cell.styles.fontStyle = 'bold';
-            } else {
-              data.cell.styles.textColor = [245, 158, 11];
             }
           }
         }
       });
 
-      doc.setFontSize(8);
-      doc.setTextColor(156, 163, 175);
-      doc.text('Confidential Document - Internal Finance Administration Langoora Platform', 14, 285);
-
-      doc.save(`Langoora_Transaction_Ledger_${new Date().toISOString().slice(0, 10)}.pdf`);
+      doc.save('Transaction_Ledger_Audit.pdf');
     } catch (error) {
-      console.error("PDF Export failed:", error);
-      alert(`Failed to export PDF: ${error.message}`);
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF: ' + error.message);
     } finally {
       setExporting(false);
     }
   };
 
-  if (loading) {
+  // ⭐ Handle payout
+  const handlePayout = async (tutorId) => {
+    if (!confirm('Process this payout?')) return;
+    try {
+      setProcessingId(tutorId);
+      // Your payout logic here
+      console.log('Processing payout for tutor:', tutorId);
+    } catch (error) {
+      console.error('Error processing payout:', error);
+      alert('Error processing payout: ' + error.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ⭐ Delete declined payout
+  const handleDeleteDeclined = async (id) => {
+    if (!confirm('Delete this declined payout?')) return;
+    try {
+      setProcessingId(id);
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      await axios.delete(`${API_URL}/api/payouts/${id}`);
+      setTutors(prev => prev.filter(t => t.id !== id));
+      setDeclinedCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error deleting:', error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ⭐ Clear all declined
+  const clearAllDeclined = async () => {
+    if (!confirm(`Delete all ${declinedCount} declined payouts?`)) return;
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await axios.get(`${API_URL}/api/payouts/declined`);
+      if (response.data && response.data.success) {
+        const declinedIds = response.data.payouts.map(p => p.id);
+        for (const id of declinedIds) {
+          await axios.delete(`${API_URL}/api/payouts/${id}`);
+        }
+        setDeclinedCount(0);
+        alert(`Deleted ${declinedIds.length} declined payouts`);
+      }
+    } catch (error) {
+      console.error('Error deleting declined:', error);
+    }
+  };
+
+  // ⭐ Add new payout
+  const handleAddPayout = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      const result = await createPayout({
+        tutorId: newPayout.tutorId,
+        tutorName: newPayout.tutorName,
+        totalTokens: parseInt(newPayout.totalTokens) || 0,
+        netPayout: parseFloat(newPayout.netPayout) || 0,
+        bankName: newPayout.bankName || 'Not Specified',
+        accountNo: newPayout.accountNo || 'N/A',
+        tutorEmail: newPayout.tutorEmail || '',
+        tutorPhone: newPayout.tutorPhone || '',
+        university: newPayout.university || '',
+        qualifications: newPayout.qualifications || ''
+      });
+
+      if (result && result.success) {
+        alert('✅ Payout added successfully!');
+        setShowAddModal(false);
+        setNewPayout({
+          tutorId: '',
+          tutorName: '',
+          totalTokens: '',
+          netPayout: '',
+          bankName: '',
+          accountNo: '',
+          tutorEmail: '',
+          tutorPhone: '',
+          university: '',
+          qualifications: ''
+        });
+        fetchTutors();
+      } else {
+        alert('❌ Failed to add payout');
+      }
+    } catch (error) {
+      console.error('Error adding payout:', error);
+      alert('❌ Failed to add payout: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ⭐ Statistics
+  const pendingCount = tutors.filter(t => t.status === 'Pending').length;
+  const settledCount = tutors.filter(t => t.status === 'Settled').length;
+  const totalTokensAll = tutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+  const totalPayout = tutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
+
+  // ⭐ Filter logic for tutors
+  const filteredTutors = tutors.filter(t => {
+    if (t.status === 'Declined') return false;
+    const matchFilter = filter === 'all' || t.status.toLowerCase() === filter.toLowerCase();
+    const matchSearch = (t.tutor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       (t.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       (t.bank || '').toLowerCase().includes(searchTerm.toLowerCase());
+    return matchFilter && matchSearch;
+  });
+
+  // ⭐ Loading
+  if (loading || settingsLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-        <p className="text-gray-400">Loading transactions...</p>
+      <div className="flex flex-col items-center justify-center min-h-[500px] space-y-4">
+        <RefreshCw size={40} className="animate-spin text-emerald-400" />
+        <p className="text-gray-400">Loading tutor data from database...</p>
       </div>
     );
   }
 
+  // ⭐ Render
   return (
     <div className="space-y-6 font-sans">
       {/* HERO HEADER */}
@@ -228,10 +402,10 @@ export default function TransactionLedger() {
       {/* STATS ROW */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Transactions', value: totalTransactions, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+          { label: 'Total Tokens', value: totalTokensAll.toLocaleString(), icon: Star, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+          { label: 'Pending', value: pendingCount, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+          { label: 'Settled', value: settledCount, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
           { label: 'Total Revenue', value: `LKR ${totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-          { label: 'Success Rate', value: `${successRate}%`, icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/10' },
-          { label: 'Failed', value: failedCount, icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
         ].map((stat, idx) => (
           <motion.div key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08 }}>
             <GlassCard className="p-5 border-white/10 hover:border-blue-500/30 transition-all duration-300 hover:scale-[1.02]">
@@ -245,11 +419,50 @@ export default function TransactionLedger() {
         ))}
       </div>
 
+      {/* CONVERSION RATE */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+        <GlassCard className="p-4 border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                  <Percent size={18} className="text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Exchange Rate</p>
+                  <p className="text-base font-bold text-white">1 Credit = LKR {creditRate.toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="hidden md:block w-px h-10 bg-white/10" />
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">
+                  <Shield size={18} className="text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Platform Commission</p>
+                  <p className="text-base font-bold text-white">{(platformCommission * 100).toFixed(0)}%</p>
+                </div>
+              </div>
+              <div className="hidden md:block w-px h-10 bg-white/10" />
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
+                  <DollarSign size={18} className="text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Total Payout</p>
+                  <p className="text-base font-bold text-white">LKR {totalPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+      </motion.div>
+
       {/* SEARCH & FILTERS */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               type="text"
               placeholder="Search student, ref or email..."
@@ -258,31 +471,22 @@ export default function TransactionLedger() {
               className="pl-11 pr-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white placeholder:text-gray-500 focus:border-blue-500/50 focus:outline-none transition-all duration-300 w-72"
             />
           </div>
-          
-          <div className="flex gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
-            >
-              <option value="all">All Status</option>
-              <option value="success">Success</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-              <option value="declined">Declined</option>
-              <option value="pending">Pending</option>
-              <option value="error">Error</option>
-            </select>
-            
-            <select
-              value={filterGateway}
-              onChange={(e) => setFilterGateway(e.target.value)}
-              className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
-            >
-              <option value="all">All Gateways</option>
-              <option value="stripe">Stripe</option>
-              <option value="card">Card / Payhere</option>
-            </select>
+          <div className="flex gap-1.5 bg-white/5 rounded-xl p-1 border border-white/10">
+            {['All', 'Success', 'Pending', 'Failed'].map((status) => (
+              <motion.button
+                key={status}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setFilterStatus(status.toLowerCase())}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
+                  filterStatus === status.toLowerCase()
+                    ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/20'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {status}
+              </motion.button>
+            ))}
           </div>
         </div>
 
@@ -417,21 +621,22 @@ export default function TransactionLedger() {
         </GlassCard>
       </motion.div>
 
-      {/* DETAIL MODAL */}
+      {/* MODAL - Transaction Details */}
       <AnimatePresence>
         {showModal && selectedLog && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+            onClick={() => setShowModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-[#0f1629] to-[#1a1f3a] border border-white/10 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto font-sans"
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-[#0a1628] border border-white/10 rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -443,53 +648,58 @@ export default function TransactionLedger() {
                 <button onClick={() => setShowModal(false)} className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-gray-400 hover:text-white cursor-pointer">✕</button>
               </div>
 
-              <div className="space-y-4">
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xl font-bold text-white">
-                      {selectedLog.student?.charAt(0) || 'U'}
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-white">{selectedLog.student || 'Unknown'}</h3>
-                      <p className="text-sm text-gray-400">{selectedLog.email || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Plan</p>
-                    <p className="text-base font-bold text-white mt-1">{selectedLog.plan || 'Standard'}</p>
-                    {selectedLog.credits > 0 && <p className="text-sm text-gray-400">{selectedLog.credits} Credits</p>}
-                  </div>
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Amount</p>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">LKR {Number(selectedLog.amount || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Gateway</p>
-                    <p className="text-base font-semibold text-white mt-1">{selectedLog.gateway || 'N/A'}</p>
-                  </div>
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Status</p>
-                    <div className="mt-1">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${getStatusConfig(selectedLog.status).bg} border ${getStatusConfig(selectedLog.status).border} rounded-lg`}>
-                        {selectedLog.status === 'Success' && <CheckCircle size={14} className="text-emerald-400" />}
-                        {selectedLog.status === 'Completed' && <CheckCircle size={14} className="text-emerald-400" />}
-                        {selectedLog.status === 'Failed' && <XCircle size={14} className="text-red-400" />}
-                        {selectedLog.status === 'Declined' && <XCircle size={14} className="text-red-400" />}
-                        {selectedLog.status === 'Pending' && <Clock size={14} className="text-amber-400" />}
-                        {selectedLog.status === 'Error' && <XCircle size={14} className="text-red-400" />}
-                        <span className={`text-sm font-bold ${getStatusConfig(selectedLog.status).text}`}>{selectedLog.status || 'Pending'}</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-2 gap-3">
                 <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Transaction Time</p>
-                  <p className="text-sm font-semibold text-white mt-1">{formatDate(selectedLog.timestamp)}</p>
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Student</p>
+                  <p className="text-base font-bold text-white mt-1">{selectedLog.student}</p>
+                  <p className="text-xs text-gray-400">{selectedLog.email}</p>
                 </div>
+                <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Plan</p>
+                  <p className="text-base font-bold text-white mt-1">{selectedLog.plan || 'Standard'}</p>
+                  {selectedLog.credits > 0 && <p className="text-sm text-gray-400">{selectedLog.credits} Credits</p>}
+                </div>
+                <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Amount</p>
+                  <p className="text-xl font-bold text-emerald-400 mt-1">LKR {Number(selectedLog.amount || 0).toLocaleString()}</p>
+                </div>
+                <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Gateway</p>
+                  <p className="text-base font-semibold text-white mt-1">{selectedLog.gateway || 'N/A'}</p>
+                </div>
+                <div className="p-3.5 bg-white/5 rounded-xl border border-white/5 col-span-2">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Status</p>
+                  <div className="mt-1">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${getStatusConfig(selectedLog.status).bg} border ${getStatusConfig(selectedLog.status).border} rounded-lg`}>
+                      {selectedLog.status === 'Success' && <CheckCircle size={14} className="text-emerald-400" />}
+                      {selectedLog.status === 'Completed' && <CheckCircle size={14} className="text-emerald-400" />}
+                      {selectedLog.status === 'Failed' && <XCircle size={14} className="text-red-400" />}
+                      {selectedLog.status === 'Declined' && <XCircle size={14} className="text-red-400" />}
+                      {selectedLog.status === 'Pending' && <Clock size={14} className="text-amber-400" />}
+                      {selectedLog.status === 'Error' && <XCircle size={14} className="text-red-400" />}
+                      <span className={`text-sm font-bold ${getStatusConfig(selectedLog.status).text}`}>{selectedLog.status || 'Pending'}</span>
+                    </span>
+                  </div>
+                </div>
+                <div className="p-3.5 bg-white/5 rounded-xl border border-white/5 col-span-2">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Timestamp</p>
+                  <p className="text-sm font-mono text-white mt-1">{formatDate(selectedLog.timestamp)}</p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex gap-2">
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors text-sm font-medium"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => { copyToClipboard(selectedLog.ref); }}
+                  className="px-4 py-2.5 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 hover:bg-emerald-500/30 transition-colors text-sm font-medium flex items-center gap-2"
+                >
+                  <Copy size={16} /> Copy Ref
+                </button>
               </div>
             </motion.div>
           </motion.div>

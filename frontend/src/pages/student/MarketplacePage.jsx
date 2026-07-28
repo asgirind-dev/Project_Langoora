@@ -41,7 +41,7 @@ export default function MarketplacePage() {
         // 1. Live Exams fetch කිරීම
         const response = await axios.get('http://localhost:5000/api/exams/all');
         if (response.data.success) {
-          setExams(response.data.exams);
+          setExams(response.data.exams || []);
         }
 
         // 2. Student ගේ Purchased Exams fetch කිරීම
@@ -54,12 +54,12 @@ export default function MarketplacePage() {
           });
 
           if (purchaseRes.data.success) {
-            // 🟢 Change 1: Response එකේ Array structure එක හරියටම Map කිරීම
             const purchasedList = purchaseRes.data.exams || purchaseRes.data.purchasedExams || purchaseRes.data.data || [];
             
+            // Backend එකෙන් ලැබෙන Purchased list එකෙන් exam_id Extract කරගැනීම
             const ids = purchasedList.map(
               p => p.exam_id || p.examId || p.id
-            );
+            ).filter(Boolean);
 
             console.log("Fetched Purchased Exam IDs:", ids);
             setPurchasedExamIds(ids);
@@ -99,12 +99,14 @@ export default function MarketplacePage() {
         return;
       }
 
+      const examIdToPurchase = exam.id || exam.exam_id;
+
       const response = await axios.post(
         'http://localhost:5000/api/exams/purchase',
         { 
-          exam_id: exam.id || exam.exam_id,
+          exam_id: examIdToPurchase,
           category_id: exam.category_id || exam.category,
-          level_id: exam.level_id || exam.level || exam.id,
+          level_id: exam.level_id || exam.level || examIdToPurchase,
           credits: examCredits
         },
         {
@@ -116,7 +118,8 @@ export default function MarketplacePage() {
 
       if (response.data.success) {
         alert("Exam unlocked successfully! 🎉");
-        setPurchasedExamIds(prev => [...prev, exam.id || exam.exam_id]);
+        // Update local state immediately so button status changes to "Purchased"
+        setPurchasedExamIds(prev => [...prev, examIdToPurchase]);
       }
     } catch (error) {
       console.error("Unlock exam error:", error);
@@ -124,10 +127,29 @@ export default function MarketplacePage() {
     }
   };
 
+  // 🧹 Dynamic String Sanitizer Function (Hyphens, Spaces, Underscores අයින් කර සසඳයි)
+  const sanitizeStr = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
   const filtered = exams
     .filter((e) => {
-      if (search && !e.title?.toLowerCase().includes(search.toLowerCase()) && !e.category?.toLowerCase().includes(search.toLowerCase())) return false;
-      if (activeCategory !== 'All' && e.category !== activeCategory) return false;
+      // Search logic
+      if (
+        search && 
+        !e.title?.toLowerCase().includes(search.toLowerCase()) && 
+        !e.category?.toLowerCase().includes(search.toLowerCase()) &&
+        !e.category_id?.toLowerCase().includes(search.toLowerCase())
+      ) return false;
+
+      // Category filter with string normalization
+      if (activeCategory !== 'All') {
+        const cleanActiveCategory = sanitizeStr(activeCategory);
+        const cleanExamCat = sanitizeStr(e.category || e.category_id);
+
+        if (cleanExamCat !== cleanActiveCategory) {
+          return false;
+        }
+      }
+
       const creditsVal = Number(e.credits ?? e.price ?? e.credit_cost ?? 0);
       if (creditsVal < creditRange[0] || creditsVal > creditRange[1]) return false;
       if (e.rating < minRating) return false;
@@ -274,71 +296,76 @@ export default function MarketplacePage() {
       ) : (
         /* Exam Grid */
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filtered.map((exam, i) => (
-            <motion.div key={exam.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
-              <GlassCard hover className="overflow-hidden cursor-pointer" onClick={() => navigate(`/exam/${exam.id}/preview`)}>
-                <div className="relative h-36 sm:h-44 overflow-hidden">
-                  <img src={exam.thumbnail} alt={exam.title} className="w-full h-full object-cover transition-transform duration-300 hover:scale-105" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                  <div className="absolute top-3 left-3 flex gap-2">
-                    <Badge color="blue">{exam.category}</Badge>
-                    {exam.tag && <Badge color="amber">{exam.tag}</Badge>}
-                  </div>
-                  <div className="absolute bottom-3 left-3">
-                    <Badge color={exam.difficulty === 'Advanced' || exam.difficulty === 'Expert' ? 'red' : 'yellow'}>{exam.difficulty}</Badge>
-                  </div>
-                </div>
+          {filtered.map((exam, i) => {
+            const currentExamId = exam.id || exam.exam_id;
+            const isPurchased = purchasedExamIds.some(id => String(id) === String(currentExamId));
 
-                <div className="p-4">
-                  {/* Clean HTML Title */}
-                  <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">
-                    {(exam.title || 'Untitled Exam').replace(/<[^>]*>?/gm, '')}
-                  </h3>
-                  <div className="flex items-center gap-2 mb-3">
-                    <img src={exam.tutorAvatar} alt={exam.tutor} className="w-6 h-6 rounded-full object-cover" />
-                    <span className="text-xs text-gray-400">{exam.tutor}</span>
-                  </div>
-                  <StarRating rating={exam.rating} count={exam.reviews} size={13} />
-                  <div className="flex items-center gap-3 text-xs text-gray-400 mt-2 mb-4">
-                    <span className="flex items-center gap-1"><Clock size={11} />{exam.duration}</span>
-                    <span className="flex items-center gap-1"><BookOpen size={11} />{exam.questions} Q</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Coins size={16} className="text-amber-400" />
-                      <span className="text-lg sm:text-xl font-bold text-amber-400">
-                        {exam.credits ?? exam.price ?? exam.credit_cost ?? 0}
-                      </span>
-                      <span className="text-xs text-gray-400">Credits</span>
+            return (
+              <motion.div key={currentExamId || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
+                <GlassCard hover className="overflow-hidden cursor-pointer" onClick={() => navigate(`/exam/${currentExamId}/preview`)}>
+                  <div className="relative h-36 sm:h-44 overflow-hidden">
+                    <img src={exam.thumbnail} alt={exam.title} className="w-full h-full object-cover transition-transform duration-300 hover:scale-105" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                    <div className="absolute top-3 left-3 flex gap-2">
+                      <Badge color="blue">{exam.category}</Badge>
+                      {exam.tag && <Badge color="amber">{exam.tag}</Badge>}
                     </div>
-
-                    {/* 🟢 Change 2: Strict String Comparison මගින් Purchased Check කිරීම */}
-                    {purchasedExamIds.some(id => String(id) === String(exam.id || exam.exam_id)) ? (
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30 cursor-default"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate('/student/exams');
-                        }}
-                      >
-                        Purchased
-                      </Button>
-                    ) : (
-                      <Button 
-                        variant="primary" 
-                        size="sm" 
-                        onClick={(e) => handleUnlockExam(exam, e)}
-                      >
-                        Unlock
-                      </Button>
-                    )}
+                    <div className="absolute bottom-3 left-3">
+                      <Badge color={exam.difficulty === 'Advanced' || exam.difficulty === 'Expert' ? 'red' : 'yellow'}>{exam.difficulty}</Badge>
+                    </div>
                   </div>
-                </div>
-              </GlassCard>
-            </motion.div>
-          ))}
+
+                  <div className="p-4">
+                    {/* Clean HTML Title */}
+                    <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">
+                      {(exam.title || 'Untitled Exam').replace(/<[^>]*>?/gm, '')}
+                    </h3>
+                    <div className="flex items-center gap-2 mb-3">
+                      <img src={exam.tutorAvatar} alt={exam.tutor} className="w-6 h-6 rounded-full object-cover" />
+                      <span className="text-xs text-gray-400">{exam.tutor}</span>
+                    </div>
+                    <StarRating rating={exam.rating} count={exam.reviews} size={13} />
+                    <div className="flex items-center gap-3 text-xs text-gray-400 mt-2 mb-4">
+                      <span className="flex items-center gap-1"><Clock size={11} />{exam.duration}</span>
+                      <span className="flex items-center gap-1"><BookOpen size={11} />{exam.questions} Q</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Coins size={16} className="text-amber-400" />
+                        <span className="text-lg sm:text-xl font-bold text-amber-400">
+                          {exam.credits ?? exam.price ?? exam.credit_cost ?? 0}
+                        </span>
+                        <span className="text-xs text-gray-400">Credits</span>
+                      </div>
+
+                      {/* Strict Check for Purchased Exams */}
+                      {isPurchased ? (
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          className="bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30 cursor-default"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate('/student/exams');
+                          }}
+                        >
+                          Purchased
+                        </Button>
+                      ) : (
+                        <Button 
+                          variant="primary" 
+                          size="sm" 
+                          onClick={(e) => handleUnlockExam(exam, e)}
+                        >
+                          Unlock
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </GlassCard>
+              </motion.div>
+            );
+          })}
         </div>
       )}
 

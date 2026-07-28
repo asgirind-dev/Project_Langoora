@@ -30,6 +30,19 @@ class NotificationService {
   }
 
   /**
+   * Alias / Helper for createNotification (for simpler object payload calls)
+   */
+  async createNotification({ userId, title, message, type = 'info', link = null }) {
+    try {
+      const result = await this.sendToUser(userId, { title, message, type, link });
+      return { success: true, id: result.id };
+    } catch (error) {
+      console.error('❌ Error creating notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Send notification to multiple users
    */
   async sendToMany(userIds, data) {
@@ -113,7 +126,6 @@ class NotificationService {
         id: doc.id,
         ...doc.data()
       }));
-
       return {
         notifications,
         total,
@@ -122,7 +134,7 @@ class NotificationService {
       };
     } catch (error) {
       console.error('❌ Get notifications error:', error);
-      throw error;
+      return { success: false, error: error.message, notifications: [] };
     }
   }
 
@@ -178,7 +190,7 @@ class NotificationService {
       return { success: true };
     } catch (error) {
       console.error('❌ Mark as read error:', error);
-      throw error;
+      return { success: false, error: error.message };
     }
   }
 
@@ -220,7 +232,7 @@ class NotificationService {
       return { success: true };
     } catch (error) {
       console.error('❌ Delete notification error:', error);
-      throw error;
+      return { success: false, error: error.message };
     }
   }
 
