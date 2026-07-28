@@ -301,53 +301,67 @@ export default function AuditLogsPage() {
                     placeholder="Search by email, entity, reason..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
+                    className="w-full bg-[#0a0e1a] border border-white/10 rounded-lg pl-8 pr-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50 placeholder:text-gray-500"
                   />
                 </div>
 
-                {/* Type Filter */}
+                {/* ✅ Type Filter - Dark Theme Dropdown */}
                 <select
                   value={typeFilter}
                   onChange={e => setTypeFilter(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
+                  className="bg-[#0a0e1a] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50 appearance-none cursor-pointer min-w-[140px]"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 0.5rem center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '1.5em 1.5em',
+                    paddingRight: '2.5rem'
+                  }}
                 >
-                  <option value="all">All Types</option>
+                  <option value="all" className="bg-[#0a0e1a] text-white">All Types</option>
                   {Object.entries(TYPE_LABELS).map(([key, val]) => (
-                    <option key={key} value={key}>{val.label}</option>
+                    <option key={key} value={key} className="bg-[#0a0e1a] text-white">{val.label}</option>
                   ))}
                 </select>
 
-                {/* Action Filter */}
+                {/* ✅ Action Filter - Dark Theme Dropdown */}
                 <select
                   value={actionFilter}
                   onChange={e => setActionFilter(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50 min-w-[150px]"
+                  className="bg-[#0a0e1a] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50 appearance-none cursor-pointer min-w-[150px]"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 0.5rem center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '1.5em 1.5em',
+                    paddingRight: '2.5rem'
+                  }}
                 >
-                  <option value="all">All Actions</option>
+                  <option value="all" className="bg-[#0a0e1a] text-white">All Actions</option>
                   {getUniqueActions().map(action => {
                     const info = getActionInfo(action);
                     return (
-                      <option key={action} value={action}>
+                      <option key={action} value={action} className="bg-[#0a0e1a] text-white">
                         {info.label}
                       </option>
                     );
                   })}
                 </select>
 
-                {/* Date Range */}
+                {/* ✅ Date Range - Dark Theme */}
                 <div className="flex items-center gap-2">
                   <input
                     type="date"
                     value={dateFrom}
                     onChange={e => setDateFrom(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
+                    className="bg-[#0a0e1a] border border-white/10 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
                   />
                   <span className="text-gray-500 text-xs">to</span>
                   <input
                     type="date"
                     value={dateTo}
                     onChange={e => setDateTo(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
+                    className="bg-[#0a0e1a] border border-white/10 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
                   />
                 </div>
 

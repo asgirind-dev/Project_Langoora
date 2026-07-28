@@ -839,6 +839,32 @@ const rejectExam = async (examId, validatorId, feedback) => {
 };
 
 // =========================================================================
+// 📋 NEW: Get my audits (exams validated by this validator)
+// =========================================================================
+const getMyAuditsFromDB = async (validatorId) => {
+  try {
+    const snapshot = await db
+      .collection("exams")
+      .where("validatorId", "==", validatorId)
+      .where("status", "in", ["published", "rejected"])
+      .get();
+
+    const examsList = [];
+    snapshot.forEach((doc) => {
+      examsList.push({ id: doc.id, ...doc.data() });
+    });
+    // sort by reviewedAt descending
+    examsList.sort(
+      (a, b) => new Date(b.reviewedAt || 0) - new Date(a.reviewedAt || 0),
+    );
+    return examsList;
+  } catch (error) {
+    console.error("Get My Audits Service Error:", error);
+    throw new Error(error.message);
+  }
+};
+
+// =========================================================================
 // 📦 EXPORT ALL
 // =========================================================================
 module.exports = {
@@ -858,4 +884,5 @@ module.exports = {
   getPendingExamsByLanguage,
   approveExam,
   rejectExam,
+  getMyAuditsFromDB, // ✅ NEW
 };

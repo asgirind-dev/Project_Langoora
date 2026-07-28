@@ -1,30 +1,22 @@
-// backend/routes/notificationRoutes.js
 const express = require('express');
 const router = express.Router();
 const notificationController = require('../controllers/notificationController');
 
 // 📥 Get all notifications for a user
-router.get('/:userId', notificationController.getNotifications);
+router.get('/user/:userId', notificationController.getUserNotifications);
 
-// 📥 Get unread notifications
-router.get('/:userId/unread', notificationController.getUnreadNotifications);
+// 📥 Get unread notifications & count
+router.get('/user/:userId/unread', notificationController.getUnreadNotifications);
+router.get('/user/:userId/count', notificationController.getUnreadCount);
 
-// 📥 Get unread count
-router.get('/:userId/count', notificationController.getUnreadCount);
+// ✅ Mark notification as read
+router.patch('/:id/read', notificationController.markAsRead);
+router.put('/user/:userId/read-all', notificationController.markAllAsRead);
 
-// ✅ Mark single notification as read
-router.put('/:notificationId/read', notificationController.markAsRead);
-
-// ✅ Mark all notifications as read
-router.put('/:userId/read-all', notificationController.markAllAsRead);
-
-// 🗑️ Delete a notification
+// 🗑️ Delete notifications
 router.delete('/:notificationId', notificationController.deleteNotification);
 
-// 🗑️ Delete all read notifications
-router.delete('/:userId/read', notificationController.deleteReadNotifications);
-
-// 📤 Create notification (for testing)
+// 📤 Create notification
 router.post('/send', notificationController.sendCustomNotification);
 
 module.exports = router;

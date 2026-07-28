@@ -1,4 +1,3 @@
-// backend/services/emailService.js
 const nodemailer = require('nodemailer');
 const { db } = require('../config/firebase');
 const emailLogService = require('./emailLogService');
@@ -83,6 +82,7 @@ class EmailService {
           user: smtpUser,
           pass: smtpPass
         }
+        
       };
 
       this.transporter = nodemailer.createTransport(smtpConfig);
@@ -159,9 +159,9 @@ class EmailService {
     `;
   }
 
-  /**
-   * Send tutor approval email - With Logging & Rate Limiting
-   */
+  // =========================================================================
+  // 📚 SEND TUTOR APPROVAL EMAIL
+  // =========================================================================
   async sendTutorApprovalEmail(tutorEmail, tutorName, tutorId) {
     const logData = {
       recipient: tutorEmail,
@@ -310,9 +310,9 @@ class EmailService {
     }
   }
 
-  /**
-   * Send tutor rejection email with reason - With Logging & Rate Limiting
-   */
+  // =========================================================================
+  // 📚 SEND TUTOR REJECTION EMAIL
+  // =========================================================================
   async sendTutorRejectionEmail(tutorEmail, tutorName, rejectionReason = null) {
     const logData = {
       recipient: tutorEmail,
@@ -437,9 +437,9 @@ class EmailService {
     }
   }
 
-  /**
-   * Send test email - For system settings testing with Logging & Rate Limiting
-   */
+  // =========================================================================
+  // 📚 SEND TEST EMAIL
+  // =========================================================================
   async sendTestEmail(to, senderEmail, senderName) {
     const logData = {
       recipient: to,
@@ -540,6 +540,312 @@ class EmailService {
       await emailLogService.logEmail(logData);
       
       console.error('❌ Failed to send test email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send Subscription Confirmation Email
+   */
+  async sendSubscriptionConfirmationEmail(studentEmail, studentName, planName, amount, credits) {
+    const logData = {
+      recipient: studentEmail,
+      type: 'subscription_purchase',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `Subscription Confirmed - Welcome to ${planName}!`,
+      metadata: { studentName, planName, amount, credits }
+    };
+
+    try {
+      await this.ensureInitialized();
+      await this.loadConfig();
+
+  // =========================================================================
+  // 📚 SEND CATEGORY CREATED EMAIL - NEW
+  // =========================================================================
+  async sendCategoryCreatedEmail(financeEmail, categoryName, language, categoryId, createdBy) {
+    const logData = {
+      recipient: financeEmail,
+      type: 'category_created',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `📚 New Exam Category Created: ${categoryName}`,
+      metadata: { categoryName, language, categoryId, createdBy }
+    };
+
+    try {
+      const rateCheck = await emailRateLimitService.canSend(financeEmail);
+      if (!rateCheck.allowed) {
+        logData.status = 'failed';
+        logData.error = rateCheck.reason;
+        await emailLogService.logEmail(logData);
+        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
+        return { success: false, error: rateCheck.reason };
+      }
+
+      await this.ensureInitialized();
+      await this.loadConfig();
+
+      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Subscription Purchase Confirmation</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>New Exam Category Created</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      Thank you for your purchase, <span style="color: #38bdf8;">${studentName || 'Student'}</span>! 🎉
+                    </h1>
+                    
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px;">
+                      Your subscription plan has been activated successfully. Here are your transaction details:
+                    </p>
+
+                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px; margin: 20px 0;">
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Plan Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${planName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Amount Paid</td>
+                          <td style="color: #34d399; font-size: 13px; text-align: right; font-weight: 600;">LKR ${amount}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Credits Added</td>
+                          <td style="color: #38bdf8; font-size: 13px; text-align: right; font-weight: 600;">+${credits} Credits</td>
+                      📚 New Exam Category Created
+                    </h1>
+                    
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      A new exam category has been created by <strong style="color: #ffffff;">${createdBy}</strong>.
+                    </p>
+
+                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <h3 style="color: #38bdf8; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">Category Details</h3>
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${categoryName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Language</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${language}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category ID</td>
+                          <td style="color: #38bdf8; font-size: 12px; text-align: right; font-family: monospace;">${categoryId}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <p style="font-size: 13px; color: #94a3b8; text-align: center;">
+                      You can now use your credits to unlock and take mock exam packs!
+                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ⏳ <strong>Action Required:</strong> Please review this new category and configure credit values for its levels.
+                      </p>
+                    </div>
+
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${financeUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        Configure Credit Values →
+                      </a>
+                    </div>
+
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
+                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
+                    </p>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: studentEmail,
+        subject: `Subscription Confirmed - Welcome to ${planName}!`,
+        to: financeEmail,
+        subject: `📚 New Exam Category Created: ${categoryName}`,
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Plan purchase email sent to ${studentEmail}`);
+      
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Category created email sent to ${financeEmail}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send category created email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // =========================================================================
+  // 📚 SEND LEVEL CREATED EMAIL - NEW
+  // =========================================================================
+  async sendLevelCreatedEmail(financeEmail, levelName, categoryName, categoryId, levelId, createdBy) {
+    const logData = {
+      recipient: financeEmail,
+      type: 'level_created',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `📝 New Level Created: ${levelName}`,
+      metadata: { levelName, categoryName, categoryId, levelId, createdBy }
+    };
+
+    try {
+      const rateCheck = await emailRateLimitService.canSend(financeEmail);
+      if (!rateCheck.allowed) {
+        logData.status = 'failed';
+        logData.error = rateCheck.reason;
+        await emailLogService.logEmail(logData);
+        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
+        return { success: false, error: rateCheck.reason };
+      }
+
+      await this.ensureInitialized();
+      await this.loadConfig();
+
+      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>New Level Created</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      📝 New Exam Level Created
+                    </h1>
+                    
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      A new level has been added to <strong style="color: #ffffff;">${categoryName}</strong> by <strong style="color: #ffffff;">${createdBy}</strong>.
+                    </p>
+
+                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <h3 style="color: #38bdf8; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">Level Details</h3>
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Level Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${levelName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${categoryName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Level ID</td>
+                          <td style="color: #38bdf8; font-size: 12px; text-align: right; font-family: monospace;">${levelId}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ⏳ <strong>Action Required:</strong> Credit valuation is pending for this level. Please set the credit value.
+                      </p>
+                    </div>
+
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${financeUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        Set Credit Value →
+                      </a>
+                    </div>
+
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
+                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
+                    </p>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: financeEmail,
+        subject: `📝 New Level Created: ${levelName}`,
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Level created email sent to ${financeEmail}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send plan purchase email:', error.message);
+      await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send level created email:', error.message);
       return { success: false, error: error.message };
     }
   }

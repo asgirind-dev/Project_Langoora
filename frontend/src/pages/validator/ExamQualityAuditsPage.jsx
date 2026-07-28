@@ -25,10 +25,10 @@ import {
   rejectExam,
   getExamById,
 } from "../../services/examService";
-import { useAuth } from "../../context/AuthContext"; // adjust path as needed
+import { useAuth } from "../../context/AuthContext";
 
 const ExamQualityAuditsPage = () => {
-  const { user } = useAuth(); // assuming user object has languageGroup
+  const { user } = useAuth();
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -44,6 +44,10 @@ const ExamQualityAuditsPage = () => {
   const [questionStatus, setQuestionStatus] = useState({});
   const [questionComments, setQuestionComments] = useState({});
 
+  // ✅ Get validator's language scope
+  const languageScope = user?.languageScope || user?.languageGroup || 'Japanese';
+  const languageGroup = (languageScope || 'Japanese').toLowerCase();
+
   useEffect(() => {
     fetchPendingExams();
     // eslint-disable-next-line
@@ -52,9 +56,16 @@ const ExamQualityAuditsPage = () => {
   const fetchPendingExams = async () => {
     try {
       setLoading(true);
-      const response = await getPendingExams();
+      // ✅ Pass language filter to API
+      const response = await getPendingExams(languageGroup);
       if (response.success) {
-        setExams(response.exams || []);
+        // ✅ Filter exams by language
+        const filteredExams = (response.exams || []).filter(exam => {
+          const examLanguage = (exam.language || exam.languageGroup || '').toLowerCase();
+          return examLanguage === languageGroup || examLanguage === '';
+        });
+        setExams(filteredExams);
+        console.log(`✅ Loaded ${filteredExams.length} exams for language: ${languageGroup}`);
       } else {
         setError(response.message || "Failed to load pending exams.");
       }
@@ -270,6 +281,11 @@ const ExamQualityAuditsPage = () => {
               Verify exam structure, accuracy, and JLPT standard compliance
               before publication
             </p>
+            {languageScope && (
+              <p className="text-xs text-blue-400 mt-1">
+                🔍 Filtering exams for: <span className="font-bold">{languageScope}</span>
+              </p>
+            )}
           </div>
           {exams.length > 0 && (
             <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl self-start sm:self-center">
@@ -307,6 +323,11 @@ const ExamQualityAuditsPage = () => {
               <p className="text-xs text-gray-500 mt-1">
                 All submitted evaluation materials have been verified cleanly.
               </p>
+              {languageScope && (
+                <p className="text-xs text-blue-400 mt-2">
+                  Language filter: {languageScope}
+                </p>
+              )}
             </div>
           </div>
         ) : (
@@ -344,6 +365,11 @@ const ExamQualityAuditsPage = () => {
                         {new Date(exam.created_at).toLocaleDateString()}
                       </span>
                     </div>
+                    {exam.language && (
+                      <div className="flex items-center gap-2 text-xs text-blue-400">
+                        <span>🌐 {exam.language}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

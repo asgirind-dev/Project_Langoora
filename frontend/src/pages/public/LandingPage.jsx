@@ -1,15 +1,15 @@
 // frontend/src/pages/LandingPage.jsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate as useReactNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import {
   Search, ArrowRight, Play, Star, Users, BookOpen, Award, Mic,
   BarChart2, Coins, KeyRound, Zap, TrendingUp, ChevronRight, Languages, Clock, CheckCircle,
-  RefreshCw, Rocket, Crown, Infinity as InfinityIcon, Layers, ChevronLeft, ChevronRight as ChevronRightIcon,
+  Rocket, Crown, Infinity as InfinityIcon, Layers, ChevronLeft, ChevronRight as ChevronRightIcon,
   AlertCircle, Sparkles, Flame
 } from 'lucide-react';
-import { examCategories, topTutors, featuredExams, testimonials, adminStats } from '../../data/mockData';
+import { topTutors, featuredExams, testimonials, adminStats } from '../../data/mockData';
 import Button from '../../components/ui/Button';
 import GlassCard from '../../components/ui/GlassCard';
 import StarRating from '../../components/ui/StarRating';
@@ -89,78 +89,90 @@ export default function LandingPage() {
     }
   };
 
-  // ✅ Fetch Plans - Simplified (maintenance handled by PublicRoute)
+  // ✅ Fetch Subscription Plans safely
   useEffect(() => {
+    let isMounted = true;
     const fetchPlans = async () => {
       try {
         setPlansLoading(true);
         const response = await axios.get('http://localhost:5000/api/subscription-plans');
-        const filteredPlans = (response.data || []).filter(plan =>
-          plan.active === true && plan.status === 'approved'
-        );
-        const sortedPlans = filteredPlans.sort((a, b) =>
-          (a.sortOrder || 999) - (b.sortOrder || 999)
-        );
-        setPlans(sortedPlans);
+        if (isMounted) {
+          const filteredPlans = (response.data || []).filter(plan =>
+            plan.active === true && plan.status === 'approved'
+          );
+          const sortedPlans = filteredPlans.sort((a, b) =>
+            (a.sortOrder || 999) - (b.sortOrder || 999)
+          );
+          setPlans(sortedPlans);
+        }
       } catch (error) {
         console.error("Error loading plans:", error);
-        // ✅ Just show empty state if any error (maintenance handled by PublicRoute)
-        setPlans([]);
+        if (isMounted) setPlans([]);
       } finally {
-        setPlansLoading(false);
+        if (isMounted) setPlansLoading(false);
       }
     };
     fetchPlans();
+    return () => { isMounted = false; };
   }, []);
 
-  // ✅ Fetch Banners - Simplified (maintenance handled by PublicRoute)
+  // ✅ Fetch Hero Banners safely
   useEffect(() => {
+    let isMounted = true;
     const getBanners = async () => {
       try {
         setBannersLoading(true);
         const liveBanners = await fetchHeroBanners();
-        if (liveBanners && liveBanners.length > 0) {
+        if (isMounted && liveBanners && liveBanners.length > 0) {
           setBannerImages(liveBanners);
         }
       } catch (error) {
         console.error("Error loading live banners:", error);
-        // ✅ Use empty banners on error (maintenance handled by PublicRoute)
-        setBannerImages([]);
+        if (isMounted) setBannerImages([]);
       } finally {
-        setBannersLoading(false);
+        if (isMounted) setBannersLoading(false);
       }
     };
     getBanners();
+    return () => { isMounted = false; };
   }, []);
 
+  // Banner Interval control
   useEffect(() => {
     if (bannerImages.length <= 1 || isPaused) return;
+
     timerRef.current = setInterval(() => {
       setCurrentBannerIndex((prev) => (prev + 1) % bannerImages.length);
     }, 12000);
-    return () => clearInterval(timerRef.current);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [bannerImages.length, isPaused]);
 
+  // Testimonials Timer control
   useEffect(() => {
-    const timer = setInterval(() => setActiveTestimonial(p => (p + 1) % testimonials.length), 4000);
+    if (!testimonials || testimonials.length === 0) return;
+    const timer = setInterval(() => {
+      setActiveTestimonial(p => (p + 1) % testimonials.length);
+    }, 4000);
+
     return () => clearInterval(timer);
   }, []);
 
-  const goToBanner = (index) => {
+  const goToBanner = useCallback((index) => {
     setCurrentBannerIndex(index);
-    clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setCurrentBannerIndex((prev) => (prev + 1) % bannerImages.length);
-    }, 12000);
-  };
+  }, []);
 
-  const nextBanner = () => {
-    goToBanner((currentBannerIndex + 1) % bannerImages.length);
-  };
+  const nextBanner = useCallback(() => {
+    if (bannerImages.length === 0) return;
+    setCurrentBannerIndex((prev) => (prev + 1) % bannerImages.length);
+  }, [bannerImages.length]);
 
-  const prevBanner = () => {
-    goToBanner((currentBannerIndex - 1 + bannerImages.length) % bannerImages.length);
-  };
+  const prevBanner = useCallback(() => {
+    if (bannerImages.length === 0) return;
+    setCurrentBannerIndex((prev) => (prev - 1 + bannerImages.length) % bannerImages.length);
+  }, [bannerImages.length]);
 
   const features = [
     { icon: BookOpen, title: 'Authentic Simulations', desc: 'Exams mirror the real JLPT, EPS-TOPIK, and TOPIK I in format, timing, and difficulty.' },
@@ -180,7 +192,6 @@ export default function LandingPage() {
 
   const activeBanner = bannerImages[currentBannerIndex] || null;
 
-  // ✅ If banners are loading, show spinner
   if (bannersLoading) {
     return <LoadingSpinner message="Loading Langoora..." />;
   }
@@ -231,13 +242,16 @@ export default function LandingPage() {
                   <button
                     key={index}
                     onClick={() => goToBanner(index)}
-                    className={`transition-all duration-300 rounded-full ${currentBannerIndex === index ? 'w-8 h-2 bg-gradient-to-r from-blue-400 to-purple-400 shadow-md shadow-blue-500/20' : 'w-2 h-2 bg-white/25 hover:bg-white/50'
-                      }`}
+                    className={`transition-all duration-300 rounded-full ${
+                      currentBannerIndex === index
+                        ? 'w-8 h-2 bg-gradient-to-r from-blue-400 to-purple-400 shadow-md shadow-blue-500/20'
+                        : 'w-2 h-2 bg-white/25 hover:bg-white/50'
+                    }`}
                   />
                 ))}
               </div>
             )}
-            
+
             {/* Main Hero Content Container */}
             <div className="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 text-left space-y-6 pt-28 sm:pt-36 pb-12 flex flex-col justify-center min-h-[500px] md:min-h-[580px]">
               <AnimatePresence mode="wait">
@@ -547,7 +561,7 @@ export default function LandingPage() {
               {plans.map((plan, index) => {
                 const IconComponent = iconMap[plan.icon] || Zap;
                 const isPopular = plan.popular || false;
-                const features = normalizeFeatures(plan.features);
+                const normalizedFeats = normalizeFeatures(plan.features);
                 return (
                   <motion.div
                     key={plan.id || plan._id}
@@ -555,10 +569,11 @@ export default function LandingPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
                     whileHover={{ y: -8 }}
-                    className={`relative bg-[#0b1221]/60 backdrop-blur-md border rounded-3xl p-8 flex flex-col shadow-2xl transition-all duration-300 ${isPopular
+                    className={`relative bg-[#0b1221]/60 backdrop-blur-md border rounded-3xl p-8 flex flex-col shadow-2xl transition-all duration-300 ${
+                      isPopular
                         ? 'border-blue-500 shadow-blue-500/20 hover:shadow-blue-500/30'
                         : 'border-white/10 hover:border-white/20'
-                      }`}
+                    }`}
                   >
                     {isPopular && (
                       <motion.div
@@ -573,10 +588,11 @@ export default function LandingPage() {
                       </motion.div>
                     )}
                     <div className="flex items-center gap-4 mb-6 mt-2">
-                      <div className={`p-3 rounded-2xl transition-all duration-300 ${isPopular
+                      <div className={`p-3 rounded-2xl transition-all duration-300 ${
+                        isPopular
                           ? 'bg-blue-500/20 border border-blue-500/30 shadow-lg shadow-blue-500/10'
                           : 'bg-[#0b1221]'
-                        }`}>
+                      }`}>
                         <IconComponent className={isPopular ? 'text-cyan-400' : 'text-blue-400'} size={24} />
                       </div>
                       <div>
@@ -604,8 +620,8 @@ export default function LandingPage() {
                       <span>{plan.credits || 0} credits granted monthly</span>
                     </div>
                     <ul className="space-y-3 mb-8 flex-grow">
-                      {features.length > 0 ? (
-                        features.map((feature, idx) => (
+                      {normalizedFeats.length > 0 ? (
+                        normalizedFeats.map((feature, idx) => (
                           <motion.li
                             key={idx}
                             initial={{ opacity: 0, x: -10 }}
@@ -613,8 +629,9 @@ export default function LandingPage() {
                             transition={{ delay: 0.1 + idx * 0.05 }}
                             className="flex items-start gap-3 text-sm text-gray-300 font-light"
                           >
-                            <CheckCircle size={16} className={`${isPopular ? 'text-cyan-400' : 'text-emerald-400'
-                              } mt-0.5 flex-shrink-0`} />
+                            <CheckCircle size={16} className={`${
+                              isPopular ? 'text-cyan-400' : 'text-emerald-400'
+                            } mt-0.5 flex-shrink-0`} />
                             <span>{feature}</span>
                           </motion.li>
                         ))
@@ -657,7 +674,9 @@ export default function LandingPage() {
                   <BookOpen size={28} className="text-white" />
                 </div>
                 <h2 className="text-4xl font-bold mb-4">Ready to Pass Your Exam?</h2>
-                <p className="text-gray-300 text-lg mb-8 max-w-xl mx-auto">Join {adminStats?.totalUsers?.toLocaleString() || '24,000+'} Sri Lankan students who trust Langoora for their exam preparation.</p>
+                <p className="text-gray-300 text-lg mb-8 max-w-xl mx-auto">
+                  Join {adminStats?.totalUsers?.toLocaleString() || '24,000+'} Sri Lankan students who trust Langoora for their exam preparation.
+                </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                   <Button variant="primary" size="xl" onClick={() => navigate('/auth/register')} className="group">
                     Start Learning Free <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />

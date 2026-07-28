@@ -31,7 +31,6 @@ export default function TutorPayoutsPage() {
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [processingId, setProcessingId] = useState(null);
-  const [error, setError] = useState(null);
   const [transactions, setTransactions] = useState({ totalCredits: 0, totalAmount: 0, count: 0 });
   const [declinedCount, setDeclinedCount] = useState(0);
   
@@ -513,19 +512,17 @@ export default function TutorPayoutsPage() {
           </div>
           <div className="flex gap-1.5 bg-white/5 rounded-xl p-1 border border-white/10">
             {['All', 'Pending', 'Settled'].map((status) => (
-              <motion.button
+              <button
                 key={status}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
                 onClick={() => setFilter(status.toLowerCase())}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   filter === status.toLowerCase()
                     ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/20'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
                 {status}
-              </motion.button>
+              </button>
             ))}
           </div>
         </div>
@@ -557,10 +554,8 @@ export default function TutorPayoutsPage() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ delay: index * 0.06 }}
-                  whileHover={{ y: -4 }}
                 >
-                  <GlassCard className={`p-5 border transition-all duration-300 ${statusConfig.border} relative overflow-hidden`}>
+                  <GlassCard className="p-5 border border-white/10 relative overflow-hidden">
                     {/* Header */}
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
@@ -584,32 +579,32 @@ export default function TutorPayoutsPage() {
                     {/* REAL DATA DISPLAY */}
                     <div className="grid grid-cols-3 gap-2 my-4 p-3 bg-black/30 rounded-xl border border-white/5">
                       <div className="text-center">
-                        <p className="text-[10px] text-gray-400 uppercase font-bold">Total Tokens</p>
-                        <p className="text-lg font-bold text-white">
-                          {totalTokens} ⭐
+                        <p className="text-[10px] text-gray-400 uppercase font-bold">Total Credits</p>
+                        <p className="text-lg font-bold text-white">{payout.totalTokens} Credits</p>
+                        <p className="text-[10px] text-gray-500">
+                          {payout.paperCount} papers • {payout.studentCount} students
                         </p>
-                        {/* <p className="text-[10px] text-gray-500">
-                          {paperCount} papers • {studentCount} students
-                        </p> */}
                         {paperCount > 0 && (
                           <p className="text-[10px] text-emerald-400/60">
                             {paperCount} × {tokensPerPaper} = {totalTokens}
                           </p>
                         )}
                       </div>
+
                       <div className="text-center border-x border-white/10">
-                        <p className="text-[10px] text-rose-400 uppercase font-bold">Platform Fee ({(platformCommission * 100).toFixed(0)}%)</p>
+                        <p className="text-[10px] text-rose-400 uppercase font-bold">System Commission (20%)</p>
                         <p className="text-lg font-bold text-rose-400">
-                          {commissionAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          - LKR {payout.commissionAmount?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                         <p className="text-[8px] text-gray-500">
                           {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × {(platformCommission * 100).toFixed(0)}%
                         </p>
                       </div>
+
                       <div className="text-center">
-                        <p className="text-[10px] text-emerald-400 uppercase font-bold">Net Payout</p>
+                        <p className="text-[10px] text-emerald-400 uppercase font-bold">Net Tutor Payout (80%)</p>
                         <p className="text-xl font-bold text-emerald-400">
-                          LKR {netPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          LKR {payout.netPayout?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                         <p className="text-[8px] text-gray-500">
                           {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × 80%
@@ -618,7 +613,7 @@ export default function TutorPayoutsPage() {
                     </div>
 
                     {/* Bank Info */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-white/[0.02] rounded-lg border border-white/5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-white/[0.02] rounded-lg border border-white/5 mb-4">
                       <div className="flex items-center gap-2.5">
                         <div className="p-1.5 bg-blue-500/10 rounded-lg">
                           <Landmark size={14} className="text-blue-400" />
@@ -678,19 +673,15 @@ export default function TutorPayoutsPage() {
             })}
           </div>
         ) : (
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-            <GlassCard className="p-12 text-center border-white/10">
-              <div className="flex flex-col items-center gap-3">
-                <div className="p-5 bg-white/5 rounded-full">
-                  <Users size={40} className="text-gray-500" />
-                </div>
-                <h3 className="text-lg font-semibold text-white">No Active Tutors Found</h3>
-                <p className="text-sm text-gray-400">
-                  {searchTerm ? 'Try adjusting your search' : 'No pending or settled payouts'}
-                </p>
+          <GlassCard className="p-12 text-center border-white/10">
+            <div className="flex flex-col items-center gap-3">
+              <div className="p-5 bg-white/5 rounded-full">
+                <Users size={40} className="text-gray-500" />
               </div>
-            </GlassCard>
-          </motion.div>
+              <h3 className="text-lg font-semibold text-white">No Tutors with Sales Found</h3>
+              <p className="text-sm text-gray-400">Only tutors who have received exam purchases will appear here.</p>
+            </div>
+          </GlassCard>
         )}
       </AnimatePresence>
 

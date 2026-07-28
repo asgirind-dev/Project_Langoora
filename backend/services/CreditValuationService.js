@@ -1,3 +1,4 @@
+// backend/services/CreditValuationService.js
 const { db } = require('../config/firebase');
 
 class CreditValuationService {
@@ -14,7 +15,8 @@ class CreditValuationService {
     try {
       const docRef = db.collection('exam_categories').doc(id);
       await docRef.update({
-        credits: data.credits,
+        credit_cost: data.credits,        // ✅ Use credit_cost
+        isCreditSet: true,               // ✅ Mark as set
         updatedAt: new Date().toISOString()
       });
       return { id, ...data };
@@ -27,7 +29,8 @@ class CreditValuationService {
     try {
       const levelRef = db.collection(`exam_categories/${categoryId}/levels`).doc(levelId);
       await levelRef.update({
-        credits: data.credits,
+        credit_cost: data.credits,        // ✅ Use credit_cost
+        isCreditSet: true,               // ✅ Mark as set
         updatedAt: new Date().toISOString()
       });
       return { categoryId, levelId, ...data };

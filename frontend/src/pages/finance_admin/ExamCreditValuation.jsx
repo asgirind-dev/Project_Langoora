@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Award, Coins, ChevronDown, History, Save, RefreshCw, X, Loader2, Trash, CheckCircle2, AlertCircle, Sparkles
+  Award, Coins, ChevronDown, History, Save, RefreshCw, X, Loader2, 
+  Trash, AlertCircle, Sparkles, Clock, CheckCircle
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import CreditValuationService from "../../services/CreditValuationService";
@@ -15,6 +16,31 @@ function ExamCreditValuation() {
   const [creditHistory, setCreditHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
+  const [updating, setUpdating] = useState(false);
+
+  // ✅ Get current user from localStorage
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    // Get user data from localStorage
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      try {
+        const parsed = JSON.parse(userData);
+        setUser(parsed);
+        console.log('👤 Current user:', parsed);
+      } catch (e) {
+        console.error('Error parsing user data:', e);
+      }
+    }
+  }, []);
+
+  // ✅ Check if user is Finance Admin
+  const isFinanceAdmin = () => {
+    if (!user) return false;
+    const role = user.role || user.userType || user.type || '';
+    return role === 'finance_admin' || role === 'finance' || role === 'admin' || role === 'super_admin';
+  };
 
   const isCategoryDeleted = (cat) => cat.status === 'deleted';
 
@@ -34,8 +60,8 @@ function ExamCreditValuation() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
       const levelsData = await CreditValuationService.getCategories();
+      console.log('📊 Fetched levels data:', levelsData);
       setAllLevels(levelsData || []);
       const uniqueCategories = [...new Set((levelsData || []).map(l => l.categoryId))];
       if (uniqueCategories.length > 0 && !selectedCategory) {
@@ -52,7 +78,6 @@ function ExamCreditValuation() {
   const fetchCreditHistory = async () => {
     setLoadingHistory(true);
     try {
-      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
       const data = await CreditValuationService.getCreditHistory();
       if (Array.isArray(data)) setCreditHistory(data);
     } catch (error) {
@@ -66,7 +91,6 @@ function ExamCreditValuation() {
     if (!window.confirm('⚠️ Are you sure you want to clear ALL credit history logs?')) return;
     setClearingHistory(true);
     try {
-      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
       await CreditValuationService.clearCreditHistory();
       setCreditHistory([]);
       alert('✅ Credit history cleared successfully!');
@@ -104,19 +128,21 @@ function ExamCreditValuation() {
     const fullExamName = parentName ? `${parentName} - ${levelName}` : levelName;
 
     try {
-      setLoading(true);
-      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
+      setUpdating(true);
       await CreditValuationService.updateLevelCredits(categoryId, levelId, parseInt(creditToUpdate) || 0);
+      
       setAllLevels(allLevels.map((lvl) =>
         lvl.id === levelId && lvl.categoryId === categoryId 
-          ? { ...lvl, credits: parseInt(creditToUpdate) || 0 } 
+          ? { ...lvl, credits: parseInt(creditToUpdate) || 0, isCreditSet: true } 
           : lvl
       ));
+      
       setCreditHistory(prev => [{
         id: `local_${Date.now()}`,
         examName: fullExamName,
         previousCredits: parseInt(currentCredit) || 0,
         newCredits: parseInt(creditToUpdate) || 0,
+        wasPending: currentCredit === 0 || !lvl?.isCreditSet,
         updatedAt: new Date().toISOString()
       }, ...prev]);
 
@@ -127,29 +153,32 @@ function ExamCreditValuation() {
       });
 
       alert(`✅ Credits for ${levelName} updated successfully!`);
+      fetchData();
     } catch (error) {
       alert('❌ Failed to update level credits.');
     } finally {
-      setLoading(false);
+      setUpdating(false);
     }
   };
 
   const handleUpdateCategory = async (categoryId, currentCredit, categoryName) => {
     const creditToUpdate = tempCredits[categoryId] !== undefined ? tempCredits[categoryId] : currentCredit;
     try {
-      setLoading(true);
-      // ✅ FIXED: SubscriptionService වෙනුවට CreditValuationService භාවිත කිරීම
+      setUpdating(true);
       await CreditValuationService.updateCategoryCredits(categoryId, parseInt(creditToUpdate) || 0);
+      
       setAllLevels(allLevels.map((lvl) =>
         lvl.id === categoryId && lvl.categoryId === categoryId 
-          ? { ...lvl, credits: parseInt(creditToUpdate) || 0 } 
+          ? { ...lvl, credits: parseInt(creditToUpdate) || 0, isCreditSet: true } 
           : lvl
       ));
+      
       setCreditHistory(prev => [{
         id: `local_${Date.now()}`,
         examName: categoryName,
         previousCredits: parseInt(currentCredit) || 0,
         newCredits: parseInt(creditToUpdate) || 0,
+        wasPending: currentCredit === 0,
         updatedAt: new Date().toISOString()
       }, ...prev]);
 
@@ -160,20 +189,23 @@ function ExamCreditValuation() {
       });
 
       alert(`✅ Credits for ${categoryName} updated successfully!`);
+      fetchData();
     } catch (error) {
       alert('❌ Failed to update category credits.');
     } finally {
-      setLoading(false);
+      setUpdating(false);
     }
   };
 
   return (
     <div className="space-y-8 text-gray-100 font-sans relative">
+      {/* Background effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-20 right-20 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-20 left-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
 
+      {/* Header - Finance Admin badge removed */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 pb-6 border-b border-white/10">
         <div>
           <div className="flex items-center gap-3">
@@ -214,6 +246,7 @@ function ExamCreditValuation() {
         </div>
       </div>
 
+      {/* Category Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-gradient-to-r from-[#0f1424] to-[#0b0e1b] p-4 rounded-2xl border border-white/10 shadow-xl gap-4">
         <div className="flex items-center gap-2.5">
           <Award size={18} className="text-amber-400" />
@@ -233,6 +266,7 @@ function ExamCreditValuation() {
         </div>
       </div>
 
+      {/* Levels Grid */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 text-gray-400 space-y-4">
           <div className="p-4 bg-amber-500/10 rounded-full border border-amber-500/20 animate-bounce">
@@ -248,6 +282,15 @@ function ExamCreditValuation() {
               const hasLevels = item.hasSubLevels === true;
               const displayName = hasLevels ? item.name : item.categoryName;
               const parentName = hasLevels ? item.categoryName : null;
+              
+              // ✅ Check if credit is pending
+              const isCreditSet = item.isCreditSet === true;
+              const isPending = !isCreditSet || item.credits === 0;
+              
+              // ✅ Check if user can edit (Finance Admin only)
+              const canEdit = isFinanceAdmin() && !isDeleted;
+
+              console.log(`🔍 ${displayName}: isCreditSet=${item.isCreditSet}, credits=${item.credits}, isPending=${isPending}, canEdit=${canEdit}`);
 
               return (
                 <motion.div 
@@ -259,6 +302,10 @@ function ExamCreditValuation() {
                   <GlassCard className={`p-6 relative border rounded-2xl flex flex-col justify-between transition-all duration-300 group hover:shadow-2xl ${
                     isDeleted 
                       ? 'border-red-500/30 bg-red-950/10' 
+                      : isPending && canEdit
+                      ? 'border-amber-500/30 bg-amber-950/5 hover:border-amber-500/50'
+                      : isPending && !canEdit
+                      ? 'border-amber-500/20 bg-amber-950/5 opacity-70'
                       : 'border-white/10 hover:border-amber-500/30 bg-[#0d1222]/90 shadow-lg'
                   }`}>
                     <div>
@@ -273,44 +320,119 @@ function ExamCreditValuation() {
                             </span>
                           )}
                         </div>
+                        {/* ✅ Only ONE Pending badge - removed the duplicate */}
                         <span className={`text-[9px] px-2.5 py-0.5 rounded-full uppercase font-bold tracking-wider border ${
                           isDeleted 
                             ? 'bg-red-500/10 text-red-400 border-red-500/20' 
+                            : isPending
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 flex items-center gap-1'
                             : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                         }`}>
-                          {isDeleted ? 'DELETED' : 'ACTIVE'}
+                          {isDeleted ? 'DELETED' : isPending ? '⏳ PENDING' : '✅ ACTIVE'}
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between bg-black/40 rounded-xl p-3 mb-6 border border-white/5 group-hover:border-white/10 transition-colors">
-                        <div className="flex items-center gap-2">
+                      {/* ✅ Credit Input */}
+                      <div className={`flex items-center justify-between bg-black/40 rounded-xl p-3 mb-6 border transition-colors ${
+                        isPending && canEdit
+                          ? 'border-amber-500/20 group-hover:border-amber-500/30'
+                          : isPending && !canEdit
+                          ? 'border-gray-500/20'
+                          : 'border-white/5 group-hover:border-white/10'
+                      }`}>
+                        <div className="flex items-center gap-2 flex-1">
                           <Coins size={16} className="text-amber-400" />
                           <span className="text-xs font-bold text-gray-300">Credits Required</span>
+                          
+                          {/* ✅ Only show label for Finance Admin on pending items */}
+                          {!isDeleted && isPending && canEdit && (
+                            <span className="ml-1 px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[9px] font-medium flex items-center gap-1 animate-pulse">
+                              <Clock size={9} /> Set Credit Value
+                            </span>
+                          )}
                         </div>
+                        
                         <input 
-                          type="number" min="0" disabled={isDeleted}
+                          type="number" 
+                          min="0" 
+                          disabled={isDeleted || !canEdit}
                           value={tempCredits[item.id] !== undefined ? tempCredits[item.id] : (item.credits || 0)} 
                           onChange={(e) => handleCreditChange(item.id, e.target.value)}
-                          className="w-20 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-sm font-extrabold text-center text-amber-300 focus:outline-none focus:border-amber-500 disabled:opacity-50 transition-colors"
+                          className={`w-20 bg-slate-900 border rounded-lg px-2 py-1 text-sm font-extrabold text-center transition-colors ${
+                            isPending && canEdit
+                              ? 'border-amber-500/30 text-amber-300 focus:outline-none focus:border-amber-500'
+                              : isPending && !canEdit
+                              ? 'border-gray-500/20 text-gray-500 cursor-not-allowed'
+                              : 'border-white/10 text-amber-300 focus:outline-none focus:border-amber-500'
+                          } disabled:opacity-50`}
+                          placeholder={isPending ? 'Set value' : ''}
                         />
                       </div>
+
+                      {/* ✅ Role-based access message - only for non-finance admin */}
+                      {isPending && !canEdit && !isDeleted && (
+                        <div className="text-center text-[10px] text-gray-500 mb-3">
+                          🔒 Only Finance Admin can set credit values
+                        </div>
+                      )}
                     </div>
 
+                    {/* ✅ Update Button */}
                     {hasLevels ? (
                       <button 
                         onClick={() => handleUpdateLevel(item.categoryId, item.id, item.credits, item.name)}
-                        disabled={isDeleted}
-                        className="w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 text-white border border-white/10 cursor-pointer disabled:opacity-40 active:scale-95 shadow-md"
+                        disabled={isDeleted || !canEdit || updating}
+                        className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer active:scale-95 shadow-md ${
+                          isPending && canEdit
+                            ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white border-amber-500/30'
+                            : isPending && !canEdit
+                            ? 'bg-gray-800/50 border-gray-500/20 text-gray-500 cursor-not-allowed'
+                            : isDeleted
+                            ? 'bg-slate-800/50 border-white/5 text-gray-500 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 text-white border-white/10'
+                        }`}
                       >
-                        <Save size={15} /> Update Sub-Level
+                        {isPending && canEdit ? (
+                          <>
+                            <CheckCircle size={15} /> Approve & Set Credits
+                          </>
+                        ) : isPending && !canEdit ? (
+                          <>
+                            <Clock size={15} /> Pending Finance Approval
+                          </>
+                        ) : (
+                          <>
+                            <Save size={15} /> Update Sub-Level
+                          </>
+                        )}
                       </button>
                     ) : (
                       <button 
                         onClick={() => handleUpdateCategory(item.categoryId, item.credits, item.categoryName)}
-                        disabled={isDeleted}
-                        className="w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-blue-900/60 to-indigo-900/60 hover:from-blue-800/80 hover:to-indigo-800/80 text-blue-200 border border-blue-500/30 cursor-pointer disabled:opacity-40 active:scale-95 shadow-md"
+                        disabled={isDeleted || !canEdit || updating}
+                        className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer active:scale-95 shadow-md ${
+                          isPending && canEdit
+                            ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white border-amber-500/30'
+                            : isPending && !canEdit
+                            ? 'bg-gray-800/50 border-gray-500/20 text-gray-500 cursor-not-allowed'
+                            : isDeleted
+                            ? 'bg-slate-800/50 border-white/5 text-gray-500 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-blue-900/60 to-indigo-900/60 hover:from-blue-800/80 hover:to-indigo-800/80 text-blue-200 border-blue-500/30'
+                        }`}
                       >
-                        <Save size={15} /> Update Category Weight
+                        {isPending && canEdit ? (
+                          <>
+                            <CheckCircle size={15} /> Approve & Set Credits
+                          </>
+                        ) : isPending && !canEdit ? (
+                          <>
+                            <Clock size={15} /> Pending Finance Approval
+                          </>
+                        ) : (
+                          <>
+                            <Save size={15} /> Update Category Weight
+                          </>
+                        )}
                       </button>
                     )}
                   </GlassCard>
@@ -326,6 +448,7 @@ function ExamCreditValuation() {
         </div>
       )}
 
+      {/* History Modal */}
       <AnimatePresence>
         {showHistoryModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
@@ -333,7 +456,7 @@ function ExamCreditValuation() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }} 
               animate={{ opacity: 1, scale: 1, y: 0 }} 
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-3xl bg-[#0d1222] border border-white/10 rounded-3xl p-6 text-white max-h-[85vh] flex flex-col shadow-2xl shadow-blue-500/10"
+              className="w-full max-w-4xl bg-[#0d1222] border border-white/10 rounded-3xl p-6 text-white max-h-[85vh] flex flex-col shadow-2xl shadow-blue-500/10"
             >
               <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
                 <div className="flex items-center gap-2.5">
@@ -369,6 +492,7 @@ function ExamCreditValuation() {
                         <th className="py-3 px-4">Exam / Level</th>
                         <th className="py-3 px-4 text-center">Previous Credits</th>
                         <th className="py-3 px-4 text-center">Updated Credits</th>
+                        <th className="py-3 px-4 text-center">Status</th>
                         <th className="py-3 px-4 text-right">Timestamp</th>
                       </tr>
                     </thead>
@@ -378,6 +502,17 @@ function ExamCreditValuation() {
                           <td className="py-3 px-4 text-xs text-gray-200 font-semibold">{log.examName}</td>
                           <td className="py-3 px-4 text-center text-red-400 font-extrabold text-xs">{log.previousCredits ?? 0}</td>
                           <td className="py-3 px-4 text-center text-emerald-400 font-extrabold text-xs">{log.newCredits ?? 0}</td>
+                          <td className="py-3 px-4 text-center">
+                            {log.wasPending ? (
+                              <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[9px] font-medium">
+                                ⏳ Pending → Approved
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[9px] font-medium">
+                                ✅ Updated
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 text-right text-[11px] text-gray-400 font-mono">{formatDate(log.updatedAt)}</td>
                         </tr>
                       ))}
