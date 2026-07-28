@@ -23,20 +23,49 @@ export default function MarketplacePage() {
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState('popular');
 
-  // Database Exams දත්ත සහ Loading state
   const [exams, setExams] = useState([]); 
   const [loading, setLoading] = useState(true);
+  
+  // 🟢 Purchased Exam IDs තියාගන්න State එක:
+  const [purchasedExamIds, setPurchasedExamIds] = useState([]);
 
   const categories = ['All', ...examCategories.map(e => e.name)];
   const difficulties = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Expert'];
 
-  // 🔌 Backend API එකෙන් Live Exams fetch කරගන්නා useEffect එක:
+  // 🔌 Backend API එකෙන් Live Exams + Purchased Exam IDs Fetch කිරීම:
   useEffect(() => {
-    const fetchLiveExams = async () => {
+    const fetchLiveExamsAndPurchases = async () => {
       try {
+        const token = localStorage.getItem('token'); 
+
+        // 1. Live Exams fetch කිරීම
         const response = await axios.get('http://localhost:5000/api/exams/all');
         if (response.data.success) {
           setExams(response.data.exams);
+        }
+
+        // 2. Student ගේ Purchased Exams fetch කිරීම
+        if (token) {
+          const purchaseRes = await axios.get('http://localhost:5000/api/exams/purchased', {
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (purchaseRes.data.success) {
+            // 🟢 Change 1: Response එකේ Array structure එක හරියටම Map කිරීම
+            const purchasedList = purchaseRes.data.exams || purchaseRes.data.purchasedExams || purchaseRes.data.data || [];
+            
+            const ids = purchasedList.map(
+              p => p.exam_id || p.examId || p.id
+            );
+
+            console.log("Fetched Purchased Exam IDs:", ids);
+            setPurchasedExamIds(ids);
+          }
+        } else {
+          console.warn("No auth token found in localStorage.");
         }
       } catch (error) {
         console.error("Error fetching exams from database:", error);
@@ -44,17 +73,19 @@ export default function MarketplacePage() {
         setLoading(false);
       }
     };
-    fetchLiveExams();
+
+    fetchLiveExamsAndPurchases();
   }, []);
 
-  // 🛒 Exam එකක් Unlock කිරීම සඳහා (FIXED OBJECT PASSING)
+  // 🛒 Exam එකක් Unlock කිරීම
   const handleUnlockExam = async (exam, e) => {
-    e.stopPropagation(); // Card navigation වැළැක්වීමට
+    e.stopPropagation();
 
     if (!exam) return;
 
-    const examTitle = exam.title || 'Selected Exam';
-    const examCredits = exam.credits !== undefined ? exam.credits : 0;
+    const rawTitle = exam.title || 'Selected Exam';
+    const examTitle = rawTitle.replace(/<[^>]*>?/gm, '');
+    const examCredits = Number(exam.credits ?? exam.price ?? exam.credit_cost ?? 0);
 
     const confirmUnlock = window.confirm(`Are you sure you want to unlock "${examTitle}" for ${examCredits} credits?`);
     if (!confirmUnlock) return;
@@ -71,9 +102,9 @@ export default function MarketplacePage() {
       const response = await axios.post(
         'http://localhost:5000/api/exams/purchase',
         { 
-          exam_id: exam.id,
-          category_id: exam.category_id || exam.category?.toLowerCase() || 'jlpt',
-          level_id: exam.level_id || exam.level?.toLowerCase() || exam.id,
+          exam_id: exam.id || exam.exam_id,
+          category_id: exam.category_id || exam.category,
+          level_id: exam.level_id || exam.level || exam.id,
           credits: examCredits
         },
         {
@@ -85,7 +116,7 @@ export default function MarketplacePage() {
 
       if (response.data.success) {
         alert("Exam unlocked successfully! 🎉");
-        navigate('/student/exams'); 
+        setPurchasedExamIds(prev => [...prev, exam.id || exam.exam_id]);
       }
     } catch (error) {
       console.error("Unlock exam error:", error);
@@ -93,20 +124,22 @@ export default function MarketplacePage() {
     }
   };
 
-  // 🔄 Filter + Sorting එකතු කරන ලද කොටස:
   const filtered = exams
     .filter((e) => {
       if (search && !e.title?.toLowerCase().includes(search.toLowerCase()) && !e.category?.toLowerCase().includes(search.toLowerCase())) return false;
       if (activeCategory !== 'All' && e.category !== activeCategory) return false;
-      if (e.credits < creditRange[0] || e.credits > creditRange[1]) return false;
+      const creditsVal = Number(e.credits ?? e.price ?? e.credit_cost ?? 0);
+      if (creditsVal < creditRange[0] || creditsVal > creditRange[1]) return false;
       if (e.rating < minRating) return false;
       if (difficulty !== 'All' && e.difficulty !== difficulty) return false;
       return true;
     })
     .sort((a, b) => {
+      const creditsA = Number(a.credits ?? a.price ?? a.credit_cost ?? 0);
+      const creditsB = Number(b.credits ?? b.price ?? b.credit_cost ?? 0);
       if (sortBy === 'rating') return b.rating - a.rating;
-      if (sortBy === 'credits-low') return a.credits - b.credits;
-      if (sortBy === 'credits-high') return b.credits - a.credits;
+      if (sortBy === 'credits-low') return creditsA - creditsB;
+      if (sortBy === 'credits-high') return creditsB - creditsA;
       if (sortBy === 'popular') return (b.reviews || 0) - (a.reviews || 0);
       return 0;
     });
@@ -257,7 +290,10 @@ export default function MarketplacePage() {
                 </div>
 
                 <div className="p-4">
-                  <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">{exam.title}</h3>
+                  {/* Clean HTML Title */}
+                  <h3 className="font-semibold text-white mb-2 leading-snug line-clamp-2 text-sm sm:text-base">
+                    {(exam.title || 'Untitled Exam').replace(/<[^>]*>?/gm, '')}
+                  </h3>
                   <div className="flex items-center gap-2 mb-3">
                     <img src={exam.tutorAvatar} alt={exam.tutor} className="w-6 h-6 rounded-full object-cover" />
                     <span className="text-xs text-gray-400">{exam.tutor}</span>
@@ -270,17 +306,34 @@ export default function MarketplacePage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Coins size={16} className="text-amber-400" />
-                      <span className="text-lg sm:text-xl font-bold text-amber-400">{exam.credits}</span>
+                      <span className="text-lg sm:text-xl font-bold text-amber-400">
+                        {exam.credits ?? exam.price ?? exam.credit_cost ?? 0}
+                      </span>
                       <span className="text-xs text-gray-400">Credits</span>
                     </div>
-                    {/* 🎯 FIXED: Passing entire exam object */}
-                    <Button 
-                      variant="primary" 
-                      size="sm"
-                      onClick={(e) => handleUnlockExam(exam, e)}
-                    >
-                      Unlock
-                    </Button>
+
+                    {/* 🟢 Change 2: Strict String Comparison මගින් Purchased Check කිරීම */}
+                    {purchasedExamIds.some(id => String(id) === String(exam.id || exam.exam_id)) ? (
+                      <Button 
+                        variant="secondary" 
+                        size="sm" 
+                        className="bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30 cursor-default"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate('/student/exams');
+                        }}
+                      >
+                        Purchased
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="primary" 
+                        size="sm" 
+                        onClick={(e) => handleUnlockExam(exam, e)}
+                      >
+                        Unlock
+                      </Button>
+                    )}
                   </div>
                 </div>
               </GlassCard>

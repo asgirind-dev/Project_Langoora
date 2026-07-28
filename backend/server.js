@@ -1,5 +1,3 @@
-// server.js
-
 const express = require('express');
 const cors = require('cors');
 const path = require('path'); 
@@ -32,10 +30,17 @@ const emailLogRoutes = require('./routes/emailLogRoutes');
 const planRoutes = require('./routes/planRoutes');
 const creditValuationRoutes = require('./routes/creditValuationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
-const subscriptionRoutes = require('./routes/subscriptionRoutes'); // 👈 Correct import
+const subscriptionRoutes = require('./routes/subscriptionRoutes'); 
+const tutorReviewRoutes = require('./routes/tutorReviewRoutes');
+const auditRoutes = require('./routes/auditRoutes');
 
 // ✅ Import maintenance middleware
 const { maintenanceMiddleware } = require('./middleware/maintenanceMiddleware');
+
+// ============================================
+// 🔥 Auto-Settle Service
+// ============================================
+const { scheduleMonthlySettlement } = require('./services/autoSettleService');
 
 const app = express();
 
@@ -68,11 +73,16 @@ app.use('/api/subscription-plans', planRoutes);
 app.use('/api/credit-values', creditValuationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/finance', payoutRoutes);
+app.use('/api/tutor-reviews', tutorReviewRoutes);
+app.use('/api/audit', auditRoutes);
+
 
 // Serve static uploads if applicable
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const PORT = process.env.PORT || 5000;
+
+
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

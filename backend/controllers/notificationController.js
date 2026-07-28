@@ -7,13 +7,18 @@ const notificationService = require('../services/NotificationService');
 exports.getNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const page = parseInt(req.query.page) || 1;
     
-    const notifications = await notificationService.getUserNotifications(userId);
+    const result = await notificationService.getUserNotifications(userId, limit, page);
     
     res.json({
       success: true,
-      count: notifications.length,
-      data: notifications
+      count: result.notifications.length,
+      total: result.total,
+      page: result.page,
+      totalPages: result.totalPages,
+      data: result.notifications
     });
   } catch (error) {
     console.error('❌ Get notifications error:', error);
@@ -24,14 +29,41 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
+/**
+ * Get latest notifications for dashboard - OPTIMIZED
+ * Returns only the latest 5 notifications
+ */
+exports.getLatestNotifications = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 5;
+    
+    const notifications = await notificationService.getLatestUserNotifications(userId, limit);
+    
+    res.json({
+      success: true,
+      count: notifications.length,
+      data: notifications
+    });
+  } catch (error) {
+    console.error('❌ Get latest notifications error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
 exports.getUnreadNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
 
     const snapshot = await db.collection('notifications')
       .where('userId', '==', userId)
       .where('read', '==', false)
       .orderBy('createdAt', 'desc')
+      .limit(limit)
       .get();
     
     const notifications = snapshot.docs.map(doc => ({
@@ -97,30 +129,11 @@ exports.markAllAsRead = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const snapshot = await db.collection('notifications')
-      .where('userId', '==', userId)
-      .where('read', '==', false)
-      .get();
-    
-    if (snapshot.empty) {
-      return res.json({
-        success: true,
-        message: 'No unread notifications found'
-      });
-    }
-
-    const batch = db.batch();
-    snapshot.docs.forEach(doc => {
-      batch.update(doc.ref, { 
-        read: true, 
-        readAt: new Date().toISOString() 
-      });
-    });
-    await batch.commit();
+    const result = await notificationService.markAllAsRead(userId);
     
     res.json({ 
       success: true, 
-      message: `${snapshot.size} notifications marked as read` 
+      message: `${result.count} notifications marked as read` 
     });
   } catch (error) {
     console.error('❌ Mark all as read error:', error);
@@ -159,6 +172,7 @@ exports.deleteReadNotifications = async (req, res) => {
     const snapshot = await db.collection('notifications')
       .where('userId', '==', userId)
       .where('read', '==', true)
+      .select()
       .get();
     
     if (snapshot.empty) {
@@ -180,6 +194,30 @@ exports.deleteReadNotifications = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Delete read notifications error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
+/**
+ * Clean up old read notifications - OPTIMIZED to reduce quota usage
+ */
+exports.cleanupOldNotifications = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const daysOld = parseInt(req.query.daysOld) || 30;
+
+    const result = await notificationService.deleteOldReadNotifications(userId, daysOld);
+    
+    res.json({
+      success: true,
+      message: `${result.count} old notifications cleaned up`,
+      count: result.count
+    });
+  } catch (error) {
+    console.error('❌ Cleanup notifications error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message 

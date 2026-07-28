@@ -174,10 +174,13 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Invalid user profile configuration returned from backend gateway.');
       }
 
+      // ✅ Store token and user data
       localStorage.setItem('token', idToken);
       localStorage.setItem('userRole', authenticatedUser.role);
       localStorage.setItem('user', JSON.stringify(authenticatedUser));
+      localStorage.setItem('lastActivity', Date.now().toString());
 
+      // ✅ Set axios default header
       axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
 
       setUser(authenticatedUser);
@@ -194,11 +197,17 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ==========================================
-  // 3. SECURE SYSTEM STAFF ENTRY GATEWAY
+  // 3. SECURE SYSTEM STAFF ENTRY GATEWAY - ✅ FIXED
   // ==========================================
   const loginStaff = async (email, password) => {
     try {
       setLoading(true);
+
+      // ✅ Check maintenance before login attempt
+      const maintenanceStatus = await maintenanceService.checkMaintenanceStatus();
+      if (maintenanceStatus) {
+        throw new Error('Platform is currently under maintenance. Please try again later.');
+      }
 
       const response = await fetch('http://localhost:5000/api/auth/staff-login', {
         method: 'POST',
@@ -217,10 +226,13 @@ export const AuthProvider = ({ children }) => {
 
       const authenticatedStaff = extractUserData(data);
 
+      // ✅ Store token and user data
       localStorage.setItem('token', data.token);
       localStorage.setItem('userRole', authenticatedStaff.role);
       localStorage.setItem('user', JSON.stringify(authenticatedStaff));
+      localStorage.setItem('lastActivity', Date.now().toString());
 
+      // ✅ Set axios default header
       axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
 
       setUser(authenticatedStaff);
@@ -274,10 +286,13 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Invalid user profile configuration returned from Google gateway.');
       }
 
+      // ✅ Store token and user data
       localStorage.setItem('token', idToken);
       localStorage.setItem('userRole', authenticatedUser.role);
       localStorage.setItem('user', JSON.stringify(authenticatedUser));
+      localStorage.setItem('lastActivity', Date.now().toString());
 
+      // ✅ Set axios default header
       axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
 
       setUser(authenticatedUser);
@@ -304,7 +319,8 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('token');
       localStorage.removeItem('userRole');
       localStorage.removeItem('user');
-      localStorage.removeItem('sessionTimeout'); // ✅ Clear session timeout flag
+      localStorage.removeItem('sessionTimeout');
+      localStorage.removeItem('lastActivity');
       
       // ✅ Clear axios authorization header
       delete axios.defaults.headers.common['Authorization'];
@@ -324,7 +340,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ==========================================
-  // 6. REAL-TIME SESSION RECOVERY HOOK
+  // 6. REAL-TIME SESSION RECOVERY HOOK - ✅ FIXED
   // ==========================================
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -366,10 +382,13 @@ export const AuthProvider = ({ children }) => {
             const authenticatedUser = extractUserData(data);
 
             if (authenticatedUser && authenticatedUser.role) {
+              // ✅ Store token and user data
               localStorage.setItem('token', idToken);
               localStorage.setItem('userRole', authenticatedUser.role);
               localStorage.setItem('user', JSON.stringify(authenticatedUser));
+              localStorage.setItem('lastActivity', Date.now().toString());
 
+              // ✅ Set axios default header
               axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
 
               setUser(authenticatedUser);
@@ -384,6 +403,7 @@ export const AuthProvider = ({ children }) => {
         if (!localStorage.getItem('user')) {
           localStorage.removeItem('token');
           localStorage.removeItem('userRole');
+          localStorage.removeItem('lastActivity');
           setUser(null);
           setRole(null);
           setPrivileges([]);

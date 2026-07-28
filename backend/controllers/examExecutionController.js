@@ -1,7 +1,16 @@
+// backend/controllers/examExecutionController.js
 const examExecutionService = require('../services/examExecutionService');
 
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
+
 /**
- * 📝 Start a new exam attempt session matrix
+ * 📝 Start a new exam attempt session matrix - WITH AUDIT LOG
  * POST /api/exam-execution/:examId/start
  */
 const start = async (req, res) => {
@@ -14,6 +23,19 @@ const start = async (req, res) => {
     }
     
     const attempt = await examExecutionService.startExam(examId, studentId);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - STARTED
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: examId,
+      examTitle: attempt.title || 'Exam',
+      attemptId: attempt.attemptId,
+      action: 'started',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(201).json({ success: true, data: attempt });
   } catch (error) {
     console.error('Start exam execution error:', error.message);
@@ -22,7 +44,7 @@ const start = async (req, res) => {
 };
 
 /**
- * 📄 Get exam core blueprints metadata duration info
+ * 📄 Get exam core blueprints metadata duration info (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:examId/metadata
  */
 const metadata = async (req, res) => {
@@ -38,7 +60,7 @@ const metadata = async (req, res) => {
 };
 
 /**
- * 🔒 Fetch Secure Questions Stream (Filter out answer indexes)
+ * 🔒 Fetch Secure Questions Stream (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:examId/questions
  */
 const questions = async (req, res) => {
@@ -53,13 +75,29 @@ const questions = async (req, res) => {
 };
 
 /**
- * 🛡️ Log Anti-Cheat Switch Tab Violations Metrics
+ * 🛡️ Log Anti-Cheat Switch Tab Violations Metrics - WITH AUDIT LOG
  * POST /api/exam-execution/:attemptId/violation
  */
 const violation = async (req, res) => {
   try {
     const { attemptId } = req.params;
+    const studentId = req.user?.id || req.user?.uid;
+    
     const data = await examExecutionService.logViolation(attemptId);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - VIOLATION
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: data.examId || 'unknown',
+      examTitle: data.examTitle || 'Exam',
+      attemptId: attemptId,
+      action: 'violation',
+      violationType: 'tab_switch',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Log runtime violation error:', error.message);
@@ -69,7 +107,7 @@ const violation = async (req, res) => {
 };
 
 /**
- * 📊 Get live attempt session clock status
+ * 📊 Get live attempt session clock status (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:attemptId/status
  */
 const status = async (req, res) => {
@@ -84,7 +122,7 @@ const status = async (req, res) => {
 };
 
 /**
- * 📤 Final Submit Exam Vectors Evaluation Engine
+ * 📤 Final Submit Exam Vectors Evaluation Engine - WITH AUDIT LOG
  * POST /api/exam-execution/:attemptId/submit
  */
 const submit = async (req, res) => {
@@ -94,6 +132,22 @@ const submit = async (req, res) => {
     const studentId = req.user?.id || req.user?.uid;
     
     const result = await examExecutionService.submitExam(attemptId, answers, flagged, autoSubmitted, studentId);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - SUBMITTED
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: result.examId || 'unknown',
+      examTitle: result.title || 'Exam',
+      attemptId: attemptId,
+      action: 'submitted',
+      score: result.percentage || result.score || 0,
+      questions: result.totalQuestions || 0,
+      correct: result.score || 0,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error('Submit exam execution error:', error.message);
@@ -102,7 +156,7 @@ const submit = async (req, res) => {
 };
 
 /**
- * 📊 Fetch analytical evaluation report matrix
+ * 📊 Fetch analytical evaluation report matrix (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:attemptId/results
  */
 const results = async (req, res) => {
@@ -118,7 +172,7 @@ const results = async (req, res) => {
 };
 
 /**
- * 💬 Submit student feedback with ratings
+ * 💬 Submit student feedback with ratings - WITH AUDIT LOG
  * POST /api/exam-execution/:attemptId/feedback
  */
 const submitFeedback = async (req, res) => {
@@ -133,7 +187,13 @@ const submitFeedback = async (req, res) => {
       comments, 
       wantsFollowUp,
       wouldRecommend,
-      timeSpent
+      timeSpent,
+      examId: frontendExamId,
+      examTitle: frontendExamTitle,
+      tutorId: frontendTutorId,
+      tutorName: frontendTutorName,
+      percentage: frontendPercentage,
+      passed: frontendPassed
     } = req.body;
     
     const studentId = req.user?.id || req.user?.uid;
@@ -142,34 +202,84 @@ const submitFeedback = async (req, res) => {
       return res.status(401).json({ success: false, message: 'User not authenticated' });
     }
 
-    // Validate rating
     if (!rating || rating < 1 || rating > 5) {
       return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
     }
 
-    // Get attempt details for additional context
-    const attemptDoc = await require('../config/firebase').db
+    const db = require('../config/firebase').db;
+
+    // ✅ Get student details from users collection
+    let studentName = 'Anonymous';
+    let studentAvatar = null;
+    
+    try {
+      const userDoc = await db.collection('users').doc(studentId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        studentName = userData.name || userData.displayName || 'Anonymous';
+        studentAvatar = userData.avatar || userData.profilePic || userData.profilePicUrl || null;
+        console.log(`👤 Student found: ${studentName}`);
+      } else {
+        console.warn(`⚠️ User document not found for studentId: ${studentId}`);
+      }
+    } catch (userError) {
+      console.warn('⚠️ Could not fetch user details:', userError.message);
+    }
+
+    // ✅ Get attempt details
+    const attemptDoc = await db
       .collection('student_exams')
       .doc(attemptId)
       .get();
     
-    let examId = null;
-    let examTitle = null;
-    let percentage = 0;
+    let examId = frontendExamId || null;
+    let examTitle = frontendExamTitle || 'Language Examination';
+    let percentage = frontendPercentage || 0;
+    let passed = frontendPassed || false;
+    let tutorId = frontendTutorId || null;
+    let tutorName = frontendTutorName || 'Expert Tutor';
     
     if (attemptDoc.exists) {
       const attemptData = attemptDoc.data();
-      examId = attemptData.examId;
-      examTitle = attemptData.title || 'Language Examination';
-      percentage = attemptData.percentage || 0;
+      examId = examId || attemptData.examId;
+      examTitle = examTitle || attemptData.title || 'Language Examination';
+      percentage = percentage || attemptData.percentage || 0;
+      passed = passed || attemptData.passed || false;
+      tutorId = tutorId || attemptData.tutor_id || null;
+      tutorName = tutorName || attemptData.tutor_name || 'Expert Tutor';
     }
+
+    // ✅ LOG: Check what we're saving
+    console.log('📝 Saving feedback with:', {
+      attemptId,
+      studentId,
+      studentName,
+      studentAvatar,
+      examId,
+      examTitle,
+      tutorId,
+      tutorName,
+      rating,
+      difficulty,
+      nps,
+      comments: comments ? comments.substring(0, 50) : 'No comments'
+    });
+
+    // ✅ Ensure tutorId is never null
+    const finalTutorId = tutorId || 'unknown_tutor';
+    const finalTutorName = tutorName || 'Expert Tutor';
 
     const feedbackData = {
       attemptId,
       studentId,
-      examId,
-      examTitle,
-      percentage,
+      studentName: studentName || 'Anonymous',
+      studentAvatar: studentAvatar || null,
+      examId: examId || 'unknown_exam',
+      examTitle: examTitle || 'Language Examination',
+      tutorId: finalTutorId,
+      tutorName: finalTutorName,
+      percentage: percentage || 0,
+      passed: passed || false,
       rating: Number(rating),
       difficulty: difficulty || null,
       nps: nps || null,
@@ -183,25 +293,72 @@ const submitFeedback = async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    // Save to feedback collection
-    const db = require('../config/firebase').db;
+    // ✅ Save feedback to Firestore
     const feedbackRef = db.collection('exam_feedback').doc();
     await feedbackRef.set(feedbackData);
-
-    // Also update the submission record with feedback reference
-    const submissionSnapshot = await db.collection('submissions')
-      .where('attempt_id', '==', attemptId)
-      .get();
     
-    if (!submissionSnapshot.empty) {
-      const submissionDoc = submissionSnapshot.docs[0];
-      await submissionDoc.ref.update({
-        feedbackId: feedbackRef.id,
-        feedbackSubmitted: true,
-        feedbackRating: rating,
-        feedbackUpdatedAt: new Date().toISOString()
-      });
+    console.log(`✅ Feedback saved with ID: ${feedbackRef.id}`);
+
+    // ✅ Update exam aggregated ratings (with error handling)
+    try {
+      if (examId && examId !== 'unknown_exam') {
+        await examExecutionService.updateExamAggregatedRatings(
+          examId, 
+          rating, 
+          difficulty, 
+          nps, 
+          wouldRecommend
+        );
+        console.log('✅ Exam ratings updated');
+      } else {
+        console.warn('⚠️ Skipping exam ratings update - no valid examId');
+      }
+    } catch (updateError) {
+      console.warn('⚠️ Could not update exam ratings:', updateError.message);
     }
+
+    // ✅ Update tutor aggregated ratings (with error handling)
+    if (finalTutorId && finalTutorId !== 'unknown_tutor') {
+      try {
+        await examExecutionService.updateTutorAggregatedRatings(finalTutorId, rating, difficulty);
+        console.log('✅ Tutor ratings updated');
+      } catch (updateError) {
+        console.warn('⚠️ Could not update tutor ratings:', updateError.message);
+      }
+    }
+
+    // ✅ Update submission record with feedback
+    try {
+      const submissionSnapshot = await db.collection('submissions')
+        .where('attempt_id', '==', attemptId)
+        .get();
+      
+      if (!submissionSnapshot.empty) {
+        const submissionDoc = submissionSnapshot.docs[0];
+        await submissionDoc.ref.update({
+          feedbackId: feedbackRef.id,
+          feedbackSubmitted: true,
+          feedbackRating: rating,
+          feedbackUpdatedAt: new Date().toISOString()
+        });
+        console.log('✅ Submission record updated with feedback');
+      }
+    } catch (subError) {
+      console.warn('⚠️ Could not update submission:', subError.message);
+    }
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - FEEDBACK SUBMITTED
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: examId || 'unknown',
+      examTitle: examTitle || 'Exam',
+      attemptId: attemptId,
+      action: 'feedback_submitted',
+      score: percentage || 0,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
 
     return res.status(201).json({ 
       success: true, 
@@ -211,13 +368,17 @@ const submitFeedback = async (req, res) => {
       } 
     });
   } catch (error) {
-    console.error('Submit feedback error:', error.message);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('❌ Submit feedback error:', error);
+    console.error('❌ Stack:', error.stack);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to submit feedback' 
+    });
   }
 };
 
 /**
- * 📜 Get student submission history
+ * 📜 Get student submission history (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/submissions/student/:studentId
  */
 const getSubmissions = async (req, res) => {
@@ -233,7 +394,7 @@ const getSubmissions = async (req, res) => {
 };
 
 /**
- * 📊 Get feedback for a specific attempt
+ * 📊 Get feedback for a specific attempt (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:attemptId/feedback
  */
 const getFeedback = async (req, res) => {

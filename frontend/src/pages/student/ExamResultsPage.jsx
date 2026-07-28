@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { 
   CheckCircle, XCircle, Trophy, Target, RotateCcw, BookOpen, ArrowRight, 
   Loader2, Star, ThumbsUp, Send, Clock, AlertCircle, Info,
-  Layers, AlertTriangle, Medal
+  Layers, AlertTriangle, Medal, Award, TrendingUp, BarChart3
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -72,7 +72,18 @@ export default function ExamResultsPage() {
 
     setSubmittingFeedback(true);
     try {
-      await studentApi.post(`/exam-execution/${attemptId}/feedback`, feedback);
+      const feedbackPayload = {
+        ...feedback,
+        examId: result?.examId || null,
+        examTitle: result?.examTitle || 'Language Examination',
+        tutorId: result?.tutor_id || null,
+        tutorName: result?.tutor_name || 'Expert Tutor',
+        percentage: result?.percentage || 0,
+        passed: result?.passed || false,
+        timeSpent: result?.timeTakenSeconds || null,
+      };
+
+      await studentApi.post(`/exam-execution/${attemptId}/feedback`, feedbackPayload);
       setFeedbackSubmitted(true);
       setShowFeedbackForm(false);
     } catch (err) {
@@ -140,6 +151,9 @@ export default function ExamResultsPage() {
     cutOffScore,
     achievedLevel,
     failReason,
+    tutor_id,
+    tutor_name,
+    passingConfig = {},
   } = result;
 
   // Format time
@@ -160,12 +174,26 @@ export default function ExamResultsPage() {
     }
   };
 
+  // Get passing type description
+  const getPassingTypeDescription = (type) => {
+    switch(type) {
+      case 'TOTAL_AND_SECTION': 
+        return 'You must pass both the overall score AND each section minimum.';
+      case 'CUT_OFF_SCORE': 
+        return 'Your total score must meet or exceed the current recruitment cut-off.';
+      case 'LEVEL_RANGE': 
+        return 'Your score determines your achieved level.';
+      default: 
+        return 'Standard passing criteria applied.';
+    }
+  };
+
   // Get passing source label
   const getPassingSourceLabel = (source) => {
     switch(source) {
-      case 'level': return 'Level-specific';
-      case 'category': return 'Category default';
-      default: return 'System default';
+      case 'level': return 'Level-specific configuration';
+      case 'category': return 'Category default configuration';
+      default: return 'System default configuration';
     }
   };
 
@@ -175,7 +203,10 @@ export default function ExamResultsPage() {
     
     return (
       <div className="mt-4 border-t border-white/5 pt-4">
-        <h4 className="text-sm font-semibold text-gray-300 mb-3">Section Requirements</h4>
+        <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+          <BarChart3 size={16} className="text-blue-400" />
+          Section Requirements
+        </h4>
         <div className="space-y-2">
           {sectionResults && sectionResults.length > 0 ? (
             sectionResults.map((section, idx) => (
@@ -199,7 +230,9 @@ export default function ExamResultsPage() {
           )}
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-emerald-500/20">
             <span className="text-sm text-gray-300">Overall Passing Score</span>
-            <span className="text-sm font-medium text-emerald-400">{overallPass || 'N/A'}%</span>
+            <span className={`text-sm font-medium ${result.totalPassed !== false ? 'text-emerald-400' : 'text-red-400'}`}>
+              {overallPass || 'N/A'}%
+            </span>
           </div>
         </div>
       </div>
@@ -212,7 +245,10 @@ export default function ExamResultsPage() {
     
     return (
       <div className="mt-4 border-t border-white/5 pt-4">
-        <h4 className="text-sm font-semibold text-gray-300 mb-3">Cut-off Information</h4>
+        <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+          <Target size={16} className="text-amber-400" />
+          Cut-off Information
+        </h4>
         <div className="space-y-2">
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
             <span className="text-sm text-gray-300">Current Cut-off Score</span>
@@ -243,7 +279,10 @@ export default function ExamResultsPage() {
     
     return (
       <div className="mt-4 border-t border-white/5 pt-4">
-        <h4 className="text-sm font-semibold text-gray-300 mb-3">Level Information</h4>
+        <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+          <Layers size={16} className="text-purple-400" />
+          Level Information
+        </h4>
         <div className="space-y-2">
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
             <span className="text-sm text-gray-300">Achieved Level</span>
@@ -258,11 +297,13 @@ export default function ExamResultsPage() {
             </span>
           </div>
           <div className="bg-white/5 p-3 rounded-xl">
-            <p className="text-xs text-gray-400">Level Ranges:</p>
-            <div className="flex gap-2 mt-1 flex-wrap">
-              <span className="text-xs bg-gray-500/10 px-2 py-1 rounded">0-79: No Level</span>
-              <span className="text-xs bg-blue-500/10 px-2 py-1 rounded">80-139: Level 1</span>
-              <span className="text-xs bg-purple-500/10 px-2 py-1 rounded">140-200: Level 2</span>
+            <p className="text-xs text-gray-400 mb-2">Level Ranges:</p>
+            <div className="flex gap-2 flex-wrap">
+              {(passingConfig?.ranges || []).map((range, idx) => (
+                <span key={idx} className={`text-xs px-2 py-1 rounded ${range.passed ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-gray-500/10 text-gray-400 border border-gray-500/20'}`}>
+                  {range.min}-{range.max}: {range.level} {range.passed ? '✅' : '❌'}
+                </span>
+              ))}
             </div>
           </div>
         </div>
@@ -371,6 +412,18 @@ export default function ExamResultsPage() {
           
           <div className="mt-4 text-gray-400 text-sm">
             Score: {score}/{totalQuestions} correct ({totalQuestions - score} incorrect)
+          </div>
+
+          {/* Passing Type Description */}
+          <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/10">
+            <p className="text-xs text-gray-400 flex items-start gap-2">
+              <Info size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
+              <span>
+                <strong>Passing Type:</strong> {getPassingTypeLabel(passingType)}
+                <br />
+                <span className="text-gray-500">{getPassingTypeDescription(passingType)}</span>
+              </span>
+            </p>
           </div>
 
           {/* Passing Type Specific Details */}
@@ -667,6 +720,13 @@ export default function ExamResultsPage() {
                 </label>
               </div>
 
+              <div className="text-xs text-gray-500 mt-2 p-3 bg-white/5 rounded-xl border border-white/5">
+                <p className="flex items-center gap-2">
+                  <Info size={14} className="text-blue-400" />
+                  Your feedback helps us improve the quality of this exam and will be shared with the tutor anonymously.
+                </p>
+              </div>
+
               <Button 
                 variant="primary" 
                 size="lg" 
@@ -691,6 +751,7 @@ export default function ExamResultsPage() {
           </div>
           <h3 className="text-lg font-semibold mb-2">Thank You for Your Feedback!</h3>
           <p className="text-gray-400 text-sm">Your feedback helps us create better learning experiences.</p>
+          <p className="text-xs text-gray-500 mt-2">Your responses have been recorded anonymously for quality improvement.</p>
         </GlassCard>
       )}
 

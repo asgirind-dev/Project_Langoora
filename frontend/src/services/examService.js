@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:5000/api/exams";
+export const API_URL = "http://localhost:5000/api/exams";
+
 
 /**
  * 🔐 Helper: Get fresh token from Firebase
@@ -41,6 +42,67 @@ const getAuthConfig = async () => {
     },
   };
 };
+
+/**
+ * 🎯 Dedicated axios instance for the JSON exam endpoints (create, read,
+ * update, draft, status, delete). authMiddleware.js returns 401 with
+ * `{ success: false, message: 'Not authorized, token validation failed.' }`
+ * for an expired/invalid token — this response interceptor catches that
+ * (and any other 401/403), silently refreshes the Firebase ID token via
+ * `getIdToken(true)`, and retries the original request exactly once.
+ *
+ * If the refresh itself fails (e.g. the Firebase session is fully gone,
+ * not just the short-lived ID token), the rejected error is tagged with
+ * `isAuthExpired: true` so callers — specifically CreateExamPage.jsx's
+ * save handlers — can trigger the session-expired safety net instead of
+ * treating it as a generic failure.
+ *
+ * NOTE: uploadExamAsset() below intentionally does NOT use this instance.
+ * It already has its own working 401-retry path, and touching it risks
+ * the Cloudinary upload logic, which must stay exactly as-is.
+ */
+const apiClient = axios.create();
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    const status = error.response?.status;
+    const isAuthError = status === 401 || status === 403;
+
+    if (isAuthError && originalRequest && !originalRequest._retriedAfterRefresh) {
+      originalRequest._retriedAfterRefresh = true;
+      try {
+        const freshToken = await getFreshToken();
+        originalRequest.headers = {
+          ...originalRequest.headers,
+          Authorization: `Bearer ${freshToken}`
+        };
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        error.isAuthExpired = true;
+        return Promise.reject(error);
+      }
+    }
+
+    if (isAuthError) {
+      // Already retried once (via the branch above) and still failing.
+      error.isAuthExpired = true;
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+/**
+ * 🔐 Helper: fold `error.isAuthExpired` (set by the interceptor above)
+ * into whatever payload a catch block is about to throw, without
+ * changing the shape callers already rely on (`.success`, `.message`).
+ */
+const toServiceError = (error, fallback) => ({
+  ...(error.response?.data || fallback),
+  isAuthExpired: !!error.isAuthExpired
+});
 
 /**
  * 💾 1. Create New Exam
@@ -133,7 +195,7 @@ export const getRecycleBinExams = async () => {
 export const restoreExam = async (examId) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}/restore`,
       {},
       config,
@@ -154,7 +216,7 @@ export const restoreExam = async (examId) => {
 export const permanentDeleteExam = async (examId) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.delete(
+    const response = await apiClient.delete(
       `${API_URL}/${examId}/permanent`,
       config,
     );
@@ -174,7 +236,7 @@ export const permanentDeleteExam = async (examId) => {
 export const updateExamStatus = async (examId, status) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}/status`,
       { status },
       config,
@@ -195,7 +257,7 @@ export const updateExamStatus = async (examId, status) => {
 export const updateExamDraft = async (examId, draftData) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}/draft`,
       draftData,
       config,
@@ -220,7 +282,7 @@ export const updateExamDraft = async (examId, draftData) => {
 export const updateExam = async (examId, examPayload) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.put(
+    const response = await apiClient.put(
       `${API_URL}/${examId}`,
       examPayload,
       config,
@@ -239,7 +301,7 @@ export const updateExam = async (examId, examPayload) => {
 /**
  * 🎵 📷 8. Upload Asset
  */
-export const uploadExamAsset = async (fileBlob) => {
+export const uploadExamAsset = async (fileBlob, paperId = null) => {
   try {
     let token = localStorage.getItem("token");
 
@@ -308,7 +370,7 @@ export const uploadExamAsset = async (fileBlob) => {
 export const deleteExamAsset = async (fileUrl) => {
   try {
     const config = await getAuthConfig();
-    const response = await axios.post(
+    const response = await apiClient.post(
       `${API_URL}/delete-asset`,
       { fileUrl },
       config,

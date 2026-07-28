@@ -254,53 +254,37 @@ export default function AppRoutes() {
             <Route path="*" element={<Navigate to="/validator" replace />} />
           </Route>
 
-          {/* 8. Finance Administration Control Center */}
-          <Route
-            path="/finance-admin"
-            element={
-              <ProtectedRoute allowedRoles={["finance_admin", "finance"]}>
-                <FinanceAdminLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<FinanceDashboard />} />
-            <Route
-              path="subscriptions"
-              element={
-                <ProtectedRoute requiredPrivilege="manage_subscriptions">
-                  <SubscriptionPlans />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="exam-credits"
-              element={
-                <ProtectedRoute requiredPrivilege="manage_subscriptions">
-                  <ExamCreditValuation />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="payouts"
-              element={
-                <ProtectedRoute requiredPrivilege="approve_payouts">
-                  <TutorPayoutsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="ledger"
-              element={
-                <ProtectedRoute requiredPrivilege="view_ledger">
-                  <TransactionLedger />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="*"
-              element={<Navigate to="/finance-admin" replace />}
-            />
-          </Route>
+        {/* 8. Finance Administration Control Center */}
+        <Route path="/finance-admin" element={<ProtectedRoute allowedRoles={['finance_admin', 'finance']}><FinanceAdminLayout /></ProtectedRoute>}>
+          <Route index element={<FinanceDashboard />} />
+          
+          <Route path="subscriptions" element={
+            <ProtectedRoute requiredPrivilege="manage_subscriptions">
+              <SubscriptionPlans />
+            </ProtectedRoute>
+          } />
+
+          <Route path="exam-credits" element={
+            <ProtectedRoute requiredPrivilege="manage_credits">
+              <ExamCreditValuation />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="payouts" element={
+            <ProtectedRoute requiredPrivilege="approve_payouts">
+              <TutorPayoutsPage />
+            </ProtectedRoute>
+          } />
+          
+          {/* ✅ FIXED: Transaction Ledger - Public page, no permission required */}
+          <Route path="ledger" element={
+            <ProtectedRoute>
+              <TransactionLedger />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="*" element={<Navigate to="/finance-admin" replace />} />
+        </Route>
 
           {/* 9. Public Facing Content & Common Views */}
           <Route element={<PublicLayout />}>
