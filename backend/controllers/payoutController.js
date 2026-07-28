@@ -97,7 +97,6 @@ const syncTutorToPayouts = async (tutorId, updateData) => {
         console.log(`🔄 Syncing tutor data to payouts: ${tutorId}`);
         console.log(`📝 Update data:`, updateData);
         
-        // Get all payouts for this tutor
         const payoutSnapshot = await db.collection('tutor_payouts')
             .where('tutorId', '==', tutorId)
             .get();
@@ -166,7 +165,6 @@ const autoSyncUserToPayouts = async (tutorId) => {
     try {
         console.log(`🔄 Auto-sync triggered for tutor: ${tutorId}`);
         
-        // Get updated user data
         const tutorDoc = await db.collection('users').doc(tutorId).get();
         if (!tutorDoc.exists) {
             console.log(`   ❌ Tutor not found: ${tutorId}`);
@@ -175,19 +173,13 @@ const autoSyncUserToPayouts = async (tutorId) => {
         
         const tutorData = tutorDoc.data();
         
-        // Tutor නම් පමනක් sync වෙන්න ඕන
         if (tutorData.role !== 'tutor') {
             console.log(`   ⚠️ User is not a tutor (role: ${tutorData.role}), skipping sync`);
             return { success: false, message: "User is not a tutor" };
         }
         
-        // Get bank details
         const bankDetails = await getTutorBankDetails(tutorId);
-        
-        // Build sync data
         const syncData = buildSyncDataFromUser(tutorData, bankDetails);
-        
-        // Sync to payouts
         const result = await syncTutorToPayouts(tutorId, syncData);
         
         return { 
@@ -203,7 +195,7 @@ const autoSyncUserToPayouts = async (tutorId) => {
 };
 
 // ============================================
-// 1. GET ACTIVE TUTORS WITH PURCHASED EXAMS ONLY
+// 1. GET ACTIVE TUTORS WITH PURCHASED EXAMS ONLY (✅ OPTIMIZED - NO N+1)
 // ============================================
 exports.getActiveTutorsPayouts = async (req, res) => {
     try {
@@ -257,40 +249,33 @@ exports.getActiveTutorsPayouts = async (req, res) => {
                 
                 if (!levelsSnapshot.empty) {
                     console.log(`   ✅ Found ${levelsSnapshot.size} levels in subcollection`);
-                    
                     levelsSnapshot.forEach(levelDoc => {
                         const levelData = levelDoc.data();
                         const levelId = levelDoc.id;
-                        
-                        const credits = levelData.credits || 0;
                         levels[levelId] = {
                             level_name: levelData.level_name || levelId,
-                            credits: credits,
+                            credits: levelData.credits || 0,
                             credit_cost: levelData.credit_cost || 0,
                             isCreditSet: levelData.isCreditSet || false,
                             is_active: levelData.is_active || 1
                         };
-                        console.log(`         ✅ Added: ${levelId} -> ${credits} credits`);
+                        console.log(`         ✅ Added: ${levelId} -> ${levels[levelId].credits} credits`);
                     });
                 } else {
                     if (data.levels !== undefined && data.levels !== null) {
                         console.log(`   ✅ levels field found in document (fallback)`);
-                        
                         if (typeof data.levels === 'object' && !Array.isArray(data.levels)) {
-                            const levelKeys = Object.keys(data.levels);
-                            
-                            levelKeys.forEach(levelKey => {
+                            Object.keys(data.levels).forEach(levelKey => {
                                 const levelData = data.levels[levelKey];
                                 if (levelData && typeof levelData === 'object') {
-                                    const credits = levelData.credits || 0;
                                     levels[levelKey] = {
                                         level_name: levelData.level_name || levelKey,
-                                        credits: credits,
+                                        credits: levelData.credits || 0,
                                         credit_cost: levelData.credit_cost || 0,
                                         isCreditSet: levelData.isCreditSet || false,
                                         is_active: levelData.is_active || 1
                                     };
-                                    console.log(`         ✅ Added: ${levelKey} -> ${credits} credits (fallback)`);
+                                    console.log(`         ✅ Added: ${levelKey} -> ${levels[levelKey].credits} credits (fallback)`);
                                 }
                             });
                         }
@@ -310,7 +295,6 @@ exports.getActiveTutorsPayouts = async (req, res) => {
             };
             
             categoriesLowerMap[categoryId.toLowerCase()] = categoriesMap[categoryId];
-            
             console.log(`   📊 Final levels count: ${Object.keys(levels).length}`);
         }
 
@@ -342,41 +326,42 @@ exports.getActiveTutorsPayouts = async (req, res) => {
 
         // Get purchased exams
         const allPurchasedSnapshot = await db.collection('purchased_exams').get();
-        const purchasedExamsMap = {};
-        
         console.log(`📊 Total purchased exams: ${allPurchasedSnapshot.size}`);
-        
+
+        // ============================================
+        // 🔥 FIX: Build Student Count Map (NO EXTRA QUERIES!)
+        // ============================================
+        const examStudentCountMap = {};
         allPurchasedSnapshot.forEach(doc => {
             const data = doc.data();
             const examId = data.examId || data.exam_id;
-            
-            console.log(`📝 Exam: ${examId}`);
-            
+            const studentId = data.student_id;
+            if (!examId) return;
+            if (!examStudentCountMap[examId]) {
+                examStudentCountMap[examId] = new Set();
+            }
+            if (studentId) {
+                examStudentCountMap[examId].add(studentId);
+            }
+        });
+
+        // ============================================
+        // 🔥 FIX: Group by Tutor
+        // ============================================
+        const purchasedExamsMap = {};
+        allPurchasedSnapshot.forEach(doc => {
+            const data = doc.data();
+            const examId = data.examId || data.exam_id;
             const examData = examDataMap[examId];
-            if (!examData) {
-                console.log(`   ⚠️ Exam not found`);
-                return;
-            }
-            
+            if (!examData || !examData.tutor_id) return;
             const tutorId = examData.tutor_id;
-            if (!tutorId) {
-                console.log(`   ⚠️ No tutor_id`);
-                return;
-            }
-            
-            console.log(`   ✅ tutor_id: ${tutorId}`);
-            console.log(`   ✅ category_id: ${examData.category_id || 'none'}`);
-            console.log(`   ✅ level_id: ${examData.level_id || 'none'}`);
-            
             if (!purchasedExamsMap[tutorId]) {
                 purchasedExamsMap[tutorId] = {
                     examIds: new Set(),
-                    totalPurchases: 0,
                     studentIds: new Set(),
-                    examDetails: []
+                    totalPurchases: 0
                 };
             }
-            
             purchasedExamsMap[tutorId].examIds.add(examId);
             if (data.student_id) {
                 purchasedExamsMap[tutorId].studentIds.add(data.student_id);
@@ -402,18 +387,16 @@ exports.getActiveTutorsPayouts = async (req, res) => {
             
             console.log(`   ✅ ${tutorPurchasedData.totalPurchases} purchases`);
             
-            // Bank cards
+            // Bank cards (1 read per tutor)
             let bankName = "Not Specified";
             let bankAccount = "N/A";
             let bankCardId = null;
-            
             try {
                 const cardsSnapshot = await db.collection('users')
                     .doc(tutorId)
                     .collection('bankCards')
                     .limit(1)
                     .get();
-                
                 if (!cardsSnapshot.empty) {
                     const cardData = cardsSnapshot.docs[0].data();
                     bankName = cardData.bankName || cardData.name || "Not Specified";
@@ -424,7 +407,7 @@ exports.getActiveTutorsPayouts = async (req, res) => {
                 console.log(`   ⚠️ Error fetching bank cards: ${error.message}`);
             }
             
-            // Tokens Calculation
+            // 🔥 Tokens Calculation - NO EXTRA QUERIES!
             let totalTokens = 0;
             let paperCount = 0;
             let studentCount = 0;
@@ -443,13 +426,11 @@ exports.getActiveTutorsPayouts = async (req, res) => {
                 
                 if (categoryId && categoriesMap[categoryId]) {
                     const category = categoriesMap[categoryId];
-                    
                     if (levelId && category.levels && category.levels[levelId]) {
                         examTokens = category.levels[levelId].credits || 0;
                         console.log(`   ✅ ${examId} -> ${examTokens} tokens (level: ${levelId})`);
                         matched = true;
                     }
-                    
                     if (!matched) {
                         examTokens = category.credits || 0;
                         console.log(`   ✅ ${examId} -> ${examTokens} tokens (category: ${categoryId})`);
@@ -461,7 +442,6 @@ exports.getActiveTutorsPayouts = async (req, res) => {
                     const lowerCategoryId = categoryId.toLowerCase();
                     if (categoriesLowerMap[lowerCategoryId]) {
                         const category = categoriesLowerMap[lowerCategoryId];
-                        
                         if (levelId && category.levels && category.levels[levelId]) {
                             examTokens = category.levels[levelId].credits || 0;
                             console.log(`   ✅ ${examId} -> ${examTokens} tokens (level: ${levelId}, case-insensitive)`);
@@ -481,13 +461,9 @@ exports.getActiveTutorsPayouts = async (req, res) => {
                 
                 totalTokens += examTokens;
                 
-                try {
-                    const purchasedSnapshot = await db.collection('purchased_exams')
-                        .where('examId', '==', examId)
-                        .get();
-                    studentCount += purchasedSnapshot.size;
-                } catch (error) {
-                    console.log(`   ⚠️ Error: ${error.message}`);
+                // ✅ FIX: Use pre-calculated map instead of querying Firestore
+                if (examStudentCountMap[examId]) {
+                    studentCount += examStudentCountMap[examId].size;
                 }
             }
             
@@ -614,12 +590,9 @@ exports.getTutorsTokens = async (req, res) => {
                 
                 if (!levelsSnapshot.empty) {
                     console.log(`   ✅ Found ${levelsSnapshot.size} levels in subcollection for ${categoryId}`);
-                    
                     levelsSnapshot.forEach(levelDoc => {
-                        const levelData = levelDoc.data();
-                        const levelId = levelDoc.id;
-                        levels[levelId] = levelData.credits || 0;
-                        console.log(`         ✅ ${levelId}: ${levels[levelId]} credits`);
+                        levels[levelDoc.id] = levelDoc.data().credits || 0;
+                        console.log(`         ✅ ${levelDoc.id}: ${levels[levelDoc.id]} credits`);
                     });
                 } else {
                     if (data.levels && typeof data.levels === 'object') {
@@ -764,12 +737,10 @@ exports.createPayoutRequest = async (req, res) => {
         console.log(`📝 Creating payout request for tutor: ${tutorId}`);
         console.log(`📊 Tokens: ${tokens}`);
         
-        // Get REAL data from database
         let exchangeRate = creditValue || await getExchangeRate();
         const platformCommission = await getPlatformCommission();
         const minPayoutThreshold = await getMinPayoutThreshold();
         
-        // Get tutor details from users collection
         const tutorDoc = await db.collection('users').doc(tutorId).get();
         if (!tutorDoc.exists) {
             return res.status(404).json({
@@ -788,7 +759,6 @@ exports.createPayoutRequest = async (req, res) => {
             });
         }
         
-        // Get bank details
         let bankName = "Not Specified";
         let bankAccount = "N/A";
         let bankCardId = null;
@@ -810,17 +780,12 @@ exports.createPayoutRequest = async (req, res) => {
             console.log(`   ⚠️ Error fetching bank cards: ${error.message}`);
         }
         
-        // Calculate amounts
         const totalAmount = tokens * exchangeRate;
         const tutorShare = totalAmount * (1 - platformCommission);
         const platformShare = totalAmount * platformCommission;
-        
-        // Check if meets minimum threshold
         const meetsMinThreshold = tutorShare >= minPayoutThreshold;
         
-        // 🔥 COMPLETE PAYOUT DATA - UI එකේ පෙන්වන සියලුම data
         const payoutData = {
-            // ===== TUTOR INFORMATION =====
             tutorId: tutorId,
             tutorName: tutorData.name || tutorData.tutorName || "Unknown Tutor",
             tutorEmail: tutorData.email || "",
@@ -829,40 +794,28 @@ exports.createPayoutRequest = async (req, res) => {
             tutorQualifications: tutorData.qualifications || "",
             tutorAvatar: (tutorData.name || tutorData.tutorName || "T")[0].toUpperCase(),
             tutorCredits: currentCredits,
-            
-            // ===== BANK DETAILS =====
             bankName: bankName,
             bankAccount: bankAccount,
             bankCardId: bankCardId,
-            
-            // ===== PAYOUT DETAILS =====
             totalTokens: tokens,
             totalAmount: totalAmount,
             tutorShare: tutorShare,
             platformShare: platformShare,
-            
-            // ===== FINANCIAL SETTINGS =====
             creditValue: exchangeRate,
             exchangeRate: exchangeRate,
             platformCommission: platformCommission,
             minPayoutThreshold: minPayoutThreshold,
             meetsMinThreshold: meetsMinThreshold,
-            
-            // ===== EXAM STATISTICS =====
             paperCount: 0,
             studentCount: 0,
             totalPurchases: 0,
             uniqueExamsPurchased: 0,
             uniqueStudents: 0,
             tokensPerPaper: 0,
-            
-            // ===== STATUS & TIMESTAMPS =====
             status: 'Pending',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             requestSource: 'admin_dashboard',
-            
-            // ===== TRANSACTION REFERENCE =====
             transactionId: null,
             transactionCreated: false,
             settledAt: null,
@@ -904,17 +857,14 @@ exports.getAllPayouts = async (req, res) => {
             ...doc.data()
         }));
 
-        // ✅ CORRECT: Filter settled payouts (status check without transactionCreated)
         const settledPayouts = payouts.filter(p => 
             p.status === 'Settled' || p.status === 'settled'
         );
 
-        // ✅ CORRECT: Filter pending payouts
         const pendingPayouts = payouts.filter(p => 
             p.status === 'Pending' || p.status === 'pending'
         );
 
-        // ✅ CORRECT: Filter declined payouts
         const declinedPayouts = payouts.filter(p => 
             p.status === 'Declined' || p.status === 'declined'
         );
@@ -978,6 +928,7 @@ exports.getAllPayouts = async (req, res) => {
         });
     }
 };
+
 // ============================================
 // 5. GET SETTLED PAYOUTS
 // ============================================
@@ -1148,7 +1099,6 @@ exports.updatePayoutStatus = async (req, res) => {
                 });
                 console.log(`✅ Tutor credits updated: ${currentCredits} -> ${Math.max(0, newCredits)}`);
                 
-                // 🔥 AUTO SYNC: Credits change වෙන නිසා payouts sync කරන්න
                 await autoSyncUserToPayouts(payoutData.tutorId);
             }
 
@@ -1469,7 +1419,6 @@ exports.revertSettledPayout = async (req, res) => {
                 updatedAt: new Date().toISOString()
             });
             
-            // 🔥 AUTO SYNC: Credits revert වෙන නිසා payouts sync කරන්න
             await autoSyncUserToPayouts(payoutData.tutorId);
         }
         
@@ -1619,7 +1568,6 @@ exports.updateTutorCredits = async (req, res) => {
             updatedAt: new Date().toISOString()
         });
         
-        // 🔥 AUTO SYNC: Credits change වෙන නිසා payouts sync කරන්න
         const syncResult = await autoSyncUserToPayouts(id);
         
         res.status(200).json({
@@ -1661,7 +1609,6 @@ exports.addTutorPayout = async (req, res) => {
             qualifications
         } = req.body;
 
-        // Validate required fields
         if (!tutorId) {
             return res.status(400).json({
                 success: false,
@@ -1669,19 +1616,15 @@ exports.addTutorPayout = async (req, res) => {
             });
         }
 
-        // Get tutor data from users collection
         const tutorDoc = await db.collection('users').doc(tutorId).get();
         let tutorData = {};
         if (tutorDoc.exists) {
             tutorData = tutorDoc.data();
         }
 
-        // Get bank details
         const bankDetails = await getTutorBankDetails(tutorId);
 
-        // Save කිරීමට අවශ්‍ය ඩේටා structure එක
         const payoutData = {
-            // ===== TUTOR INFORMATION =====
             tutorId: tutorId,
             tutorName: tutorName || tutorData.name || tutorData.tutorName || 'Unknown Tutor',
             tutorEmail: tutorEmail || tutorData.email || '',
@@ -1698,47 +1641,34 @@ exports.addTutorPayout = async (req, res) => {
             tutorAddress: tutorData.address || null,
             tutorLanguage: tutorData.language || null,
             tutorCertificate: tutorData.certificateData || null,
-            
-            // ===== BANK DETAILS =====
             bankName: bankName || bankDetails.bankName || 'Not Specified',
             bankAccount: accountNo || bankDetails.bankAccount || 'N/A',
             bankCardId: bankDetails.bankCardId || null,
-            
-            // ===== PAYOUT DETAILS =====
             totalTokens: Number(totalTokens || 0),
             totalAmount: Number(totalAmount || totalTokens * 20 || 0),
             netPayout: Number(netPayout || 0),
             platformShare: Number(platformShare || 0),
-            
-            // ===== FINANCIAL SETTINGS =====
             creditValue: Number(creditValue || 20),
             exchangeRate: Number(creditValue || 20),
             platformCommission: 0.2,
             minPayoutThreshold: 5000,
             meetsMinThreshold: Number(netPayout || 0) >= 5000,
-            
-            // ===== EXAM STATISTICS =====
             paperCount: Number(paperCount || 0),
             studentCount: Number(studentCount || 0),
             totalPurchases: 0,
             uniqueExamsPurchased: 0,
             uniqueStudents: 0,
             tokensPerPaper: Number(paperCount || 0) > 0 ? Math.round(Number(totalTokens || 0) / Number(paperCount || 0)) : 0,
-            
-            // ===== STATUS & TIMESTAMPS =====
             status: 'Pending',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             requestSource: 'admin_dashboard',
-            
-            // ===== TRANSACTION REFERENCE =====
             transactionId: null,
             transactionCreated: false,
             settledAt: null,
             declinedAt: null
         };
 
-        // Firestore එකේ 'tutor_payouts' නැතත්, මේ කෝඩ් එකෙන් auto-create වෙනවා
         const docRef = await db.collection('tutor_payouts').add(payoutData);
 
         console.log(`✅ Tutor payout created: ${docRef.id}`);
@@ -1875,7 +1805,6 @@ exports.syncAllTutors = async (req, res) => {
         });
     }
 };
-
 
 console.log('✅ Payout Controller Loaded Successfully');
 console.log('📋 Available functions:', Object.keys(exports).join(', '));
