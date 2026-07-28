@@ -4,13 +4,18 @@ import {
   Search, Download, CheckCircle, XCircle, Clock, AlertCircle, Printer,
   Activity, DollarSign, CreditCard, TrendingUp, Crown, Copy, Loader2
 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import GlassCard from '../../components/ui/GlassCard';
-import FinanceService from '../../services/financeService';
+import { getRates } from '../../services/globalConfigService';
+import { createPayout, getActiveTutors } from '../../services/payoutService';
 
-export default function TransactionLedger() {
-  const [logs, setLogs] = useState([]);
+const EXCHANGE_RATE = 20.00;
+const PLATFORM_COMMISSION = 0.20;
+
+export default function TutorPayoutsPage() {
+  const [creditRate, setCreditRate] = useState(EXCHANGE_RATE);
+  const [platformCommission, setPlatformCommission] = useState(PLATFORM_COMMISSION);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [tutors, setTutors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,11 +92,21 @@ export default function TransactionLedger() {
     return statusMap[status] || statusMap['Pending'];
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  // ⭐ Get declined count
+  useEffect(() => {
+    const fetchDeclinedCount = async () => {
+      try {
+        const API_URL = import.meta.env.VITE_API_URL || '';
+        const response = await axios.get(`${API_URL}/api/payouts/declined`);
+        if (response.data && response.data.success) {
+          setDeclinedCount(response.data.count || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching declined count:', error);
+      }
+    };
+    fetchDeclinedCount();
+  }, []);
 
   const formatDate = (dateStr) => {
     if (!dateStr || dateStr === 'N/A') return 'N/A';
@@ -180,34 +195,151 @@ export default function TransactionLedger() {
               data.cell.styles.textColor = [239, 68, 68];
               data.cell.styles.fontStyle = 'bold';
             } else {
-              data.cell.styles.textColor = [245, 158, 11];
+              setTutors(prevTutors => prevTutors.filter(t => t.id !== tutorId));
+              console.log('❌ Payout declined');
             }
           }
         }
-      });
+      }
 
-      doc.setFontSize(8);
-      doc.setTextColor(156, 163, 175);
-      doc.text('Confidential Document - Internal Finance Administration Langoora Platform', 14, 285);
-
-      doc.save(`Langoora_Transaction_Ledger_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (error) {
-      console.error("PDF Export failed:", error);
-      alert(`Failed to export PDF: ${error.message}`);
+      console.error('Error processing payout:', error);
+      alert('Error processing payout: ' + error.message);
     } finally {
-      setExporting(false);
+      setProcessingId(null);
     }
   };
 
-  if (loading) {
+  // ⭐ Delete declined payout
+  const handleDeleteDeclined = async (id) => {
+    if (!confirm('Delete this declined payout?')) return;
+    try {
+      setProcessingId(id);
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      await axios.delete(`${API_URL}/api/payouts/${id}`);
+      setTutors(tutors.filter(t => t.id !== id));
+    } catch (error) {
+      console.error('Error deleting:', error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ⭐ Clear all declined
+  const clearAllDeclined = async () => {
+    if (!confirm(`Delete all ${declinedCount} declined payouts?`)) return;
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await axios.get(`${API_URL}/api/payouts/declined`);
+      if (response.data && response.data.success) {
+        const declinedIds = response.data.payouts.map(p => p.id);
+        for (const id of declinedIds) {
+          await axios.delete(`${API_URL}/api/payouts/${id}`);
+        }
+        setDeclinedCount(0);
+        alert(`Deleted ${declinedIds.length} declined payouts`);
+      }
+    } catch (error) {
+      console.error('Error deleting declined:', error);
+    }
+  };
+
+  // ⭐ Add new payout using payoutService
+  const handleAddPayout = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      const result = await createPayout({
+        tutorId: newPayout.tutorId,
+        tutorName: newPayout.tutorName,
+        totalTokens: parseInt(newPayout.totalTokens) || 0,
+        netPayout: parseFloat(newPayout.netPayout) || 0,
+        bankName: newPayout.bankName || 'Not Specified',
+        accountNo: newPayout.accountNo || 'N/A',
+        tutorEmail: newPayout.tutorEmail || '',
+        tutorPhone: newPayout.tutorPhone || '',
+        university: newPayout.university || '',
+        qualifications: newPayout.qualifications || ''
+      });
+
+      if (result && result.success) {
+        alert('✅ Payout added successfully!');
+        setShowAddModal(false);
+        setNewPayout({
+          tutorId: '',
+          tutorName: '',
+          totalTokens: '',
+          netPayout: '',
+          bankName: '',
+          accountNo: '',
+          tutorEmail: '',
+          tutorPhone: '',
+          university: '',
+          qualifications: ''
+        });
+        fetchTutors();
+      } else {
+        alert('❌ Failed to add payout');
+      }
+    } catch (error) {
+      console.error('Error adding payout:', error);
+      alert('❌ Failed to add payout: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ⭐ Statistics
+  const pendingCount = tutors.filter(t => t.status === 'Pending').length;
+  const settledCount = tutors.filter(t => t.status === 'Settled').length;
+  const totalTokensAll = tutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+  const totalPayout = tutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
+
+  console.log('📊 UI Stats:', { pendingCount, settledCount, totalTokensAll });
+
+  // ⭐ Filter logic
+  const filteredTutors = tutors.filter(t => {
+    if (t.status === 'Declined') return false;
+    const matchFilter = filter === 'all' || t.status.toLowerCase() === filter.toLowerCase();
+    const matchSearch = (t.tutor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       (t.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       (t.bank || '').toLowerCase().includes(searchTerm.toLowerCase());
+    return matchFilter && matchSearch;
+  });
+
+  // ⭐ Status config
+  const getStatusConfig = (status) => {
+    const configs = {
+      'Pending': { 
+        color: '#f59e0b', 
+        bg: 'bg-amber-500/10', 
+        border: 'border-amber-500/20',
+        text: 'text-amber-400',
+        icon: Clock,
+      },
+      'Settled': { 
+        color: '#10b981', 
+        bg: 'bg-emerald-500/10', 
+        border: 'border-emerald-500/20',
+        text: 'text-emerald-400',
+        icon: CheckCircle,
+      }
+    };
+    return configs[status] || configs['Pending'];
+  };
+
+  // ⭐ Loading
+  if (loading || settingsLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-        <p className="text-gray-400">Loading transactions...</p>
+      <div className="flex flex-col items-center justify-center min-h-[500px] space-y-4">
+        <RefreshCw size={40} className="animate-spin text-emerald-400" />
+        <p className="text-gray-400">Loading tutor data from database...</p>
       </div>
     );
   }
 
+  // ⭐ Render
   return (
     <div className="space-y-6 font-sans">
       {/* HERO HEADER */}
@@ -228,10 +360,10 @@ export default function TransactionLedger() {
       {/* STATS ROW */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Transactions', value: totalTransactions, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-          { label: 'Total Revenue', value: `LKR ${totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-          { label: 'Success Rate', value: `${successRate}%`, icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/10' },
-          { label: 'Failed', value: failedCount, icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
+          { label: 'Total Tokens', value: totalTokensAll.toLocaleString(), icon: Star, color: 'text-amber-400' },
+          { label: 'Pending', value: pendingCount, icon: Clock, color: 'text-amber-400' },
+          { label: 'Settled', value: settledCount, icon: CheckCircle, color: 'text-emerald-400' },
+          { label: 'Total Credits Used', value: transactions.totalCredits?.toLocaleString() || 0, icon: Coins, color: 'text-purple-400' },
         ].map((stat, idx) => (
           <motion.div key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08 }}>
             <GlassCard className="p-5 border-white/10 hover:border-blue-500/30 transition-all duration-300 hover:scale-[1.02]">
@@ -245,11 +377,50 @@ export default function TransactionLedger() {
         ))}
       </div>
 
+      {/* CONVERSION RATE */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+        <GlassCard className="p-4 border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                  <Percent size={18} className="text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Exchange Rate</p>
+                  <p className="text-base font-bold text-white">1 Credit = LKR {creditRate.toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="hidden md:block w-px h-10 bg-white/10" />
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">
+                  <Shield size={18} className="text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Platform Commission</p>
+                  <p className="text-base font-bold text-white">{(platformCommission * 100).toFixed(0)}%</p>
+                </div>
+              </div>
+              <div className="hidden md:block w-px h-10 bg-white/10" />
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
+                  <DollarSign size={18} className="text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Total Payout</p>
+                  <p className="text-base font-bold text-white">LKR {totalPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+      </motion.div>
+
       {/* SEARCH & FILTERS */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               type="text"
               placeholder="Search student, ref or email..."
@@ -258,31 +429,22 @@ export default function TransactionLedger() {
               className="pl-11 pr-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white placeholder:text-gray-500 focus:border-blue-500/50 focus:outline-none transition-all duration-300 w-72"
             />
           </div>
-          
-          <div className="flex gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
-            >
-              <option value="all">All Status</option>
-              <option value="success">Success</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-              <option value="declined">Declined</option>
-              <option value="pending">Pending</option>
-              <option value="error">Error</option>
-            </select>
-            
-            <select
-              value={filterGateway}
-              onChange={(e) => setFilterGateway(e.target.value)}
-              className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
-            >
-              <option value="all">All Gateways</option>
-              <option value="stripe">Stripe</option>
-              <option value="card">Card / Payhere</option>
-            </select>
+          <div className="flex gap-1.5 bg-white/5 rounded-xl p-1 border border-white/10">
+            {['All', 'Pending', 'Settled'].map((status) => (
+              <motion.button
+                key={status}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setFilter(status.toLowerCase())}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
+                  filter === status.toLowerCase()
+                    ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/20'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {status}
+              </motion.button>
+            ))}
           </div>
         </div>
 
@@ -398,13 +560,19 @@ export default function TransactionLedger() {
                           <h3 className="text-lg font-semibold text-white">No Transactions Found</h3>
                           <p className="text-sm text-gray-400">There are no real transactions recorded in the system yet.</p>
                         </div>
-                      </td>
-                    </tr>
-                  )}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
+                        <div>
+                          <h3 className="text-base font-bold text-white">{tutor.tutor}</h3>
+                          <p className="text-xs text-gray-400 font-mono">{tutor.id}</p>
+                          {tutor.email && (
+                            <p className="text-[10px] text-gray-500">{tutor.email}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className={`flex items-center gap-1.5 px-3 py-1.5 ${statusConfig.bg} rounded-lg border ${statusConfig.border}`}>
+                        <StatusIcon size={13} className={statusConfig.text} />
+                        <span className={`text-xs font-bold ${statusConfig.text}`}>{tutor.status}</span>
+                      </div>
+                    </div>
 
           <div className="px-5 py-3.5 border-t border-white/10 bg-white/[0.02] flex items-center justify-between">
             <div className="text-xs text-gray-400">Showing {filteredLogs.length} of {logs.length} transactions</div>
@@ -414,24 +582,39 @@ export default function TransactionLedger() {
               <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-amber-400 rounded-full" /><span className="text-xs text-gray-400">Pending</span></div>
             </div>
           </div>
-        </GlassCard>
-      </motion.div>
+        ) : (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+            <GlassCard className="p-12 text-center border-white/10">
+              <div className="flex flex-col items-center gap-3">
+                <div className="p-5 bg-white/5 rounded-full">
+                  <Users size={40} className="text-gray-500" />
+                </div>
+                <h3 className="text-lg font-semibold text-white">No Active Tutors Found</h3>
+                <p className="text-sm text-gray-400">
+                  {searchTerm ? 'Try adjusting your search' : 'No pending or settled payouts'}
+                </p>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* DETAIL MODAL */}
+      {/* ⭐ ADD PAYOUT MODAL */}
       <AnimatePresence>
-        {showModal && selectedLog && (
+        {showAddModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+            onClick={() => setShowAddModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-[#0f1629] to-[#1a1f3a] border border-white/10 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto font-sans"
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-[#0a1628] border border-white/10 rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -442,18 +625,30 @@ export default function TransactionLedger() {
                 </div>
                 <button onClick={() => setShowModal(false)} className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-gray-400 hover:text-white cursor-pointer">✕</button>
               </div>
+              
+              <form onSubmit={handleAddPayout} className="space-y-4">
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Tutor ID *</label>
+                  <input
+                    type="text"
+                    value={newPayout.tutorId}
+                    onChange={(e) => setNewPayout({...newPayout, tutorId: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter tutor ID"
+                    required
+                  />
+                </div>
 
-              <div className="space-y-4">
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xl font-bold text-white">
-                      {selectedLog.student?.charAt(0) || 'U'}
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-white">{selectedLog.student || 'Unknown'}</h3>
-                      <p className="text-sm text-gray-400">{selectedLog.email || 'N/A'}</p>
-                    </div>
-                  </div>
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Tutor Name *</label>
+                  <input
+                    type="text"
+                    value={newPayout.tutorName}
+                    onChange={(e) => setNewPayout({...newPayout, tutorName: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter tutor name"
+                    required
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -486,15 +681,17 @@ export default function TransactionLedger() {
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Transaction Time</p>
-                  <p className="text-sm font-semibold text-white mt-1">{formatDate(selectedLog.timestamp)}</p>
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Net Payout (LKR) *</label>
+                  <input
+                    type="number"
+                    value={newPayout.netPayout}
+                    onChange={(e) => setNewPayout({...newPayout, netPayout: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter net payout"
+                    required
+                  />
                 </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* COPY NOTIFICATION */}
       <AnimatePresence>

@@ -1,49 +1,48 @@
-import { Outlet, Navigate } from 'react-router-dom';
-import { LayoutDashboard, UserCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
-import DashboardSidebar from '../components/layout/DashboardSidebar'; 
-import { useAuth } from '../context/AuthContext'; 
-
+import { Outlet, Navigate } from "react-router-dom";
+import {
+  LayoutDashboard,
+  UserCheck,
+  ShieldAlert,
+  ClipboardCheck,
+} from "lucide-react";
+import DashboardSidebar from "../components/layout/DashboardSidebar";
+import { useAuth } from "../context/AuthContext";
 
 const validatorNavItems = [
-  { 
-    label: 'Overview', 
-    path: '', 
-    icon: LayoutDashboard 
-
+  {
+    label: "Overview",
+    path: "",
+    icon: LayoutDashboard,
   },
-  { 
-    label: 'Tutor Verifications', 
-    path: 'tutor-verification', 
-    icon: UserCheck, 
-    requiredPrivilege: 'verify_tutors' 
+  {
+    label: "Tutor Verifications",
+    path: "tutor-verification",
+    icon: UserCheck,
+    requiredPrivilege: "verify_tutors",
   },
-  { 
-    label: 'Quality Audits', 
-    path: 'quality-audits', 
-    icon: ShieldAlert, 
-    requiredPrivilege: 'audit_exams' 
+  {
+    label: "Quality Audits",
+    path: "quality-audits",
+    icon: ShieldAlert,
+    requiredPrivilege: "audit_exams",
   },
-  { 
-    label: 'Content Disputes', 
-    path: 'content-disputes', 
-    icon: AlertTriangle, 
-    requiredPrivilege: 'resolve_disputes' 
+  {
+    label: "My Audits",
+    path: "my-audits",
+    icon: ClipboardCheck,
+    requiredPrivilege: "audit_exams",
   },
 ];
 
 export default function AcademicValidatorLayout() {
-  const { user, role } = useAuth(); 
+  const { user, role } = useAuth();
 
-
-  if (role !== 'validator') {
+  if (role !== "validator") {
     return <Navigate to="/auth/login" replace />;
   }
 
-
-  const filteredNavItems = validatorNavItems.filter(item => {
+  const filteredNavItems = validatorNavItems.filter((item) => {
     if (!item.requiredPrivilege) return true;
-    
-
     return user?.privileges?.includes(item.requiredPrivilege);
   });
 

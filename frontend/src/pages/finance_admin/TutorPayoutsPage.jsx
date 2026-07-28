@@ -13,6 +13,12 @@ import GlassCard from '../../components/ui/GlassCard';
 import { getRates } from '../../services/globalConfigService';
 import { createPayout, getActiveTutors } from '../../services/payoutService';
 
+// ============================================
+// 🚀 FORCE BACKEND URL (Direct Hardcode Fix)
+// ============================================
+const API_URL = 'http://localhost:5000';
+// ============================================
+
 const EXCHANGE_RATE = 20.00;
 const PLATFORM_COMMISSION = 0.20;
 
@@ -69,27 +75,22 @@ export default function TutorPayoutsPage() {
       setLoading(true);
       setError(null);
 
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      
       // Fetch both tutors and payouts in parallel
       const [tutorsRes, payoutsRes] = await Promise.all([
-        axios.get(`${API_URL}/api/payouts/active-tutors`),
-        axios.get(`${API_URL}/api/payouts/get-all`)
+        axios.get(`${API_URL}/api/finance/active-tutors`),
+        axios.get(`${API_URL}/api/finance/get-all`)
       ]);
       
       if (tutorsRes.data?.success) {
         const allPayouts = payoutsRes.data?.payouts || [];
         const stats = payoutsRes.data?.stats || {};
         
-        // ✅ Map tutors with status from payouts
         const tutorsWithStatus = (tutorsRes.data.tutors || []).map(tutor => {
-          // Check if tutor has a settled payout
           const hasSettledPayout = allPayouts.some(p => 
             p.tutorId === tutor.id && 
             (p.status === 'Settled' || p.status === 'settled')
           );
           
-          // Check if tutor has a pending payout
           const hasPendingPayout = allPayouts.some(p => 
             p.tutorId === tutor.id && 
             (p.status === 'Pending' || p.status === 'pending')
@@ -103,10 +104,12 @@ export default function TutorPayoutsPage() {
           };
         });
         
-        setTutors(tutorsWithStatus);
-        console.log('✅ Tutors with REAL data and status:', tutorsWithStatus);
+        // ✅ Only tutors with at least 1 paper are shown
+        const tutorsWithPapers = tutorsWithStatus.filter(t => (t.paperCount || 0) > 0);
         
-        // ✅ Update stats from API
+        setTutors(tutorsWithPapers);
+        console.log('✅ Tutors with REAL data and status (with papers):', tutorsWithPapers);
+        
         setTransactions({
           totalCredits: stats.totalTokens || 0,
           totalAmount: stats.totalAmount || 0,
@@ -118,8 +121,7 @@ export default function TutorPayoutsPage() {
         setTutors([]);
       }
 
-      // Fetch transactions
-      const txRes = await axios.get(`${API_URL}/api/payouts/total-credits`);
+      const txRes = await axios.get(`${API_URL}/api/finance/total-credits`);
       if (txRes.data?.success) {
         setTransactions({
           totalCredits: txRes.data.totalCredits || 0,
@@ -144,8 +146,7 @@ export default function TutorPayoutsPage() {
   // ⭐ Fetch transactions
   const fetchTransactions = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      const response = await axios.get(`${API_URL}/api/payouts/total-credits`);
+      const response = await axios.get(`${API_URL}/api/finance/total-credits`);
       
       if (response.data && response.data.success) {
         setTransactions({
@@ -163,8 +164,7 @@ export default function TutorPayoutsPage() {
   useEffect(() => {
     const fetchDeclinedCount = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL || '';
-        const response = await axios.get(`${API_URL}/api/payouts/declined`);
+        const response = await axios.get(`${API_URL}/api/finance/declined`);
         if (response.data && response.data.success) {
           setDeclinedCount(response.data.count || 0);
         }
@@ -185,8 +185,6 @@ export default function TutorPayoutsPage() {
       if (!tutor) {
         throw new Error('Tutor not found');
       }
-
-      const API_URL = import.meta.env.VITE_API_URL || '';
       
       const payoutData = {
         tutorId: tutorId,
@@ -194,13 +192,13 @@ export default function TutorPayoutsPage() {
         creditValue: creditRate
       };
 
-      const createResponse = await axios.post(`${API_URL}/api/payouts/request`, payoutData);
+      const createResponse = await axios.post(`${API_URL}/api/finance/request`, payoutData);
       
       if (createResponse.data.success) {
         const payoutId = createResponse.data.payoutId;
         
         if (payoutId) {
-          const updateResponse = await axios.patch(`${API_URL}/api/payouts/update-status/${payoutId}`, {
+          const updateResponse = await axios.patch(`${API_URL}/api/finance/update-status/${payoutId}`, {
             status: newStatus
           });
 
@@ -234,8 +232,7 @@ export default function TutorPayoutsPage() {
     if (!confirm('Delete this declined payout?')) return;
     try {
       setProcessingId(id);
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      await axios.delete(`${API_URL}/api/payouts/${id}`);
+      await axios.delete(`${API_URL}/api/finance/${id}`);
       setTutors(tutors.filter(t => t.id !== id));
     } catch (error) {
       console.error('Error deleting:', error);
@@ -248,12 +245,11 @@ export default function TutorPayoutsPage() {
   const clearAllDeclined = async () => {
     if (!confirm(`Delete all ${declinedCount} declined payouts?`)) return;
     try {
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      const response = await axios.get(`${API_URL}/api/payouts/declined`);
+      const response = await axios.get(`${API_URL}/api/finance/declined`);
       if (response.data && response.data.success) {
         const declinedIds = response.data.payouts.map(p => p.id);
         for (const id of declinedIds) {
-          await axios.delete(`${API_URL}/api/payouts/${id}`);
+          await axios.delete(`${API_URL}/api/finance/${id}`);
         }
         setDeclinedCount(0);
         alert(`Deleted ${declinedIds.length} declined payouts`);
@@ -309,14 +305,6 @@ export default function TutorPayoutsPage() {
     }
   };
 
-  // ⭐ Statistics
-  const pendingCount = tutors.filter(t => t.status === 'Pending').length;
-  const settledCount = tutors.filter(t => t.status === 'Settled').length;
-  const totalTokensAll = tutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
-  const totalPayout = tutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
-
-  console.log('📊 UI Stats:', { pendingCount, settledCount, totalTokensAll });
-
   // ⭐ Filter logic
   const filteredTutors = tutors.filter(t => {
     if (t.status === 'Declined') return false;
@@ -326,6 +314,15 @@ export default function TutorPayoutsPage() {
                        (t.bank || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchFilter && matchSearch;
   });
+
+  // ⭐ Calculate totals from FILTERED tutors ONLY
+  const totalCreditsUsed = filteredTutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+  const totalGrossFiltered = filteredTutors.reduce((sum, t) => sum + (t.grossAmount || 0), 0);
+  const totalPayoutFiltered = filteredTutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
+  const pendingCount = filteredTutors.filter(t => t.status === 'Pending').length;
+  const settledCount = filteredTutors.filter(t => t.status === 'Settled').length;
+
+  console.log('📊 UI Stats:', { pendingCount, settledCount, totalCreditsUsed, totalGrossFiltered, totalPayoutFiltered });
 
   // ⭐ Status config
   const getStatusConfig = (status) => {
@@ -394,7 +391,6 @@ export default function TutorPayoutsPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            {/* 🔥 ADD PAYOUT BUTTON */}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -420,13 +416,33 @@ export default function TutorPayoutsPage() {
         </div>
       </motion.div>
 
-      {/* STATS ROW */}
+      {/* ⭐ STATS ROW - Using FILTERED tutors data ONLY */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Tokens', value: totalTokensAll.toLocaleString(), icon: Star, color: 'text-amber-400' },
-          { label: 'Pending', value: pendingCount, icon: Clock, color: 'text-amber-400' },
-          { label: 'Settled', value: settledCount, icon: CheckCircle, color: 'text-emerald-400' },
-          { label: 'Total Credits Used', value: transactions.totalCredits?.toLocaleString() || 0, icon: Coins, color: 'text-purple-400' },
+          { 
+            label: 'Platform Fee (20%)', 
+            value: `${(totalGrossFiltered * 0.2).toLocaleString() || 0}`,  
+            icon: Percent, 
+            color: 'text-rose-400' 
+          },
+          { 
+            label: 'Pending', 
+            value: pendingCount, 
+            icon: Clock, 
+            color: 'text-amber-400' 
+          },
+          { 
+            label: 'Settled', 
+            value: settledCount, 
+            icon: CheckCircle, 
+            color: 'text-emerald-400' 
+          },
+          { 
+            label: 'Total Credits Used', 
+            value: totalCreditsUsed.toLocaleString() || 0,  
+            icon: Coins, 
+            color: 'text-purple-400' 
+          },
         ].map((stat, idx) => (
           <motion.div key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08 }}>
             <GlassCard className="p-5 border border-white/10 hover:border-opacity-50 transition-all duration-300">
@@ -473,7 +489,7 @@ export default function TutorPayoutsPage() {
                 </div>
                 <div>
                   <p className="text-[10px] text-gray-400 font-medium uppercase">Total Payout</p>
-                  <p className="text-base font-bold text-white">LKR {totalPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                  <p className="text-base font-bold text-white">LKR {totalPayoutFiltered.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
                 </div>
               </div>
             </div>
