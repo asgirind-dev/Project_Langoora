@@ -1,13 +1,11 @@
 // frontend/src/pages/admin/AuditLogsPage.jsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Activity, Shield, User, BookOpen, DollarSign, AlertTriangle, 
+  Activity, Shield, User, BookOpen, DollarSign, 
   Calendar, Search, RefreshCw, Loader2, Clock, Filter, 
-  Users, Zap, Lock, Unlock, Trash2, CheckCircle, XCircle, Plus,
-  Eye, EyeOff, FileText, CreditCard, Settings, Award, Globe,
-  TrendingUp, TrendingDown, ChevronDown, ChevronRight,
-  Download, Printer, Copy, Mail, Phone, MapPin, Hash
+  Users, Lock, FileText, CreditCard, Settings, Award, Globe,
+  TrendingUp, ChevronRight
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
@@ -59,11 +57,7 @@ const ACTION_LABELS = {
   
   // Content Moderation
   'created': { label: 'Created', severity: 'success' },
-  'updated': { label: 'Updated', severity: 'warning' },
-  'deleted': { label: 'Deleted', severity: 'error' },
   'restored': { label: 'Restored', severity: 'success' },
-  'approved': { label: 'Approved', severity: 'success' },
-  'rejected': { label: 'Rejected', severity: 'error' },
   
   // Financial
   'purchase': { label: 'Purchase', severity: 'success' },
@@ -81,9 +75,9 @@ const ACTION_LABELS = {
   'submitted': { label: 'Exam Submitted', severity: 'success' },
   'violation': { label: 'Anti-Cheat Violation', severity: 'error' },
   
-  // Tutor Validation
-  'approved': { label: 'Tutor Approved', severity: 'success' },
-  'rejected': { label: 'Tutor Rejected', severity: 'error' }
+  // Tutor Validation / General Moderation Status
+  'approved': { label: 'Approved', severity: 'success' },
+  'rejected': { label: 'Rejected', severity: 'error' }
 };
 
 // ============================================
@@ -142,9 +136,6 @@ export default function AuditLogsPage() {
       }
     } catch (error) {
       console.error('Error fetching audit logs:', error);
-      if (error.response?.status === 403) {
-        // Handle permission error
-      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -440,9 +431,7 @@ export default function AuditLogsPage() {
                   >
                     <div className="flex items-start gap-3">
                       {/* Icon */}
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        `bg-${severityColor}-500/10`
-                      }`}>
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-${severityColor}-500/10`}>
                         <TypeIcon size={14} className={typeInfo.color} />
                       </div>
 

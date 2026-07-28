@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   BookOpen, Play, BarChart2, Clock, Plus,
   CalendarPlus, Check, GraduationCap, FileText,
@@ -11,16 +11,6 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import axios from 'axios';
 
-const statusColors = {
-  published: 'green',
-  draft: 'gray',
-  archived: 'red',
-  active: 'green',
-  completed: 'green',
-  'in-progress': 'yellow',
-  'not-started': 'gray'
-};
-
 const BRAND = {
   primary: '#6366F1',
   secondary: '#8B5CF6',
@@ -30,10 +20,18 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ✅ Inline skeleton card — renders inside the normal page shell (same
-// background as the rest of the app) instead of replacing the whole page
-// with a separate full-screen loader. This mirrors how StudentDashboard.jsx
-// keeps its layout mounted and only pulses individual widgets while loading.
+// ✅ HELPER FUNCTION: HTML Entities Clean කිරීමට (Uncaught ReferenceError Fix)
+const cleanTitle = (title) => {
+  if (!title) return '';
+  return String(title)
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+};
+
+// Inline skeleton card
 function ExamCardSkeleton({ viewMode }) {
   return (
     <GlassCard className={`overflow-hidden border-white/5 h-full ${viewMode === 'list' ? 'flex' : ''}`}>
@@ -201,9 +199,9 @@ export default function MyExamsPage() {
 
   const filteredExams = exams.filter(exam => {
     const attempts = exam.attempts_count || exam.attempts || 0;
-    const hasScore = exam.lastScore !== null && exam.lastScore !== undefined || 
-                     exam.percentage !== null && exam.percentage !== undefined ||
-                     exam.last_score !== null && exam.last_score !== undefined;
+    const hasScore = (exam.lastScore !== null && exam.lastScore !== undefined) || 
+                     (exam.percentage !== null && exam.percentage !== undefined) ||
+                     (exam.last_score !== null && exam.last_score !== undefined);
     const isCompleted = attempts > 0 || 
                         exam.status === 'completed' || 
                         exam.is_completed === true ||
@@ -324,7 +322,7 @@ export default function MyExamsPage() {
         </div>
       </div>
 
-      {/* Content: loading skeletons → empty state → real grid */}
+      {/* Content */}
       {loading ? (
         <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'} gap-5`}>
           {Array.from({ length: 4 }).map((_, i) => (
@@ -360,7 +358,6 @@ export default function MyExamsPage() {
             const duration = exam.duration_minutes || exam.duration || exam.time || "N/A";
             const totalQuestions = exam.total_questions || exam.questions_count || exam.totalQuestions || exam.questions?.length || 0;
             
-            // ✅ Enhanced completion detection
             const attempts = exam.attempts_count || exam.attempts || 0;
             const lastScore = exam.lastScore || exam.last_score || exam.percentage || null;
             const hasScore = lastScore !== null && lastScore !== undefined;
@@ -369,12 +366,8 @@ export default function MyExamsPage() {
                                 exam.is_completed === true ||
                                 hasScore;
 
-            // ✅ Get score percentage from exam data
             const scorePercentage = exam.percentage || exam.lastScore || exam.last_score || null;
 
-            // ✅ Prefer a real attemptId for the Results link (student_exams doc id).
-            // Falls back to targetExamId — the backend now resolves an examId to
-            // that student's latest completed attempt automatically.
             const lastAttemptId = exam.attemptId || exam.attempt_id ||
                                    exam.lastAttemptId || exam.last_attempt_id || null;
             const resultsTargetId = lastAttemptId || targetExamId;
@@ -418,7 +411,7 @@ export default function MyExamsPage() {
                           {cleanTitle(exam.title)}
                         </h3>
 
-                        {/* ✅ Show Score if completed and has score */}
+                        {/* Score Display */}
                         {isCompleted && scorePercentage !== null && (
                           <ScoreDisplay 
                             score={Math.round((scorePercentage / 100) * totalQuestions)} 
@@ -465,7 +458,7 @@ export default function MyExamsPage() {
                             onClick={() => navigate(`/exam/${targetExamId}/take`)}
                           >
                             <Play size={12} fill="currentColor" /> 
-                            {isCompleted ? 'Retake' : 'Start'}  {/* ✅ Retake button shows when completed */}
+                            {isCompleted ? 'Retake' : 'Start'}
                           </Button>
 
                           {isCompleted && (
