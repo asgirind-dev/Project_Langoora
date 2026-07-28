@@ -30,10 +30,14 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ✅ Inline skeleton card — renders inside the normal page shell (same
-// background as the rest of the app) instead of replacing the whole page
-// with a separate full-screen loader. This mirrors how StudentDashboard.jsx
-// keeps its layout mounted and only pulses individual widgets while loading.
+// ✅ Helper function to clean HTML tags from titles (used for planner and alt text)
+function cleanTitle(title) {
+  if (!title) return '';
+  // Remove HTML tags
+  return title.replace(/<[^>]*>/g, '').trim();
+}
+
+// ✅ Inline skeleton card
 function ExamCardSkeleton({ viewMode }) {
   return (
     <GlassCard className={`overflow-hidden border-white/5 h-full ${viewMode === 'list' ? 'flex' : ''}`}>
@@ -360,7 +364,6 @@ export default function MyExamsPage() {
             const duration = exam.duration_minutes || exam.duration || exam.time || "N/A";
             const totalQuestions = exam.total_questions || exam.questions_count || exam.totalQuestions || exam.questions?.length || 0;
             
-            // ✅ Enhanced completion detection
             const attempts = exam.attempts_count || exam.attempts || 0;
             const lastScore = exam.lastScore || exam.last_score || exam.percentage || null;
             const hasScore = lastScore !== null && lastScore !== undefined;
@@ -369,12 +372,8 @@ export default function MyExamsPage() {
                                 exam.is_completed === true ||
                                 hasScore;
 
-            // ✅ Get score percentage from exam data
             const scorePercentage = exam.percentage || exam.lastScore || exam.last_score || null;
 
-            // ✅ Prefer a real attemptId for the Results link (student_exams doc id).
-            // Falls back to targetExamId — the backend now resolves an examId to
-            // that student's latest completed attempt automatically.
             const lastAttemptId = exam.attemptId || exam.attempt_id ||
                                    exam.lastAttemptId || exam.last_attempt_id || null;
             const resultsTargetId = lastAttemptId || targetExamId;
@@ -413,10 +412,11 @@ export default function MyExamsPage() {
                           </div>
                         </div>
 
-                        {/* Title (Clean HTML Tags) */}
-                        <h3 className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words">
-                          {cleanTitle(exam.title)}
-                        </h3>
+                        {/* ✅ Title rendered as HTML - FIXED with inline style to prevent background */}
+                        <div 
+                          className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words [&_p]:inline [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300"
+                          dangerouslySetInnerHTML={{ __html: exam.title || '' }}
+                        />
 
                         {/* ✅ Show Score if completed and has score */}
                         {isCompleted && scorePercentage !== null && (
@@ -427,11 +427,12 @@ export default function MyExamsPage() {
                           />
                         )}
 
-                        {/* Description */}
+                        {/* ✅ Description rendered as HTML - FIXED with inline style to prevent background */}
                         {exam.description && (
-                          <p className={`text-xs text-gray-400 ${viewMode === 'list' ? '' : 'line-clamp-2'} leading-relaxed`}>
-                            {exam.description}
-                          </p>
+                          <div 
+                            className={`text-xs text-gray-400 ${viewMode === 'list' ? '' : 'line-clamp-2'} leading-relaxed [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300`}
+                            dangerouslySetInnerHTML={{ __html: exam.description }}
+                          />
                         )}
 
                         {/* Meta Tags */}
@@ -465,7 +466,7 @@ export default function MyExamsPage() {
                             onClick={() => navigate(`/exam/${targetExamId}/take`)}
                           >
                             <Play size={12} fill="currentColor" /> 
-                            {isCompleted ? 'Retake' : 'Start'}  {/* ✅ Retake button shows when completed */}
+                            {isCompleted ? 'Retake' : 'Start'}
                           </Button>
 
                           {isCompleted && (
