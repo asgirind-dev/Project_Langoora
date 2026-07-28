@@ -1,7 +1,11 @@
-const { db } = require("../config/firebase");
-const cloudinary = require("cloudinary").v2;
-const path = require("path");
-const examServices = require("../services/examServices");
+const { db, storage } = require('../config/firebase');
+const cloudinary = require('cloudinary').v2;
+const path = require('path');
+const examServices = require('../services/examServices');
+
+
+// Dynamic requirement for services if defined in your structure
+// const examServices = require('../services/examServices'); 
 
 // =========================================================================
 // Cloudinary Configuration (using environment variables)
@@ -242,6 +246,9 @@ const deleteStudentExam = async (req, res) => {
 // =========================================================================
 // 4. Purchase an Exam
 // =========================================================================
+// =========================================================================
+// 4. Purchase an Exam (FIXED UNDEFINED QUERY & CREDIT DEDUCTION + NOTIFICATION)
+// =========================================================================
 const purchaseExam = async (req, res) => {
   try {
     const studentId = req.user?.uid || req.user?.id;
@@ -383,6 +390,24 @@ const purchaseExam = async (req, res) => {
         createdAt: new Date().toISOString(),
       });
     });
+
+    // 🔔 🎯 AUTO CREATE NOTIFICATION FOR STUDENT
+    try {
+      const examTitle = examData?.title || examData?.level_name || targetExamId;
+      await db.collection('notifications').add({
+        userId: studentId,
+        type: 'purchase',
+        title: 'Exam Purchase Successful! 🎉',
+        message: `You successfully purchased "${examTitle}". ${requiredCredits} credits were deducted from your account.`,
+        creditDeducted: requiredCredits,
+        read: false,
+        actionUrl: '/student/dashboard',
+        createdAt: new Date().toISOString()
+      });
+    } catch (notifErr) {
+      console.error("Failed to send purchase notification:", notifErr);
+      // Main purchase flow එක නොනවත්වා ඉදිරියට යයි
+    }
 
     return res.status(200).json({
       success: true,

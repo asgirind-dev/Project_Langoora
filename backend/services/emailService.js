@@ -1,4 +1,3 @@
-// backend/services/emailService.js
 const nodemailer = require('nodemailer');
 const { db } = require('../config/firebase');
 const emailLogService = require('./emailLogService');
@@ -83,6 +82,7 @@ class EmailService {
           user: smtpUser,
           pass: smtpPass
         }
+        
       };
 
       this.transporter = nodemailer.createTransport(smtpConfig);
@@ -540,6 +540,104 @@ class EmailService {
       await emailLogService.logEmail(logData);
       
       console.error('❌ Failed to send test email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send Subscription Confirmation Email
+   */
+  async sendSubscriptionConfirmationEmail(studentEmail, studentName, planName, amount, credits) {
+    const logData = {
+      recipient: studentEmail,
+      type: 'subscription_purchase',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `Subscription Confirmed - Welcome to ${planName}!`,
+      metadata: { studentName, planName, amount, credits }
+    };
+
+    try {
+      await this.ensureInitialized();
+      await this.loadConfig();
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Subscription Purchase Confirmation</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      Thank you for your purchase, <span style="color: #38bdf8;">${studentName || 'Student'}</span>! 🎉
+                    </h1>
+                    
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px;">
+                      Your subscription plan has been activated successfully. Here are your transaction details:
+                    </p>
+
+                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px; margin: 20px 0;">
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Plan Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${planName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Amount Paid</td>
+                          <td style="color: #34d399; font-size: 13px; text-align: right; font-weight: 600;">LKR ${amount}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Credits Added</td>
+                          <td style="color: #38bdf8; font-size: 13px; text-align: right; font-weight: 600;">+${credits} Credits</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <p style="font-size: 13px; color: #94a3b8; text-align: center;">
+                      You can now use your credits to unlock and take mock exam packs!
+                    </p>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: studentEmail,
+        subject: `Subscription Confirmed - Welcome to ${planName}!`,
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Plan purchase email sent to ${studentEmail}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send plan purchase email:', error.message);
       return { success: false, error: error.message };
     }
   }

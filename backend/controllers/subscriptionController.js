@@ -2,6 +2,10 @@ const crypto = require('crypto');
 const subscriptionService = require('../services/SubscriptionService');
 const { db } = require('../config/firebase'); 
 
+// 🟢 1. Services Import (Capitalization matched with file names)
+const emailService = require('../services/emailService');
+const notificationService = require('../services/NotificationService');
+
 // ==========================================
 // 🔒 HELPER FUNCTION: PayHere Hash Generator
 // ==========================================
@@ -181,6 +185,8 @@ exports.handlePayhereNotification = async (req, res) => {
     if (localMd5sig === md5sig && status_code === "2") {
       const transactionRef = db.collection('transactions').doc(order_id);
 
+      let studentDetailsForNotify = null;
+
       // Execute transaction to prevent concurrent modification issues
       await db.runTransaction(async (transaction) => {
         const txnDoc = await transaction.get(transactionRef);
@@ -220,7 +226,7 @@ exports.handlePayhereNotification = async (req, res) => {
 
           transaction.update(userRef, {
             wallet_balance: newBalance,
-            credits: newBalance, // Sync with credits field if used across application
+            credits: newBalance,
             subscription: {
               plan_id: txnData.plan_id || 'default_plan',
               plan_name: txnData.plan_name || 'Standard Plan',
@@ -228,10 +234,54 @@ exports.handlePayhereNotification = async (req, res) => {
               expires_at: expiryDate.toISOString()
             }
           });
+
+          // Store values required for sending Notification & Email
+          studentDetailsForNotify = {
+            studentId,
+            studentEmail: userData.email,
+            studentName: userData.name || userData.displayName || 'Student',
+            planName: txnData.plan_name || 'Subscription Plan',
+            amount: Number(payhere_amount),
+            credits: txnData.credits_added || 0
+          };
         }
       });
 
       console.log(`✅ Success! Updated Firestore for Order: ${order_id}`);
+
+      // 🟢 3. Trigger In-App Notification and Email Confirmation
+      if (studentDetailsForNotify) {
+        const { studentId, studentEmail, studentName, planName, amount, credits } = studentDetailsForNotify;
+
+        // Send In-App Notification
+        try {
+          await notificationService.sendToUser(studentId, {
+            type: 'subscription',
+            title: 'Subscription Activated! 🎉',
+            message: `You have successfully purchased the ${planName} plan. ${credits} credits added to your wallet.`,
+            link: '/student/credits'
+          });
+          console.log('✅ In-App Notification sent');
+        } catch (notifErr) {
+          console.error('❌ Notification Trigger Error:', notifErr.message);
+        }
+
+        // Send Email Confirmation
+        if (studentEmail) {
+          try {
+            await emailService.sendSubscriptionConfirmationEmail(
+              studentEmail,
+              studentName,
+              planName,
+              amount,
+              credits
+            );
+            console.log('✅ Purchase Confirmation Email sent');
+          } catch (emailErr) {
+            console.error('❌ Email Trigger Error:', emailErr.message);
+          }
+        }
+      }
     }
 
     return res.status(200).send("Notification Processed");
