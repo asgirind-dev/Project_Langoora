@@ -1,661 +1,811 @@
-// frontend/src/pages/finance_admin/TransactionLedger.jsx
+// frontend/src/pages/finance_admin/TutorPayoutsPage.jsx
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Search, Download, CheckCircle, XCircle, Clock, AlertCircle, Printer,
-  Activity, DollarSign, CreditCard, TrendingUp, Crown, Copy, RefreshCw, Loader2
+  Landmark, Clock, CheckCircle, Percent, 
+  RefreshCw, DollarSign, Users,
+  Search, Shield, Mail, 
+  Send, Coins, Trash2, Star,
+  Plus, X
 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import GlassCard from '../../components/ui/GlassCard';
-import FinanceService from '../../services/financeService';
+import { getRates } from '../../services/globalConfigService';
+import { createPayout, getActiveTutors } from '../../services/payoutService';
 
-export default function TransactionLedger() {
-  const [logs, setLogs] = useState([]);
+const EXCHANGE_RATE = 20.00;
+const PLATFORM_COMMISSION = 0.20;
+
+export default function TutorPayoutsPage() {
+  const [creditRate, setCreditRate] = useState(EXCHANGE_RATE);
+  const [platformCommission, setPlatformCommission] = useState(PLATFORM_COMMISSION);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [tutors, setTutors] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterGateway, setFilterGateway] = useState('all');
-  const [selectedLog, setSelectedLog] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [processingId, setProcessingId] = useState(null);
+  const [error, setError] = useState(null);
+  const [transactions, setTransactions] = useState({ totalCredits: 0, totalAmount: 0, count: 0 });
+  const [declinedCount, setDeclinedCount] = useState(0);
+  
+  // Add Payout Modal States
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [newPayout, setNewPayout] = useState({
+    tutorId: '',
+    tutorName: '',
+    totalTokens: '',
+    netPayout: '',
+    bankName: '',
+    accountNo: '',
+    tutorEmail: '',
+    tutorPhone: '',
+    university: '',
+    qualifications: ''
+  });
 
-  // ============================================
-  // ⭐ FETCH TRANSACTIONS FROM SERVICE
-  // ============================================
+  // ⭐ Fetch system settings
   useEffect(() => {
-    const fetchTransactions = async () => {
+    const fetchSettings = async () => {
       try {
-        setLoading(true);
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        
-        const response = await axios.get(`${API_URL}/api/finance/transactions`);
-        console.log('📊 Transactions Response:', response.data);
-        
-        if (response.data && Array.isArray(response.data)) {
-          const transformedLogs = response.data.map(tx => ({
-            ref: tx.id || tx.transactionId || `TXN-${Date.now()}`,
-            student: tx.student_name || tx.userName || tx.user || 'Unknown Student',
-            tier: tx.plan || tx.subscriptionType || 'Standard Plan',
-            amount: tx.amount || 0,
-            gateway: tx.gateway || tx.paymentMethod || 'Stripe',
-            status: tx.status || 'Pending',
-            timestamp: tx.created_at || tx.createdAt || new Date().toISOString(),
-            email: tx.email || tx.student_email || '',
-            plan: tx.plan || tx.subscriptionType || 'Standard Plan',
-            credits: tx.credits || 0,
-            transactionId: tx.id,
-            paymentMethod: tx.paymentMethod || tx.gateway || 'Stripe'
-          }));
-          
-          setLogs(transformedLogs);
-        } else {
-          console.log('⚠️ No transactions found');
-          setLogs([]);
+        setSettingsLoading(true);
+        const response = await getRates();
+        if (response.success && response.data) {
+          setCreditRate(response.data.exchangeRate || EXCHANGE_RATE);
+          setPlatformCommission((response.data.platformCommission || 20) / 100);
         }
       } catch (error) {
-        console.error('❌ Error fetching transactions:', error);
-        setLogs([]);
+        console.error('Error fetching settings:', error);
       } finally {
-        setLoading(false);
+        setSettingsLoading(false);
       }
     };
-    
-    fetchTransactions();
+    fetchSettings();
   }, []);
 
-  // 🎯 Fetch Real Database Transactions
-  const fetchLedgerData = async () => {
-    setLoading(true);
+  // ⭐ Fetch tutors with REAL data AND status from payouts
+  const fetchTutors = async () => {
     try {
-      const data = await FinanceService.getAllTransactions();
-      const rawLogs = Array.isArray(data) ? data : [];
-      
-      // Transform & Normalize data structure
-      const transformedLogs = rawLogs.map(tx => ({
-        ref: tx.id || tx.transactionId || tx.ref || `TXN-${Date.now()}`,
-        student: tx.student_name || tx.userName || tx.student || tx.user || 'Unknown Student',
-        tier: tx.plan || tx.subscriptionType || 'Standard Plan',
-        amount: Number(tx.amount || 0),
-        gateway: tx.gateway || tx.paymentMethod || 'Stripe',
-        status: tx.status || 'Pending',
-        timestamp: tx.created_at || tx.createdAt || tx.timestamp || new Date().toISOString(),
-        email: tx.email || tx.student_email || 'N/A',
-        plan: tx.plan || tx.subscriptionType || 'Standard Plan',
-        credits: tx.credits || 0,
-        transactionId: tx.id || tx.transactionId
-      }));
+      setLoading(true);
+      setError(null);
 
-      setLogs(transformedLogs);
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      
+      // Fetch both tutors and payouts in parallel
+      const [tutorsRes, payoutsRes] = await Promise.all([
+        axios.get(`${API_URL}/api/payouts/active-tutors`),
+        axios.get(`${API_URL}/api/payouts/get-all`)
+      ]);
+      
+      if (tutorsRes.data?.success) {
+        const allPayouts = payoutsRes.data?.payouts || [];
+        const stats = payoutsRes.data?.stats || {};
+        
+        // ✅ Map tutors with status from payouts
+        const tutorsWithStatus = (tutorsRes.data.tutors || []).map(tutor => {
+          // Check if tutor has a settled payout
+          const hasSettledPayout = allPayouts.some(p => 
+            p.tutorId === tutor.id && 
+            (p.status === 'Settled' || p.status === 'settled')
+          );
+          
+          // Check if tutor has a pending payout
+          const hasPendingPayout = allPayouts.some(p => 
+            p.tutorId === tutor.id && 
+            (p.status === 'Pending' || p.status === 'pending')
+          );
+          
+          return {
+            ...tutor,
+            status: hasSettledPayout ? 'Settled' : 
+                    hasPendingPayout ? 'Pending' : 
+                    tutor.status || 'Pending'
+          };
+        });
+        
+        setTutors(tutorsWithStatus);
+        console.log('✅ Tutors with REAL data and status:', tutorsWithStatus);
+        
+        // ✅ Update stats from API
+        setTransactions({
+          totalCredits: stats.totalTokens || 0,
+          totalAmount: stats.totalAmount || 0,
+          count: payoutsRes.data.settledPayouts?.length || 0
+        });
+        
+      } else {
+        setError('Failed to fetch tutors');
+        setTutors([]);
+      }
+
+      // Fetch transactions
+      const txRes = await axios.get(`${API_URL}/api/payouts/total-credits`);
+      if (txRes.data?.success) {
+        setTransactions({
+          totalCredits: txRes.data.totalCredits || 0,
+          totalAmount: txRes.data.totalAmount || 0,
+          count: txRes.data.count || 0
+        });
+      }
+
     } catch (error) {
-      console.error("Failed to load transaction audit logs:", error);
-      setLogs([]);
-    } fontFinally: {
+      console.error('Error fetching tutors:', error);
+      setError(error.message || 'Network error');
+      setTutors([]);
+    } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLedgerData();
+    fetchTutors();
   }, []);
 
-  // ✅ SUMMARY STATS - FIXED (Only ONE declaration of each)
-  const totalTransactions = logs.length;
-  const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? Number(log.amount || 0) : 0), 0);
-  const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
-  const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : '0.0';
-  const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
+  // ⭐ Fetch transactions
+  const fetchTransactions = async () => {
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await axios.get(`${API_URL}/api/payouts/total-credits`);
+      
+      if (response.data && response.data.success) {
+        setTransactions({
+          totalCredits: response.data.totalCredits || 0,
+          totalAmount: response.data.totalAmount || 0,
+          count: response.data.count || 0
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+    }
+  };
 
-  // ✅ SEARCH & FILTERS - FIXED (removed duplicate conditions)
-  const filteredLogs = logs.filter(log => {
-    const matchSearch = (log.student || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
-    const matchGateway = filterGateway === 'all' || (log.gateway || '').toLowerCase().includes(filterGateway.toLowerCase());
-    return matchSearch && matchStatus && matchGateway;
+  // ⭐ Get declined count
+  useEffect(() => {
+    const fetchDeclinedCount = async () => {
+      try {
+        const API_URL = import.meta.env.VITE_API_URL || '';
+        const response = await axios.get(`${API_URL}/api/payouts/declined`);
+        if (response.data && response.data.success) {
+          setDeclinedCount(response.data.count || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching declined count:', error);
+      }
+    };
+    fetchDeclinedCount();
+  }, []);
+
+  // ⭐ Process payout (Settle/Decline)
+  const handleProcessPayout = async (tutorId, action) => {
+    try {
+      setProcessingId(tutorId);
+      const newStatus = action === 'approve' ? 'Settled' : 'Declined';
+
+      const tutor = tutors.find(t => t.id === tutorId);
+      if (!tutor) {
+        throw new Error('Tutor not found');
+      }
+
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      
+      const payoutData = {
+        tutorId: tutorId,
+        tokens: tutor.totalTokens || 0,
+        creditValue: creditRate
+      };
+
+      const createResponse = await axios.post(`${API_URL}/api/payouts/request`, payoutData);
+      
+      if (createResponse.data.success) {
+        const payoutId = createResponse.data.payoutId;
+        
+        if (payoutId) {
+          const updateResponse = await axios.patch(`${API_URL}/api/payouts/update-status/${payoutId}`, {
+            status: newStatus
+          });
+
+          if (updateResponse.data.success) {
+            if (newStatus === 'Settled') {
+              setTutors(prevTutors => 
+                prevTutors.map(t => 
+                  t.id === tutorId ? { ...t, status: 'Settled' } : t
+                )
+              );
+              await fetchTransactions();
+              console.log('✅ Payout settled successfully!');
+            } else {
+              setTutors(prevTutors => prevTutors.filter(t => t.id !== tutorId));
+              console.log('❌ Payout declined');
+            }
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('Error processing payout:', error);
+      alert('Error processing payout: ' + error.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ⭐ Delete declined payout
+  const handleDeleteDeclined = async (id) => {
+    if (!confirm('Delete this declined payout?')) return;
+    try {
+      setProcessingId(id);
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      await axios.delete(`${API_URL}/api/payouts/${id}`);
+      setTutors(tutors.filter(t => t.id !== id));
+    } catch (error) {
+      console.error('Error deleting:', error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ⭐ Clear all declined
+  const clearAllDeclined = async () => {
+    if (!confirm(`Delete all ${declinedCount} declined payouts?`)) return;
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await axios.get(`${API_URL}/api/payouts/declined`);
+      if (response.data && response.data.success) {
+        const declinedIds = response.data.payouts.map(p => p.id);
+        for (const id of declinedIds) {
+          await axios.delete(`${API_URL}/api/payouts/${id}`);
+        }
+        setDeclinedCount(0);
+        alert(`Deleted ${declinedIds.length} declined payouts`);
+      }
+    } catch (error) {
+      console.error('Error deleting declined:', error);
+    }
+  };
+
+  // ⭐ Add new payout using payoutService
+  const handleAddPayout = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      const result = await createPayout({
+        tutorId: newPayout.tutorId,
+        tutorName: newPayout.tutorName,
+        totalTokens: parseInt(newPayout.totalTokens) || 0,
+        netPayout: parseFloat(newPayout.netPayout) || 0,
+        bankName: newPayout.bankName || 'Not Specified',
+        accountNo: newPayout.accountNo || 'N/A',
+        tutorEmail: newPayout.tutorEmail || '',
+        tutorPhone: newPayout.tutorPhone || '',
+        university: newPayout.university || '',
+        qualifications: newPayout.qualifications || ''
+      });
+
+      if (result && result.success) {
+        alert('✅ Payout added successfully!');
+        setShowAddModal(false);
+        setNewPayout({
+          tutorId: '',
+          tutorName: '',
+          totalTokens: '',
+          netPayout: '',
+          bankName: '',
+          accountNo: '',
+          tutorEmail: '',
+          tutorPhone: '',
+          university: '',
+          qualifications: ''
+        });
+        fetchTutors();
+      } else {
+        alert('❌ Failed to add payout');
+      }
+    } catch (error) {
+      console.error('Error adding payout:', error);
+      alert('❌ Failed to add payout: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ⭐ Statistics
+  const pendingCount = tutors.filter(t => t.status === 'Pending').length;
+  const settledCount = tutors.filter(t => t.status === 'Settled').length;
+  const totalTokensAll = tutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+  const totalPayout = tutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
+
+  console.log('📊 UI Stats:', { pendingCount, settledCount, totalTokensAll });
+
+  // ⭐ Filter logic
+  const filteredTutors = tutors.filter(t => {
+    if (t.status === 'Declined') return false;
+    const matchFilter = filter === 'all' || t.status.toLowerCase() === filter.toLowerCase();
+    const matchSearch = (t.tutor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       (t.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       (t.bank || '').toLowerCase().includes(searchTerm.toLowerCase());
+    return matchFilter && matchSearch;
   });
 
+  // ⭐ Status config
   const getStatusConfig = (status) => {
-    const statusMap = {
-      'Success': { 
-        bg: 'bg-emerald-500/10', 
-        border: 'border-emerald-500/20',
-        text: 'text-emerald-400',
-        icon: CheckCircle,
-        label: 'Success'
-      },
-      'Completed': { 
-        bg: 'bg-emerald-500/10', 
-        border: 'border-emerald-500/20',
-        text: 'text-emerald-400',
-        icon: CheckCircle,
-        label: 'Completed'
-      },
-      'Failed': { 
-        bg: 'bg-red-500/10', 
-        border: 'border-red-500/20',
-        text: 'text-red-400',
-        icon: XCircle,
-        label: 'Failed'
-      },
-      'Declined': { 
-        bg: 'bg-red-500/10', 
-        border: 'border-red-500/20',
-        text: 'text-red-400',
-        icon: XCircle,
-        label: 'Declined'
-      },
+    const configs = {
       'Pending': { 
+        color: '#f59e0b', 
         bg: 'bg-amber-500/10', 
         border: 'border-amber-500/20',
         text: 'text-amber-400',
         icon: Clock,
-        label: 'Pending'
       },
-      'Error': { 
-        bg: 'bg-red-500/10', 
-        border: 'border-red-500/20',
-        text: 'text-red-400',
-        icon: XCircle,
-        label: 'Error'
+      'Settled': { 
+        color: '#10b981', 
+        bg: 'bg-emerald-500/10', 
+        border: 'border-emerald-500/20',
+        text: 'text-emerald-400',
+        icon: CheckCircle,
       }
     };
-    return statusMap[status] || statusMap['Pending'];
+    return configs[status] || configs['Pending'];
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'N/A';
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleString('en-LK', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return dateStr;
-    }
-  };
-
-  // 🎯 PDF Export Handler
-  const handleExportPDF = () => {
-    if (filteredLogs.length === 0) return alert("No transaction records available to export.");
-
-    setExporting(true);
-    try {
-      const doc = new jsPDF();
-      const timestamp = new Date().toLocaleString();
-
-      doc.setFillColor(15, 22, 41);
-      doc.rect(0, 0, 210, 42, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(20);
-      doc.setFont('helvetica', 'bold');
-      doc.text('LANGOORA EDUCATIONAL PLATFORM', 14, 18);
-
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(156, 163, 175);
-      doc.text('Transaction Ledger Audit & Financial Statement', 14, 28);
-
-      doc.setFontSize(8);
-      doc.text(`Generated: ${timestamp}`, 140, 28);
-
-      // Audit Highlights Box
-      const successfulTxs = filteredLogs.filter(t => t.status === 'Success' || t.status === 'Completed');
-      const filteredRev = successfulTxs.reduce((sum, log) => sum + Number(log.amount || 0), 0);
-
-      doc.setFillColor(241, 245, 249);
-      doc.rect(14, 47, 182, 14, 'F');
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(15, 23, 42);
-      doc.text(`Total Records: ${filteredLogs.length}`, 20, 56);
-      doc.text(`Successful Sales: ${successfulTxs.length}`, 80, 56);
-      doc.text(`Total Revenue: LKR ${filteredRev.toLocaleString()}`, 140, 56);
-
-      const tableRows = filteredLogs.map(l => [
-        l.ref || 'N/A',
-        l.student || 'Unknown',
-        l.plan || 'Standard',
-        `LKR ${Number(l.amount || 0).toLocaleString()}`,
-        `+${l.credits || 0} c`,
-        l.gateway || 'Card',
-        l.status || 'Pending',
-        formatDate(l.timestamp)
-      ]);
-
-      autoTable(doc, {
-        startY: 66,
-        head: [['Reference ID', 'Student', 'Plan', 'Amount', 'Credits', 'Gateway', 'Status', 'Date & Time']],
-        body: tableRows,
-        theme: 'grid',
-        headStyles: { 
-          fillColor: [30, 41, 59], 
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          fontSize: 8
-        },
-        styles: { 
-          fontSize: 8, 
-          cellPadding: 3.5 
-        },
-        columnStyles: {
-          0: { cellWidth: 32, fontStyle: 'bold' },
-          1: { cellWidth: 32 },
-          2: { cellWidth: 20 },
-          3: { cellWidth: 24, fontStyle: 'bold' },
-          4: { cellWidth: 16 },
-          5: { cellWidth: 20 },
-          6: { cellWidth: 18 },
-          7: { cellWidth: 20 }
-        },
-        didParseCell: function(data) {
-          if (data.section === 'body' && data.column.index === 6) {
-            if (data.cell.raw === 'Success' || data.cell.raw === 'Completed') {
-              data.cell.styles.textColor = [16, 185, 129];
-              data.cell.styles.fontStyle = 'bold';
-            } else if (data.cell.raw === 'Failed' || data.cell.raw === 'Declined') {
-              data.cell.styles.textColor = [239, 68, 68];
-              data.cell.styles.fontStyle = 'bold';
-            } else {
-              data.cell.styles.textColor = [245, 158, 11];
-            }
-          }
-        }
-      });
-
-      doc.setFontSize(8);
-      doc.setTextColor(156, 163, 175);
-      doc.text('Confidential Document - Internal Finance Administration Langoora Platform', 14, 285);
-
-      doc.save(`Langoora_Transaction_Ledger_${new Date().toISOString().slice(0, 10)}.pdf`);
-    } catch (error) {
-      console.error("PDF Export failed:", error);
-      alert(`Failed to export PDF: ${error.message}`);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  if (loading) {
+  // ⭐ Loading
+  if (loading || settingsLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-        <p className="text-gray-400">Loading transactions...</p>
+      <div className="flex flex-col items-center justify-center min-h-[500px] space-y-4">
+        <RefreshCw size={40} className="animate-spin text-emerald-400" />
+        <p className="text-gray-400">Loading tutor data from database...</p>
       </div>
     );
   }
 
+  // ⭐ Render
   return (
-    <div className="space-y-6 font-sans">
-      {/* HERO HEADER */}
+    <div className="space-y-6 p-6">
+      {/* HEADER */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="border-b border-white/5 pb-4"
+        className="border-b border-white/5 pb-3"
       >
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-mono tracking-widest uppercase px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-extrabold">
-            Auditing Core Engine
-          </span>
-        </div>
-        <h1 className="text-3xl font-extrabold text-white tracking-tight">
-          Financial Ledger Audit
-        </h1>
-        <p className="text-sm text-gray-400 mt-1 max-w-2xl font-medium">
-          Immutable historic system tracking data logs for user real-money subscription execution nodes.
-        </p>
-        <div className="mt-2 flex items-center gap-3">
-          <span className="text-xs text-gray-500 font-mono">{logs.length} total transactions</span>
-          <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
-            live data
-          </span>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-mono tracking-widest uppercase px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-extrabold">
+                Liquidation Core Engine
+              </span>
+            </div>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+              Instructor Settlement Engine
+            </h1>
+            <p className="text-sm text-gray-400 mt-1">
+              Convert tutor asset execution tokens into fiat LKR liquidation blocks after commission cuts.
+            </p>
+            <div className="mt-2 flex items-center gap-3">
+              <span className="text-xs text-gray-500 font-mono">{tutors.length} active tutors loaded</span>
+              <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
+                role: tutor | status: active
+              </span>
+              {declinedCount > 0 && (
+                <span className="text-[10px] px-2 py-0.5 bg-red-500/10 text-red-400 rounded-full border border-red-500/20">
+                  {declinedCount} declined (hidden)
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* 🔥 ADD PAYOUT BUTTON */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowAddModal(true)}
+              className="px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-emerald-500/30 transition-all duration-300"
+            >
+              <Plus size={16} />
+              Add Payout
+            </motion.button>
+            
+            {declinedCount > 0 && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={clearAllDeclined}
+                className="px-4 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:text-red-300 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-red-500/20 transition-all duration-300"
+              >
+                <Trash2 size={16} />
+                Clear All Declined ({declinedCount})
+              </motion.button>
+            )}
+          </div>
         </div>
       </motion.div>
 
       {/* STATS ROW */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Transactions', value: totalTransactions, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-          { label: 'Total Revenue', value: `LKR ${totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-          { label: 'Success Rate', value: `${successRate}%`, icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/10' },
-          { label: 'Failed', value: failedCount, icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
+          { label: 'Total Tokens', value: totalTokensAll.toLocaleString(), icon: Star, color: 'text-amber-400' },
+          { label: 'Pending', value: pendingCount, icon: Clock, color: 'text-amber-400' },
+          { label: 'Settled', value: settledCount, icon: CheckCircle, color: 'text-emerald-400' },
+          { label: 'Total Credits Used', value: transactions.totalCredits?.toLocaleString() || 0, icon: Coins, color: 'text-purple-400' },
         ].map((stat, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.08 }}
-          >
-            <GlassCard className="p-5 border-white/10 hover:border-blue-500/30 transition-all duration-300 hover:scale-[1.02]">
+          <motion.div key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08 }}>
+            <GlassCard className="p-5 border border-white/10 hover:border-opacity-50 transition-all duration-300">
               <div className="flex items-center justify-between">
-                <div className={`p-2.5 ${stat.bg} rounded-xl`}>
+                <div className={`p-2.5 bg-white/5 rounded-xl`}>
                   <stat.icon size={20} className={stat.color} />
                 </div>
-                <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">{stat.label}</span>
+                <span className="text-xs text-gray-400 font-medium">{stat.label}</span>
               </div>
-              <div className="mt-2">
-                <div className="text-2xl font-bold text-white">{stat.value}</div>
-              </div>
+              <div className="mt-2 text-2xl font-bold text-white">{stat.value}</div>
             </GlassCard>
           </motion.div>
         ))}
       </div>
 
-      {/* SEARCH & FILTERS */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search by student, reference or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-11 pr-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white placeholder:text-gray-500 focus:border-blue-500/50 focus:outline-none transition-all duration-300 w-72"
-            />
-          </div>
-          
-          <div className="flex gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
-            >
-              <option value="all">All Status</option>
-              <option value="success">Success</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-              <option value="declined">Declined</option>
-              <option value="pending">Pending</option>
-              <option value="error">Error</option>
-            </select>
-            
-            <select
-              value={filterGateway}
-              onChange={(e) => setFilterGateway(e.target.value)}
-              className="px-4 py-2.5 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white focus:border-blue-500/50 focus:outline-none transition-all duration-300 cursor-pointer appearance-none pr-8"
-            >
-              <option value="all">All Gateways</option>
-              <option value="stripe">Stripe</option>
-              <option value="card">Card / Payhere</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">{filteredLogs.length} transactions</span>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => window.print()}
-            className="px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition-all duration-300 flex items-center gap-2 text-sm font-medium cursor-pointer"
-          >
-            <Printer size={16} />
-            Print
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            disabled={exporting}
-            onClick={handleExportPDF}
-            className="px-4 py-2.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-xl text-white text-sm font-medium shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 transition-all duration-300 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            {exporting ? 'Generating PDF...' : 'Export PDF'}
-          </motion.button>
-        </div>
-      </div>
-
-      {/* LEDGER TABLE */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <GlassCard className="p-0 border-white/10 overflow-hidden hover:border-blue-500/20 transition-all duration-300">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-white/[0.02] border-b border-white/10">
-                  <th className="px-5 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Reference</th>
-                  <th className="px-5 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Student</th>
-                  <th className="px-5 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Plan</th>
-                  <th className="px-5 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Amount</th>
-                  <th className="px-5 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Gateway</th>
-                  <th className="px-5 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-5 py-4 text-right text-xs font-bold text-gray-400 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                <AnimatePresence>
-                  {filteredLogs.length > 0 ? (
-                    filteredLogs.map((log, index) => {
-                      const statusConfig = getStatusConfig(log.status);
-                      const StatusIcon = statusConfig.icon;
-
-                      return (
-                        <motion.tr
-                          key={log.ref || index}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, x: -20 }}
-                          transition={{ delay: index * 0.03 }}
-                          className="hover:bg-white/[0.02] transition-all duration-300 group"
-                        >
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-mono font-bold text-blue-400">{log.ref}</span>
-                              <button
-                                onClick={() => copyToClipboard(log.ref)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                              >
-                                <Copy size={14} className="text-gray-500 hover:text-white" />
-                              </button>
-                            </div>
-                            <div className="text-xs text-gray-500 font-mono mt-0.5">{formatDate(log.timestamp)}</div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div>
-                              <div className="text-sm font-semibold text-white">{log.student}</div>
-                              <div className="text-xs text-gray-400">{log.email || 'N/A'}</div>
-                            </div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              <Crown size={16} className="text-amber-400" />
-                              <span className="text-sm font-medium text-white">{log.plan || 'Standard'}</span>
-                              {log.credits > 0 && (
-                                <span className="text-xs text-gray-400">({log.credits}c)</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <span className="text-sm font-bold text-white">LKR {Number(log.amount || 0).toLocaleString()}</span>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              <CreditCard size={16} className="text-gray-400" />
-                              <span className="text-sm text-gray-300">{log.gateway || 'N/A'}</span>
-                            </div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${statusConfig.bg} border ${statusConfig.border} rounded-lg`}>
-                              <StatusIcon size={14} className={statusConfig.text} />
-                              <span className={`text-xs font-bold ${statusConfig.text}`}>{statusConfig.label}</span>
-                            </div>
-                          </td>
-                          <td className="px-5 py-4 text-right">
-                            <motion.button
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => {
-                                setSelectedLog(log);
-                                setShowModal(true);
-                              }}
-                              className="p-2 bg-white/5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-                            >
-                              <Search size={16} className="text-gray-400 hover:text-white" />
-                            </motion.button>
-                          </td>
-                        </motion.tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan="7" className="px-5 py-20 text-center">
-                        <div className="flex flex-col items-center gap-4">
-                          <div className="p-6 bg-white/5 rounded-full">
-                            <Search size={48} className="text-gray-500" />
-                          </div>
-                          <h3 className="text-lg font-semibold text-white">No Transactions Found</h3>
-                          <p className="text-sm text-gray-400">There are no real transactions recorded in the system yet.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
-
-          <div className="px-5 py-3.5 border-t border-white/10 bg-white/[0.02] flex items-center justify-between">
-            <div className="text-xs text-gray-400">
-              Showing {filteredLogs.length} of {logs.length} transactions
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full" />
-                <span className="text-xs text-gray-400">Success</span>
+      {/* CONVERSION RATE */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+        <GlassCard className="p-4 border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                  <Percent size={18} className="text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Exchange Rate</p>
+                  <p className="text-base font-bold text-white">1 Credit = LKR {creditRate.toFixed(2)}</p>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-red-400 rounded-full" />
-                <span className="text-xs text-gray-400">Failed</span>
+              <div className="hidden md:block w-px h-10 bg-white/10" />
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">
+                  <Shield size={18} className="text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Platform Commission</p>
+                  <p className="text-base font-bold text-white">{(platformCommission * 100).toFixed(0)}%</p>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-amber-400 rounded-full" />
-                <span className="text-xs text-gray-400">Pending</span>
+              <div className="hidden md:block w-px h-10 bg-white/10" />
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
+                  <DollarSign size={18} className="text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 font-medium uppercase">Total Payout</p>
+                  <p className="text-base font-bold text-white">LKR {totalPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                </div>
               </div>
             </div>
           </div>
         </GlassCard>
       </motion.div>
 
-      {/* DETAIL MODAL */}
+      {/* SEARCH & FILTERS */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text"
+              placeholder="Search tutor, ID or bank..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-3.5 py-2 bg-[#0a1628] border border-white/10 rounded-xl text-sm text-white placeholder:text-gray-500 focus:border-emerald-500/50 focus:outline-none w-64"
+            />
+          </div>
+          <div className="flex gap-1.5 bg-white/5 rounded-xl p-1 border border-white/10">
+            {['All', 'Pending', 'Settled'].map((status) => (
+              <motion.button
+                key={status}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setFilter(status.toLowerCase())}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
+                  filter === status.toLowerCase()
+                    ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/20'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {status}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">{filteredTutors.length} tutors</span>
+        </div>
+      </div>
+
+      {/* TUTOR CARDS */}
       <AnimatePresence>
-        {showModal && selectedLog && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-[#0f1629] to-[#1a1f3a] border border-white/10 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto font-sans"
-            >
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20">
-                      Transaction Details
-                    </span>
-                  </div>
-                  <h2 className="text-xl font-bold text-white mt-2">{selectedLog.ref}</h2>
-                </div>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-gray-400 hover:text-white cursor-pointer"
+        {filteredTutors.length > 0 ? (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {filteredTutors.map((tutor, index) => {
+              const statusConfig = getStatusConfig(tutor.status);
+              const StatusIcon = statusConfig.icon;
+              const isProcessing = processingId === tutor.id;
+
+              const totalTokens = tutor.totalTokens || 0;
+              const paperCount = tutor.paperCount || 0;
+              const studentCount = tutor.studentCount || 0;
+              const tokensPerPaper = tutor.tokensPerPaper || 0;
+              const commissionAmount = tutor.commissionAmount || 0;
+              const netPayout = tutor.netPayout || 0;
+              const grossAmount = tutor.grossAmount || 0;
+
+              return (
+                <motion.div
+                  key={tutor.id || index}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ delay: index * 0.06 }}
+                  whileHover={{ y: -4 }}
                 >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xl font-bold text-white">
-                      {selectedLog.student?.charAt(0) || 'U'}
+                  <GlassCard className={`p-5 border transition-all duration-300 ${statusConfig.border} relative overflow-hidden`}>
+                    {/* Header */}
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl ${statusConfig.bg} border ${statusConfig.border} flex items-center justify-center text-base font-bold text-white`}>
+                          {tutor.avatar || (tutor.tutor || 'T')[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-white">{tutor.tutor}</h3>
+                          <p className="text-xs text-gray-400 font-mono">{tutor.id}</p>
+                          {tutor.email && (
+                            <p className="text-[10px] text-gray-500">{tutor.email}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className={`flex items-center gap-1.5 px-3 py-1.5 ${statusConfig.bg} rounded-lg border ${statusConfig.border}`}>
+                        <StatusIcon size={13} className={statusConfig.text} />
+                        <span className={`text-xs font-bold ${statusConfig.text}`}>{tutor.status}</span>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-white">{selectedLog.student || 'Unknown'}</h3>
-                      <p className="text-sm text-gray-400">{selectedLog.email || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Plan</p>
-                    <p className="text-base font-bold text-white mt-1">{selectedLog.plan || 'Standard'}</p>
-                    {selectedLog.credits > 0 && (
-                      <p className="text-sm text-gray-400">{selectedLog.credits} Credits</p>
+                    {/* REAL DATA DISPLAY */}
+                    <div className="grid grid-cols-3 gap-2 my-4 p-3 bg-black/30 rounded-xl border border-white/5">
+                      <div className="text-center">
+                        <p className="text-[10px] text-gray-400 uppercase font-bold">Total Tokens</p>
+                        <p className="text-lg font-bold text-white">
+                          {totalTokens} ⭐
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {paperCount} papers • {studentCount} students
+                        </p>
+                        {paperCount > 0 && (
+                          <p className="text-[10px] text-emerald-400/60">
+                            {paperCount} × {tokensPerPaper} = {totalTokens}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-center border-x border-white/10">
+                        <p className="text-[10px] text-rose-400 uppercase font-bold">Platform Fee ({(platformCommission * 100).toFixed(0)}%)</p>
+                        <p className="text-lg font-bold text-rose-400">
+                          -{commissionAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </p>
+                        <p className="text-[8px] text-gray-500">
+                          {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × {(platformCommission * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-emerald-400 uppercase font-bold">Net Payout</p>
+                        <p className="text-xl font-bold text-emerald-400">
+                          LKR {netPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </p>
+                        <p className="text-[8px] text-gray-500">
+                          {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × 80%
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Bank Info */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-white/[0.02] rounded-lg border border-white/5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-1.5 bg-blue-500/10 rounded-lg">
+                          <Landmark size={14} className="text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-white">{tutor.bank || 'Not Specified'}</p>
+                          <p className="text-xs text-gray-400 font-mono">
+                            {tutor.account && tutor.account !== 'N/A' 
+                              ? `${'*'.repeat(Math.max(0, tutor.account.length - 4))}${tutor.account.slice(-4)}` 
+                              : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                      {tutor.university && (
+                        <div className="text-xs text-gray-400">
+                          {tutor.university}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    {tutor.status === 'Pending' && (
+                      <div className="mt-4 flex items-center gap-2 justify-end">
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleProcessPayout(tutor.id, 'decline')}
+                          disabled={isProcessing}
+                          className="px-4 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:text-red-300 rounded-lg text-xs font-medium flex items-center gap-2 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                        >
+                          {isProcessing ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          Decline
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleProcessPayout(tutor.id, 'approve')}
+                          disabled={isProcessing}
+                          className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 rounded-lg text-xs font-medium flex items-center gap-2 hover:bg-emerald-500/20 transition-all duration-300 disabled:opacity-50"
+                        >
+                          {isProcessing ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                          Settle
+                        </motion.button>
+                      </div>
                     )}
-                  </div>
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Amount</p>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">LKR {Number(selectedLog.amount || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Gateway</p>
-                    <p className="text-base font-semibold text-white mt-1">{selectedLog.gateway || 'N/A'}</p>
-                  </div>
-                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Status</p>
-                    <div className="mt-1">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${getStatusConfig(selectedLog.status).bg} border ${getStatusConfig(selectedLog.status).border} rounded-lg`}>
-                        {selectedLog.status === 'Success' && <CheckCircle size={14} className="text-emerald-400" />}
-                        {selectedLog.status === 'Completed' && <CheckCircle size={14} className="text-emerald-400" />}
-                        {selectedLog.status === 'Failed' && <XCircle size={14} className="text-red-400" />}
-                        {selectedLog.status === 'Declined' && <XCircle size={14} className="text-red-400" />}
-                        {selectedLog.status === 'Pending' && <Clock size={14} className="text-amber-400" />}
-                        {selectedLog.status === 'Error' && <XCircle size={14} className="text-red-400" />}
-                        <span className={`text-sm font-bold ${getStatusConfig(selectedLog.status).text}`}>{selectedLog.status || 'Pending'}</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
-                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Transaction Time</p>
-                  <p className="text-sm font-semibold text-white mt-1">{formatDate(selectedLog.timestamp)}</p>
+                    {/* Completed Message */}
+                    {tutor.status === 'Settled' && (
+                      <div className="mt-4 flex items-center gap-2 justify-end text-xs font-mono font-bold text-gray-500">
+                        <CheckCircle size={14} className="text-emerald-400" />
+                        Completed • Transaction Added to Card
+                      </div>
+                    )}
+                  </GlassCard>
+                </motion.div>
+              );
+            })}
+          </div>
+        ) : (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+            <GlassCard className="p-12 text-center border-white/10">
+              <div className="flex flex-col items-center gap-3">
+                <div className="p-5 bg-white/5 rounded-full">
+                  <Users size={40} className="text-gray-500" />
                 </div>
+                <h3 className="text-lg font-semibold text-white">No Active Tutors Found</h3>
+                <p className="text-sm text-gray-400">
+                  {searchTerm ? 'Try adjusting your search' : 'No pending or settled payouts'}
+                </p>
               </div>
-            </motion.div>
+            </GlassCard>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Copy Notification */}
+      {/* ⭐ ADD PAYOUT MODAL */}
       <AnimatePresence>
-        {copied && (
+        {showAddModal && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-8 right-8 px-5 py-2.5 bg-emerald-500/20 border border-emerald-500/30 rounded-xl backdrop-blur-lg z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+            onClick={() => setShowAddModal(false)}
           >
-            <div className="flex items-center gap-2">
-              <CheckCircle size={16} className="text-emerald-400" />
-              <span className="text-sm font-medium text-white">Copied to clipboard</span>
-            </div>
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-[#0a1628] border border-white/10 rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Plus size={20} className="text-emerald-400" />
+                  Add New Payout
+                </h2>
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <X size={20} className="text-gray-400" />
+                </button>
+              </div>
+              
+              <form onSubmit={handleAddPayout} className="space-y-4">
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Tutor ID *</label>
+                  <input
+                    type="text"
+                    value={newPayout.tutorId}
+                    onChange={(e) => setNewPayout({...newPayout, tutorId: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter tutor ID"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Tutor Name *</label>
+                  <input
+                    type="text"
+                    value={newPayout.tutorName}
+                    onChange={(e) => setNewPayout({...newPayout, tutorName: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter tutor name"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Total Tokens *</label>
+                  <input
+                    type="number"
+                    value={newPayout.totalTokens}
+                    onChange={(e) => setNewPayout({...newPayout, totalTokens: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter total tokens"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Net Payout (LKR) *</label>
+                  <input
+                    type="number"
+                    value={newPayout.netPayout}
+                    onChange={(e) => setNewPayout({...newPayout, netPayout: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter net payout"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Bank Name</label>
+                  <input
+                    type="text"
+                    value={newPayout.bankName}
+                    onChange={(e) => setNewPayout({...newPayout, bankName: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter bank name"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-400 font-medium block mb-1">Account Number</label>
+                  <input
+                    type="text"
+                    value={newPayout.accountNo}
+                    onChange={(e) => setNewPayout({...newPayout, accountNo: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
+                    placeholder="Enter account number"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 text-gray-400 rounded-lg text-sm font-medium hover:bg-white/10 transition-all duration-300"
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="submit"
+                    disabled={submitting}
+                    className="flex-1 px-4 py-2.5 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/30 transition-all duration-300 disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <RefreshCw size={16} className="animate-spin mx-auto" />
+                    ) : (
+                      'Add Payout'
+                    )}
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
