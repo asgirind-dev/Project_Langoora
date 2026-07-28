@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Download, CheckCircle, XCircle, Clock, AlertCircle, Printer,
-  Activity, DollarSign, CreditCard, TrendingUp, Crown, Copy, RefreshCw, Loader2
+  Activity, DollarSign, CreditCard, TrendingUp, Crown, Copy, Loader2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -21,57 +21,15 @@ export default function TransactionLedger() {
   const [copied, setCopied] = useState(false);
 
   // ============================================
-  // ⭐ FETCH TRANSACTIONS FROM SERVICE
+  // ⭐ OPTIMIZED SINGLE FETCH FUNCTION
   // ============================================
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      try {
-        setLoading(true);
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        
-        const response = await axios.get(`${API_URL}/api/finance/transactions`);
-        console.log('📊 Transactions Response:', response.data);
-        
-        if (response.data && Array.isArray(response.data)) {
-          const transformedLogs = response.data.map(tx => ({
-            ref: tx.id || tx.transactionId || `TXN-${Date.now()}`,
-            student: tx.student_name || tx.userName || tx.user || 'Unknown Student',
-            tier: tx.plan || tx.subscriptionType || 'Standard Plan',
-            amount: tx.amount || 0,
-            gateway: tx.gateway || tx.paymentMethod || 'Stripe',
-            status: tx.status || 'Pending',
-            timestamp: tx.created_at || tx.createdAt || new Date().toISOString(),
-            email: tx.email || tx.student_email || '',
-            plan: tx.plan || tx.subscriptionType || 'Standard Plan',
-            credits: tx.credits || 0,
-            transactionId: tx.id,
-            paymentMethod: tx.paymentMethod || tx.gateway || 'Stripe'
-          }));
-          
-          setLogs(transformedLogs);
-        } else {
-          console.log('⚠️ No transactions found');
-          setLogs([]);
-        }
-      } catch (error) {
-        console.error('❌ Error fetching transactions:', error);
-        setLogs([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchTransactions();
-  }, []);
-
-  // 🎯 Fetch Real Database Transactions
-  const fetchLedgerData = async () => {
+  const fetchLedgerData = useCallback(async () => {
     setLoading(true);
     try {
+      // Direct Axios duplicate call එක අයින් කර FinanceService එක විතරක් භාවිත කර ඇත.
       const data = await FinanceService.getAllTransactions();
       const rawLogs = Array.isArray(data) ? data : [];
       
-      // Transform & Normalize data structure
       const transformedLogs = rawLogs.map(tx => ({
         ref: tx.id || tx.transactionId || tx.ref || `TXN-${Date.now()}`,
         student: tx.student_name || tx.userName || tx.student || tx.user || 'Unknown Student',
@@ -90,27 +48,28 @@ export default function TransactionLedger() {
     } catch (error) {
       console.error("Failed to load transaction audit logs:", error);
       setLogs([]);
-    } fontFinally: {
+    } finally { // Fixed fontFinally typo
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchLedgerData();
   }, []);
 
-  // ✅ SUMMARY STATS - FIXED (Only ONE declaration of each)
+  // Run initial fetch ONCE on mount
+  useEffect(() => {
+    fetchLedgerData();
+  }, [fetchLedgerData]);
+
+  // SUMMARY STATS
   const totalTransactions = logs.length;
   const totalRevenue = logs.reduce((sum, log) => sum + (log.status === 'Success' || log.status === 'Completed' ? Number(log.amount || 0) : 0), 0);
   const successCount = logs.filter(l => l.status === 'Success' || l.status === 'Completed').length;
   const successRate = totalTransactions > 0 ? ((successCount / totalTransactions) * 100).toFixed(1) : '0.0';
   const failedCount = logs.filter(l => l.status === 'Failed' || l.status === 'Declined').length;
 
-  // ✅ SEARCH & FILTERS - FIXED (removed duplicate conditions)
+  // SEARCH & FILTERS
   const filteredLogs = logs.filter(log => {
     const matchSearch = (log.student || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
+                        (log.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (log.email || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchStatus = filterStatus === 'all' || (log.status || '').toLowerCase() === filterStatus.toLowerCase();
     const matchGateway = filterGateway === 'all' || (log.gateway || '').toLowerCase().includes(filterGateway.toLowerCase());
     return matchSearch && matchStatus && matchGateway;
@@ -118,48 +77,12 @@ export default function TransactionLedger() {
 
   const getStatusConfig = (status) => {
     const statusMap = {
-      'Success': { 
-        bg: 'bg-emerald-500/10', 
-        border: 'border-emerald-500/20',
-        text: 'text-emerald-400',
-        icon: CheckCircle,
-        label: 'Success'
-      },
-      'Completed': { 
-        bg: 'bg-emerald-500/10', 
-        border: 'border-emerald-500/20',
-        text: 'text-emerald-400',
-        icon: CheckCircle,
-        label: 'Completed'
-      },
-      'Failed': { 
-        bg: 'bg-red-500/10', 
-        border: 'border-red-500/20',
-        text: 'text-red-400',
-        icon: XCircle,
-        label: 'Failed'
-      },
-      'Declined': { 
-        bg: 'bg-red-500/10', 
-        border: 'border-red-500/20',
-        text: 'text-red-400',
-        icon: XCircle,
-        label: 'Declined'
-      },
-      'Pending': { 
-        bg: 'bg-amber-500/10', 
-        border: 'border-amber-500/20',
-        text: 'text-amber-400',
-        icon: Clock,
-        label: 'Pending'
-      },
-      'Error': { 
-        bg: 'bg-red-500/10', 
-        border: 'border-red-500/20',
-        text: 'text-red-400',
-        icon: XCircle,
-        label: 'Error'
-      }
+      'Success': { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', icon: CheckCircle, label: 'Success' },
+      'Completed': { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', icon: CheckCircle, label: 'Completed' },
+      'Failed': { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400', icon: XCircle, label: 'Failed' },
+      'Declined': { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400', icon: XCircle, label: 'Declined' },
+      'Pending': { bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-400', icon: Clock, label: 'Pending' },
+      'Error': { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400', icon: XCircle, label: 'Error' }
     };
     return statusMap[status] || statusMap['Pending'];
   };
@@ -175,18 +98,14 @@ export default function TransactionLedger() {
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
-
-      // Local Time (Sri Lanka Timezone) එකට හරවා YYYY-MM-DD hh:mm AM/PM ලෙස සැකසීම
-      const dateFormatted = date.toLocaleDateString('en-CA'); // e.g. 2026-07-25
-      const timeFormatted = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }); // e.g. 07:41 PM
-
+      const dateFormatted = date.toLocaleDateString('en-CA');
+      const timeFormatted = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
       return `${dateFormatted} ${timeFormatted}`;
     } catch {
       return dateStr;
     }
   };
 
-  // 🎯 PDF Export Handler
   const handleExportPDF = () => {
     if (filteredLogs.length === 0) return alert("No transaction records available to export.");
 
@@ -211,7 +130,6 @@ export default function TransactionLedger() {
       doc.setFontSize(8);
       doc.text(`Generated: ${timestamp}`, 140, 28);
 
-      // Audit Highlights Box
       const successfulTxs = filteredLogs.filter(t => t.status === 'Success' || t.status === 'Completed');
       const filteredRev = successfulTxs.reduce((sum, log) => sum + Number(log.amount || 0), 0);
 
@@ -241,16 +159,8 @@ export default function TransactionLedger() {
         head: [['Reference ID', 'Student', 'Plan', 'Amount', 'Credits', 'Gateway', 'Status', 'Date & Time']],
         body: tableRows,
         theme: 'grid',
-        headStyles: { 
-          fillColor: [30, 41, 59], 
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          fontSize: 8
-        },
-        styles: { 
-          fontSize: 8, 
-          cellPadding: 3.5 
-        },
+        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 3.5 },
         columnStyles: {
           0: { cellWidth: 32, fontStyle: 'bold' },
           1: { cellWidth: 32 },
@@ -301,27 +211,17 @@ export default function TransactionLedger() {
   return (
     <div className="space-y-6 font-sans">
       {/* HERO HEADER */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="border-b border-white/5 pb-4"
-      >
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="border-b border-white/5 pb-4">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-xs font-mono tracking-widest uppercase px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-extrabold">
             Auditing Core Engine
           </span>
         </div>
-        <h1 className="text-3xl font-extrabold text-white tracking-tight">
-          Financial Ledger Audit
-        </h1>
-        <p className="text-sm text-gray-400 mt-1 max-w-2xl font-medium">
-          Immutable historic system tracking data logs for user real-money subscription execution nodes.
-        </p>
+        <h1 className="text-3xl font-extrabold text-white tracking-tight">Financial Ledger Audit</h1>
+        <p className="text-sm text-gray-400 mt-1 max-w-2xl font-medium">Immutable historic system tracking data logs for user real-money subscription execution nodes.</p>
         <div className="mt-2 flex items-center gap-3">
           <span className="text-xs text-gray-500 font-mono">{logs.length} total transactions</span>
-          <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
-            live data
-          </span>
+          <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">live data</span>
         </div>
       </motion.div>
 
@@ -333,22 +233,13 @@ export default function TransactionLedger() {
           { label: 'Success Rate', value: `${successRate}%`, icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/10' },
           { label: 'Failed', value: failedCount, icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
         ].map((stat, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.08 }}
-          >
+          <motion.div key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08 }}>
             <GlassCard className="p-5 border-white/10 hover:border-blue-500/30 transition-all duration-300 hover:scale-[1.02]">
               <div className="flex items-center justify-between">
-                <div className={`p-2.5 ${stat.bg} rounded-xl`}>
-                  <stat.icon size={20} className={stat.color} />
-                </div>
+                <div className={`p-2.5 ${stat.bg} rounded-xl`}><stat.icon size={20} className={stat.color} /></div>
                 <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">{stat.label}</span>
               </div>
-              <div className="mt-2">
-                <div className="text-2xl font-bold text-white">{stat.value}</div>
-              </div>
+              <div className="mt-2"><div className="text-2xl font-bold text-white">{stat.value}</div></div>
             </GlassCard>
           </motion.div>
         ))}
@@ -403,8 +294,7 @@ export default function TransactionLedger() {
             onClick={() => window.print()}
             className="px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition-all duration-300 flex items-center gap-2 text-sm font-medium cursor-pointer"
           >
-            <Printer size={16} />
-            Print
+            <Printer size={16} /> Print
           </motion.button>
 
           <motion.button
@@ -421,11 +311,7 @@ export default function TransactionLedger() {
       </div>
 
       {/* LEDGER TABLE */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <GlassCard className="p-0 border-white/10 overflow-hidden hover:border-blue-500/20 transition-all duration-300">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -459,10 +345,7 @@ export default function TransactionLedger() {
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-mono font-bold text-blue-400">{log.ref}</span>
-                              <button
-                                onClick={() => copyToClipboard(log.ref)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                              >
+                              <button onClick={() => copyToClipboard(log.ref)} className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                                 <Copy size={14} className="text-gray-500 hover:text-white" />
                               </button>
                             </div>
@@ -478,14 +361,10 @@ export default function TransactionLedger() {
                             <div className="flex items-center gap-2">
                               <Crown size={16} className="text-amber-400" />
                               <span className="text-sm font-medium text-white">{log.plan || 'Standard'}</span>
-                              {log.credits > 0 && (
-                                <span className="text-xs text-gray-400">({log.credits}c)</span>
-                              )}
+                              {log.credits > 0 && <span className="text-xs text-gray-400">({log.credits}c)</span>}
                             </div>
                           </td>
-                          <td className="px-5 py-4">
-                            <span className="text-sm font-bold text-white">LKR {Number(log.amount || 0).toLocaleString()}</span>
-                          </td>
+                          <td className="px-5 py-4"><span className="text-sm font-bold text-white">LKR {Number(log.amount || 0).toLocaleString()}</span></td>
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-2">
                               <CreditCard size={16} className="text-gray-400" />
@@ -502,10 +381,7 @@ export default function TransactionLedger() {
                             <motion.button
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
-                              onClick={() => {
-                                setSelectedLog(log);
-                                setShowModal(true);
-                              }}
+                              onClick={() => { setSelectedLog(log); setShowModal(true); }}
                               className="p-2 bg-white/5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
                             >
                               <Search size={16} className="text-gray-400 hover:text-white" />
@@ -518,9 +394,7 @@ export default function TransactionLedger() {
                     <tr>
                       <td colSpan="7" className="px-5 py-20 text-center">
                         <div className="flex flex-col items-center gap-4">
-                          <div className="p-6 bg-white/5 rounded-full">
-                            <Search size={48} className="text-gray-500" />
-                          </div>
+                          <div className="p-6 bg-white/5 rounded-full"><Search size={48} className="text-gray-500" /></div>
                           <h3 className="text-lg font-semibold text-white">No Transactions Found</h3>
                           <p className="text-sm text-gray-400">There are no real transactions recorded in the system yet.</p>
                         </div>
@@ -533,22 +407,11 @@ export default function TransactionLedger() {
           </div>
 
           <div className="px-5 py-3.5 border-t border-white/10 bg-white/[0.02] flex items-center justify-between">
-            <div className="text-xs text-gray-400">
-              Showing {filteredLogs.length} of {logs.length} transactions
-            </div>
+            <div className="text-xs text-gray-400">Showing {filteredLogs.length} of {logs.length} transactions</div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full" />
-                <span className="text-xs text-gray-400">Success</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-red-400 rounded-full" />
-                <span className="text-xs text-gray-400">Failed</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-amber-400 rounded-full" />
-                <span className="text-xs text-gray-400">Pending</span>
-              </div>
+              <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-emerald-400 rounded-full" /><span className="text-xs text-gray-400">Success</span></div>
+              <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-red-400 rounded-full" /><span className="text-xs text-gray-400">Failed</span></div>
+              <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-amber-400 rounded-full" /><span className="text-xs text-gray-400">Pending</span></div>
             </div>
           </div>
         </GlassCard>
@@ -573,18 +436,11 @@ export default function TransactionLedger() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20">
-                      Transaction Details
-                    </span>
+                    <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20">Transaction Details</span>
                   </div>
                   <h2 className="text-xl font-bold text-white mt-2">{selectedLog.ref}</h2>
                 </div>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-gray-400 hover:text-white cursor-pointer"
-                >
-                  ✕
-                </button>
+                <button onClick={() => setShowModal(false)} className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-gray-400 hover:text-white cursor-pointer">✕</button>
               </div>
 
               <div className="space-y-4">
@@ -604,9 +460,7 @@ export default function TransactionLedger() {
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Plan</p>
                     <p className="text-base font-bold text-white mt-1">{selectedLog.plan || 'Standard'}</p>
-                    {selectedLog.credits > 0 && (
-                      <p className="text-sm text-gray-400">{selectedLog.credits} Credits</p>
-                    )}
+                    {selectedLog.credits > 0 && <p className="text-sm text-gray-400">{selectedLog.credits} Credits</p>}
                   </div>
                   <div className="p-3.5 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Amount</p>
@@ -642,7 +496,7 @@ export default function TransactionLedger() {
         )}
       </AnimatePresence>
 
-      {/* Copy Notification */}
+      {/* COPY NOTIFICATION */}
       <AnimatePresence>
         {copied && (
           <motion.div

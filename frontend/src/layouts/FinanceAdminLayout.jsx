@@ -34,18 +34,15 @@ const financeNavItems = [
     path: 'ledger', 
     icon: BookOpen 
   },
-
 ];
 
 export default function FinanceAdminLayout() {
   const { user, role } = useAuth();
 
-
   const userRole = user?.roleId || user?.role || role || '';
   const isFinanceAdmin = userRole === 'finance' || userRole === 'finance_admin';
 
   console.log(`🔍 FinanceAdminLayout: User role check - roleId: ${user?.roleId}, role: ${user?.role}, final: ${userRole}, isFinanceAdmin: ${isFinanceAdmin}`);
-
 
   if (!isFinanceAdmin) {
     console.log(`❌ Access denied: User is not Finance Admin (role: ${userRole})`);
@@ -54,11 +51,8 @@ export default function FinanceAdminLayout() {
 
   console.log(`✅ Finance Admin access granted: ${user?.email}`);
 
-
   const filteredNavItems = financeNavItems.filter(item => {
-
     if (!item.requiredPrivilege) return true;
-
     const hasPrivilege = user?.privileges?.includes(item.requiredPrivilege);
     console.log(`🔍 Checking privilege '${item.requiredPrivilege}' for ${item.label}: ${hasPrivilege}`);
     return hasPrivilege;

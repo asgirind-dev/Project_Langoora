@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:5000/api/exams";
+export const API_URL = "http://localhost:5000/api/exams";
+
 
 /**
  * 🔐 Helper: Get fresh token from Firebase

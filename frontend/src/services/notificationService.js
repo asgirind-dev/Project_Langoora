@@ -14,10 +14,13 @@ const getAuthConfig = () => {
 };
 
 class NotificationService {
-  async getNotifications(userId) {
+  /**
+   * Get all notifications with pagination
+   */
+  async getNotifications(userId, limit = 50, page = 1) {
     try {
       const response = await axios.get(
-        `${API_URL}/notifications/${userId}`,
+        `${API_URL}/notifications/${userId}?limit=${limit}&page=${page}`,
         getAuthConfig()
       );
       return response.data?.data || [];
@@ -27,6 +30,26 @@ class NotificationService {
     }
   }
 
+  /**
+   * Get latest notifications - OPTIMIZED for dashboard
+   * Returns only the latest N notifications
+   */
+  async getLatestNotifications(userId, limit = 5) {
+    try {
+      const response = await axios.get(
+        `${API_URL}/notifications/${userId}/latest?limit=${limit}`,
+        getAuthConfig()
+      );
+      return response.data?.data || [];
+    } catch (error) {
+      console.error('Error fetching latest notifications:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get unread count - OPTIMIZED using select()
+   */
   async getUnreadCount(userId) {
     try {
       const response = await axios.get(
@@ -37,6 +60,22 @@ class NotificationService {
     } catch (error) {
       console.error('Error fetching unread count:', error);
       return 0;
+    }
+  }
+
+  /**
+   * Get unread notifications with limit
+   */
+  async getUnreadNotifications(userId, limit = 20) {
+    try {
+      const response = await axios.get(
+        `${API_URL}/notifications/${userId}/unread?limit=${limit}`,
+        getAuthConfig()
+      );
+      return response.data?.data || [];
+    } catch (error) {
+      console.error('Error fetching unread notifications:', error);
+      return [];
     }
   }
 
@@ -77,6 +116,38 @@ class NotificationService {
       return response.data;
     } catch (error) {
       console.error('Error deleting notification:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete all read notifications - OPTIMIZED
+   */
+  async deleteReadNotifications(userId) {
+    try {
+      const response = await axios.delete(
+        `${API_URL}/notifications/${userId}/read`,
+        getAuthConfig()
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting read notifications:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Cleanup old notifications - OPTIMIZED to reduce storage
+   */
+  async cleanupOldNotifications(userId, daysOld = 30) {
+    try {
+      const response = await axios.delete(
+        `${API_URL}/notifications/${userId}/cleanup?daysOld=${daysOld}`,
+        getAuthConfig()
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error cleaning up notifications:', error);
       throw error;
     }
   }
