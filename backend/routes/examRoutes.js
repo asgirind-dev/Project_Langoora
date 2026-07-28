@@ -60,10 +60,17 @@ router.post("/purchase", protect, purchaseExam);
 
 /**
  * 🔌 Get student's purchased exams
- * GET /api/exams/my-exams OR /api/exams/student-exams
+ * GET /api/exams/my-exams OR /api/exams/student-exams OR /api/exams/purchased
  */
 router.get("/my-exams", protect, getStudentExams);
 router.get("/student-exams", protect, getStudentExams);
+router.get("/purchased", protect, getStudentExams); // ✅ Added /purchased route
+
+/**
+ * 📊 Get recent exams for student dashboard
+ * GET /api/exams/recent
+ */
+router.get("/recent", protect, authorizeRoles("student", "tutor", "admin"), getStudentExams);
 
 /**
  * 🗑️ Remove purchased exam from dashboard
@@ -191,7 +198,7 @@ router.get("/my-audits", protect, authorizeRoles("validator"), getMyAudits);
 router.get(
   "/:examId",
   protect,
-  authorizeRoles("tutor", "admin", "validator"),
+  authorizeRoles("tutor", "admin", "validator", "student"),
   getExamById,
 );
 

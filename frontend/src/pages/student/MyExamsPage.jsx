@@ -20,7 +20,7 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ✅ HELPER FUNCTION: HTML Entities Clean කිරීමට (Uncaught ReferenceError Fix)
+// ✅ HELPER FUNCTION: HTML Entities Clean කිරීමට
 const cleanTitle = (title) => {
   if (!title) return '';
   return String(title)
@@ -141,15 +141,18 @@ export default function MyExamsPage() {
         const examList = res.data.exams || res.data.data || [];
         setExams(examList);
 
+        // ✅ Tutor Profile Fetching එක Safe කර 404 Error Silent කිරීම
         const tutorIds = [...new Set(examList.map(e => e.tutor_id).filter(Boolean))];
         if (tutorIds.length > 0) {
           const tutorEntries = await Promise.all(
             tutorIds.map(async (id) => {
               try {
-                const tRes = await axios.get(`http://localhost:5000/api/tutor-profile/${id}`);
+                const tRes = await axios.get(`http://localhost:5000/api/tutor-profile/${id}`, {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
                 return [id, tRes.data?.data || null];
               } catch (err) {
-                console.error(`Failed to fetch tutor profile for ${id}:`, err);
+                // 404/Error ආවත් Console එකේ පෙන්වන්නේ නැතිව Safe එකේ null Return කරයි
                 return [id, null];
               }
             })
@@ -369,7 +372,7 @@ export default function MyExamsPage() {
             const scorePercentage = exam.percentage || exam.lastScore || exam.last_score || null;
 
             const lastAttemptId = exam.attemptId || exam.attempt_id ||
-                                   exam.lastAttemptId || exam.last_attempt_id || null;
+                                  exam.lastAttemptId || exam.last_attempt_id || null;
             const resultsTargetId = lastAttemptId || targetExamId;
 
             return (

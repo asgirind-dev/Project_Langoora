@@ -254,10 +254,7 @@ const deleteStudentExam = async (req, res) => {
 };
 
 // =========================================================================
-// 4. Purchase an Exam - WITH FINANCIAL AUDIT LOG
-// =========================================================================
-// =========================================================================
-// 4. Purchase an Exam (FIXED UNDEFINED QUERY & CREDIT DEDUCTION + NOTIFICATION)
+// 4. Purchase an Exam (DYNAMIC CATEGORY/LEVEL CREDITS + TRANSACTION + AUDIT)
 // =========================================================================
 const purchaseExam = async (req, res) => {
   try {
@@ -284,6 +281,7 @@ const purchaseExam = async (req, res) => {
       });
     }
 
+    // 1. Check if already purchased
     const existingPurchase = await db
       .collection("purchased_exams")
       .where("student_id", "==", studentId)
@@ -299,38 +297,60 @@ const purchaseExam = async (req, res) => {
 
     let examData = null;
 
-    if (category_id && level_id) {
-      const levelDoc = await db
-        .collection("exam_categories")
-        .doc(category_id.toLowerCase())
-        .collection("levels")
-        .doc(level_id.toLowerCase())
-        .get();
-
-      if (levelDoc.exists) {
-        examData = levelDoc.data();
-      }
-    }
-
-    if (!examData && targetExamId) {
+    // Exam document fetch
+    if (targetExamId && targetExamId !== "n/a") {
       const examDoc = await db.collection("exams").doc(targetExamId).get();
       if (examDoc.exists) {
         examData = examDoc.data();
       }
     }
 
+    const finalCatId = (category_id || examData?.category_id || examData?.category || "").toLowerCase().trim();
+    const finalLevelId = (level_id || examData?.level_id || examData?.level || "").toLowerCase().trim();
+
     let requiredCredits = 0;
-    if (requestCredits !== undefined && Number(requestCredits) > 0) {
-      requiredCredits = Number(requestCredits);
-    } else if (examData) {
-      requiredCredits = Number(
-        examData.credits || examData.price || examData.credit_cost || 0,
-      );
+
+    // 2. Fetch Dynamic Credits from Firestore Categories/Levels Collection
+    if (finalCatId) {
+      if (finalLevelId && finalLevelId !== "n/a") {
+        const levelDoc = await db
+          .collection("exam_categories")
+          .doc(finalCatId)
+          .collection("levels")
+          .doc(finalLevelId)
+          .get();
+
+        if (levelDoc.exists) {
+          const lData = levelDoc.data();
+          requiredCredits = Number(lData.credit_cost ?? lData.credits ?? 0);
+        }
+      }
+
+      // If level credit is 0 or no levels subcollection, check main category document
+      if (requiredCredits === 0) {
+        const catDoc = await db.collection("exam_categories").doc(finalCatId).get();
+        if (catDoc.exists) {
+          const cData = catDoc.data();
+          requiredCredits = Number(cData.credit_cost ?? cData.credits ?? 0);
+        }
+      }
+    }
+
+    // Fallback: If category/level credit cost not configured, check request body or exam document
+    if (requiredCredits === 0) {
+      if (requestCredits !== undefined && Number(requestCredits) > 0) {
+        requiredCredits = Number(requestCredits);
+      } else if (examData) {
+        requiredCredits = Number(
+          examData.credits || examData.price || examData.credit_cost || 0,
+        );
+      }
     }
 
     const userRef = db.collection("users").doc(studentId);
     const transactionId = `TRX-${Date.now()}`;
 
+    // 3. Firestore Transaction for Wallet Balance Deduction
     await db.runTransaction(async (transaction) => {
       const freshUserDoc = await transaction.get(userRef);
       if (!freshUserDoc.exists) {
@@ -340,10 +360,10 @@ const purchaseExam = async (req, res) => {
       const freshUserData = freshUserDoc.data();
 
       const currentCredits = Number(
-        freshUserData.credits !== undefined
-          ? freshUserData.credits
-          : freshUserData.wallet_balance !== undefined
-            ? freshUserData.wallet_balance
+        freshUserData.wallet_balance !== undefined
+          ? freshUserData.wallet_balance
+          : freshUserData.credits !== undefined
+            ? freshUserData.credits
             : freshUserData.walletBalance || 0,
       );
 
@@ -355,27 +375,21 @@ const purchaseExam = async (req, res) => {
 
       const newBalance = currentCredits - requiredCredits;
 
-      const updateData = { updatedAt: new Date().toISOString() };
-      if (freshUserData.credits !== undefined) updateData.credits = newBalance;
-      if (freshUserData.wallet_balance !== undefined)
-        updateData.wallet_balance = newBalance;
-      if (freshUserData.walletBalance !== undefined)
-        updateData.walletBalance = newBalance;
-
-      if (
-        freshUserData.credits === undefined &&
-        freshUserData.wallet_balance === undefined
-      ) {
-        updateData.credits = newBalance;
-        updateData.wallet_balance = newBalance;
-      }
+      const updateData = { 
+        wallet_balance: newBalance,
+        credits: newBalance,
+        updatedAt: new Date().toISOString() 
+      };
 
       transaction.update(userRef, updateData);
 
+      // Save purchase record
       const purchaseRef = db.collection("purchased_exams").doc();
       transaction.set(purchaseRef, {
         student_id: studentId,
         exam_id: targetExamId,
+        category_id: finalCatId,
+        level_id: finalLevelId,
         purchasedAt: new Date().toISOString(),
         status: "active",
         credits_deducted: requiredCredits,
@@ -383,6 +397,7 @@ const purchaseExam = async (req, res) => {
         tutor_name: examData?.tutor_name || 'Expert Tutor'
       });
 
+      // Save transaction history record
       const transactionRef = db.collection("transactions").doc(transactionId);
       transaction.set(transactionRef, {
         order_id: transactionId,
@@ -397,7 +412,7 @@ const purchaseExam = async (req, res) => {
       });
     });
 
-    // 🔔 🎯 AUTO CREATE NOTIFICATION FOR STUDENT
+    // 🔔 AUTO CREATE NOTIFICATION FOR STUDENT
     try {
       const examTitle = examData?.title || examData?.level_name || targetExamId;
       await db.collection('notifications').add({
@@ -412,8 +427,8 @@ const purchaseExam = async (req, res) => {
       });
     } catch (notifErr) {
       console.error("Failed to send purchase notification:", notifErr);
-      // Main purchase flow එක නොනවත්වා ඉදිරියට යයි
     }
+
     // ✅ FINANCIAL AUDIT LOG - SUCCESSFUL PURCHASE
     logAudit(auditLogService.logFinancial, {
       userId: studentId,
@@ -460,7 +475,10 @@ const purchaseExam = async (req, res) => {
 };
 
 // =========================================================================
-// 5. Get All Published Exams (NO AUDIT - READ ONLY)
+// 5. Get All Published Exams (FETCH DYNAMIC CATEGORY CREDITS FROM EXAM_CATEGORIES)
+// =========================================================================
+// =========================================================================
+// 5. Get All Published Exams (ROBUST DYNAMIC CREDITS MATCHING FOR ALL EXAMS)
 // =========================================================================
 const getAllExams = async (req, res) => {
   try {
@@ -469,45 +487,97 @@ const getAllExams = async (req, res) => {
       .where("status", "in", ["active", "published"])
       .get();
 
-    const categoriesSnapshot = await db.collection('exam_categories').get();
-    const levelCreditsMap = {};
+    // 1. Fetch all Categories & Levels into flexible lookup maps
+    const categoriesSnapshot = await db.collection("exam_categories").get();
+    
+    const creditsMap = {};
+
+    // Helper: String එකක තියෙන Spaces, Hyphens, Underscores අයින් කර Pure Alphanumeric Clean Key එකක් සෑදීම
+    // E.g. "EPS - TOPIK", "eps_-_topik", "eps-topik" -> "epstopik"
+    const sanitizeKey = (str) => String(str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
     for (const categoryDoc of categoriesSnapshot.docs) {
-      const categoryId = categoryDoc.id;
-      
-      const levelsSnapshot = await db
-        .collection('exam_categories')
-        .doc(categoryId)
-        .collection('levels')
-        .get();
+      const docId = categoryDoc.id;
+      const catData = categoryDoc.data();
+      const mainCatCredit = Number(catData.credit_cost ?? catData.credits ?? 0);
 
-      levelsSnapshot.forEach((levelDoc) => {
-        const levelData = levelDoc.data();
-        const levelId = levelDoc.id;
-        
-        const creditValue = Number(levelData.credits ?? levelData.price ?? levelData.credit_cost ?? 0);
-        
-        levelCreditsMap[`${categoryId}_${levelId}`] = creditValue;
-        levelCreditsMap[levelId] = creditValue;
-      });
+      // Raw Document ID Map (e.g. "eps_-_topik")
+      creditsMap[docId] = mainCatCredit;
+      creditsMap[docId.toLowerCase()] = mainCatCredit;
+
+      // Cleaned Key Map (e.g. "epstopik")
+      const cleanCatKey = sanitizeKey(docId);
+      creditsMap[cleanCatKey] = mainCatCredit;
+
+      // Category Name Base Key (e.g. "EPS-TOPIK" -> "epstopik")
+      if (catData.category_name) {
+        creditsMap[sanitizeKey(catData.category_name)] = mainCatCredit;
+      }
+
+      // Subcollection: Check Levels for this category
+      try {
+        const levelsSnapshot = await db
+          .collection("exam_categories")
+          .doc(docId)
+          .collection("levels")
+          .get();
+
+        levelsSnapshot.forEach((levelDoc) => {
+          const levelId = levelDoc.id;
+          const levelData = levelDoc.data();
+          const levelCredit = Number(levelData.credit_cost ?? levelData.credits ?? 0);
+
+          const cleanLevelKey = sanitizeKey(levelId);
+
+          // Direct Level Key
+          creditsMap[levelId] = levelCredit;
+          creditsMap[levelId.toLowerCase()] = levelCredit;
+          creditsMap[cleanLevelKey] = levelCredit;
+
+          // Composite Keys (e.g., "epstopik_intermediate", "jlpt_jlptn2")
+          creditsMap[`${cleanCatKey}_${cleanLevelKey}`] = levelCredit;
+          if (levelData.level_name) {
+            creditsMap[`${cleanCatKey}_${sanitizeKey(levelData.level_name)}`] = levelCredit;
+          }
+        });
+      } catch (subErr) {
+        console.error(`Error fetching sub-levels for ${docId}:`, subErr);
+      }
     }
 
     const examsList = [];
 
     snapshot.forEach((doc) => {
       const data = doc.data();
-      const catId = data.category_id || data.category || '';
-      const levelId = data.level_id || data.level || '';
 
-      const matchedCredits = 
-        levelCreditsMap[`${catId}_${levelId}`] ?? 
-        levelCreditsMap[levelId] ?? 
-        Number(data.credits ?? 0);
+      const rawCat = String(data.category_id || data.category || "").trim();
+      const rawLevel = String(data.level_id || data.level || "").trim();
+
+      const cleanCat = sanitizeKey(rawCat);
+      const cleanLevel = sanitizeKey(rawLevel);
+
+      // Multi-layer Priority Lookup Matrix:
+      // 1. Cat + Level Composite Clean Key (e.g., "jlpt_jlptn2")
+      // 2. Direct Level Key Match (e.g., "jlpt-n2" or "jlptn2")
+      // 3. Category Exact Document ID Match (e.g., "eps_-_topik")
+      // 4. Category Clean Key Match (e.g., "epstopik")
+      // 5. Exam document inner fallback (e.g., data.credits / data.credit_cost)
+      let finalCredits = 
+        creditsMap[`${cleanCat}_${cleanLevel}`] ??
+        creditsMap[rawLevel] ??
+        creditsMap[rawLevel.toLowerCase()] ??
+        creditsMap[cleanLevel] ??
+        creditsMap[rawCat] ??
+        creditsMap[rawCat.toLowerCase()] ??
+        creditsMap[cleanCat] ??
+        Number(data.credit_cost ?? data.credits ?? data.price ?? 0);
 
       examsList.push({
         id: doc.id,
         title: data.title || "Untitled Exam",
-        category: data.category_id || data.category || "JLPT",
+        category_id: data.category_id || data.category || "General",
+        category: data.category_id || data.category || "General",
+        level_id: data.level_id || data.level || "N/A",
         level: data.level_id || data.level || "N/A",
         tutor: data.tutor_name || "Expert Tutor",
         tutorAvatar:
@@ -521,7 +591,7 @@ const getAllExams = async (req, res) => {
         questions: Array.isArray(data.questions)
           ? data.questions.length
           : data.total_questions || 0,
-        credits: data.credits || 0,
+        credits: Number(finalCredits), // ✅ dynamic exact credit match
         rating: data.rating || 5.0,
         reviews: data.reviews || 0,
         difficulty: data.difficulty || "Intermediate",
@@ -706,8 +776,6 @@ const getExamById = async (req, res) => {
     const { examId } = req.params;
     const user = req.user;
 
-    // Only tutors need to be restricted to their own exams.
-    // Admins and validators can view any exam.
     let tutorId = null;
     if (user.role !== "validator" && user.role !== "admin") {
       tutorId = user?.id || user?.uid;
@@ -737,7 +805,6 @@ const deleteExam = async (req, res) => {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
-    // Get exam details before deletion
     const examDoc = await db.collection('exams').doc(examId).get();
     const examData = examDoc.exists ? examDoc.data() : null;
 
@@ -806,7 +873,6 @@ const restoreExam = async (req, res) => {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
-    // Get exam details before restore
     const examDoc = await db.collection('exams').doc(examId).get();
     const examData = examDoc.exists ? examDoc.data() : null;
 
@@ -845,7 +911,6 @@ const permanentDeleteExam = async (req, res) => {
     const { examId } = req.params;
     const tutorId = req.user?.id || req.user?.uid;
 
-    // Get exam details before permanent deletion
     const examDoc = await db.collection('exams').doc(examId).get();
     const examData = examDoc.exists ? examDoc.data() : null;
 
@@ -896,7 +961,6 @@ const updateExamStatus = async (req, res) => {
       });
     }
 
-    // Get exam details before status update
     const examDoc = await db.collection('exams').doc(examId).get();
     const examData = examDoc.exists ? examDoc.data() : null;
     const oldStatus = examData?.status || 'draft';
@@ -942,7 +1006,6 @@ const updateExamDraft = async (req, res) => {
     const draftData = req.body;
     const tutorId = req.user?.id || req.user?.uid;
 
-    // Get exam details before draft update
     const examDoc = await db.collection('exams').doc(examId).get();
     const examData = examDoc.exists ? examDoc.data() : null;
 
@@ -987,7 +1050,6 @@ const updateExam = async (req, res) => {
     const examData = req.body;
     const tutorId = req.user?.id || req.user?.uid;
 
-    // Get old exam details before update
     const oldExamDoc = await db.collection('exams').doc(examId).get();
     const oldExamData = oldExamDoc.exists ? oldExamDoc.data() : null;
 
@@ -1247,7 +1309,6 @@ const approveExam = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    // Get exam details before approval
     const examDoc = await db.collection('exams').doc(examId).get();
     const examData = examDoc.exists ? examDoc.data() : null;
 
@@ -1290,7 +1351,6 @@ const rejectExam = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    // Get exam details before rejection
     const examDoc = await db.collection('exams').doc(examId).get();
     const examData = examDoc.exists ? examDoc.data() : null;
 
@@ -1347,7 +1407,7 @@ const getMyAudits = async (req, res) => {
 };
 
 // =========================================================================
-// ✅ EXPORT ALL FUNCTIONS (fully merged)
+// ✅ EXPORT ALL FUNCTIONS
 // =========================================================================
 module.exports = {
   createExam,
@@ -1371,4 +1431,5 @@ module.exports = {
   getPendingExams,
   approveExam,
   rejectExam,
+  getMyAudits,
 };

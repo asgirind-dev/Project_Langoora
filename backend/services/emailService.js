@@ -82,7 +82,6 @@ class EmailService {
           user: smtpUser,
           pass: smtpPass
         }
-        
       };
 
       this.transporter = nodemailer.createTransport(smtpConfig);
@@ -544,9 +543,9 @@ class EmailService {
     }
   }
 
-  /**
-   * Send Subscription Confirmation Email
-   */
+  // =========================================================================
+  // 📚 SEND SUBSCRIPTION CONFIRMATION EMAIL
+  // =========================================================================
   async sendSubscriptionConfirmationEmail(studentEmail, studentName, planName, amount, credits) {
     const logData = {
       recipient: studentEmail,
@@ -561,48 +560,13 @@ class EmailService {
       await this.ensureInitialized();
       await this.loadConfig();
 
-  // =========================================================================
-  // 📚 SEND CATEGORY CREATED EMAIL - NEW
-  // =========================================================================
-  async sendCategoryCreatedEmail(financeEmail, categoryName, language, categoryId, createdBy) {
-    const logData = {
-      recipient: financeEmail,
-      type: 'category_created',
-      senderEmail: this.getSenderEmail(),
-      senderName: this.getSenderName(),
-      subject: `📚 New Exam Category Created: ${categoryName}`,
-      metadata: { categoryName, language, categoryId, createdBy }
-    };
-
-    try {
-      const rateCheck = await emailRateLimitService.canSend(financeEmail);
-      if (!rateCheck.allowed) {
-        logData.status = 'failed';
-        logData.error = rateCheck.reason;
-        await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
-        return { success: false, error: rateCheck.reason };
-      }
-
-      await this.ensureInitialized();
-      await this.loadConfig();
-
-      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
-
       const htmlContent = `
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="UTF-8">
-          <title>Subscription Purchase Confirmation</title>
-        </head>
-        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: sans-serif; color: #e0e0e0;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
-            <tr>
-              <td align="center">
-                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>New Exam Category Created</title>
+          <title>Subscription Purchase Confirmation</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
@@ -634,6 +598,101 @@ class EmailService {
                         <tr>
                           <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Credits Added</td>
                           <td style="color: #38bdf8; font-size: 13px; text-align: right; font-weight: 600;">+${credits} Credits</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <p style="font-size: 13px; color: #94a3b8; text-align: center;">
+                      You can now use your credits to unlock and take mock exam packs!
+                    </p>
+
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
+                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
+                    </p>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: studentEmail,
+        subject: `Subscription Confirmed - Welcome to ${planName}!`,
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Plan purchase email sent to ${studentEmail}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send plan purchase email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // =========================================================================
+  // 📚 SEND CATEGORY CREATED EMAIL
+  // =========================================================================
+  async sendCategoryCreatedEmail(financeEmail, categoryName, language, categoryId, createdBy) {
+    const logData = {
+      recipient: financeEmail,
+      type: 'category_created',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `📚 New Exam Category Created: ${categoryName}`,
+      metadata: { categoryName, language, categoryId, createdBy }
+    };
+
+    try {
+      const rateCheck = await emailRateLimitService.canSend(financeEmail);
+      if (!rateCheck.allowed) {
+        logData.status = 'failed';
+        logData.error = rateCheck.reason;
+        await emailLogService.logEmail(logData);
+        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
+        return { success: false, error: rateCheck.reason };
+      }
+
+      await this.ensureInitialized();
+      await this.loadConfig();
+
+      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>New Exam Category Created</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
                       📚 New Exam Category Created
                     </h1>
                     
@@ -659,8 +718,6 @@ class EmailService {
                       </table>
                     </div>
 
-                    <p style="font-size: 13px; color: #94a3b8; text-align: center;">
-                      You can now use your credits to unlock and take mock exam packs!
                     <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
                       <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
                         ⏳ <strong>Action Required:</strong> Please review this new category and configure credit values for its levels.
@@ -691,19 +748,12 @@ class EmailService {
 
       const mailOptions = {
         from: this.getSenderInfo(),
-        to: studentEmail,
-        subject: `Subscription Confirmed - Welcome to ${planName}!`,
         to: financeEmail,
         subject: `📚 New Exam Category Created: ${categoryName}`,
         html: htmlContent
       };
 
       const result = await this.transporter.sendMail(mailOptions);
-      logData.status = 'sent';
-      logData.messageId = result.messageId;
-      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
-      
-      console.log(`✅ Plan purchase email sent to ${studentEmail}`);
       
       logData.status = 'sent';
       logData.messageId = result.messageId;
@@ -723,7 +773,7 @@ class EmailService {
   }
 
   // =========================================================================
-  // 📚 SEND LEVEL CREATED EMAIL - NEW
+  // 📚 SEND LEVEL CREATED EMAIL
   // =========================================================================
   async sendLevelCreatedEmail(financeEmail, levelName, categoryName, categoryId, levelId, createdBy) {
     const logData = {
@@ -840,9 +890,6 @@ class EmailService {
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
-      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send plan purchase email:', error.message);
       await emailLogService.logEmail(logData);
       
       console.error('❌ Failed to send level created email:', error.message);
