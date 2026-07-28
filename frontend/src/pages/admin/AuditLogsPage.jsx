@@ -32,6 +32,7 @@ const TYPE_LABELS = {
   'plan_management': { label: 'Plan Management', icon: TrendingUp, color: 'text-rose-400' }
 };
 
+// ✅ FIXED: No duplicate keys - all keys are unique now
 const ACTION_LABELS = {
   // Authentication
   'login': { label: 'Login', severity: 'info' },
@@ -44,20 +45,24 @@ const ACTION_LABELS = {
   'provisioned': { label: 'Staff Provisioned', severity: 'success' },
   'suspended': { label: 'User Suspended', severity: 'error' },
   'activated': { label: 'User Activated', severity: 'success' },
-  'deleted': { label: 'User Deleted', severity: 'error' },
+  'user_deleted': { label: 'User Deleted', severity: 'error' },
   'revoked': { label: 'Invitation Revoked', severity: 'error' },
   
   // Privilege Changes
-  'added': { label: 'Privileges Added', severity: 'success' },
-  'removed': { label: 'Privileges Removed', severity: 'error' },
-  'updated': { label: 'Privileges Updated', severity: 'warning' },
+  'priv_added': { label: 'Privileges Added', severity: 'success' },
+  'priv_removed': { label: 'Privileges Removed', severity: 'error' },
+  'priv_updated': { label: 'Privileges Updated', severity: 'warning' },
   'created_role': { label: 'Role Created', severity: 'success' },
   'updated_role': { label: 'Role Updated', severity: 'warning' },
   'deleted_role': { label: 'Role Deleted', severity: 'error' },
   
-  // Content Moderation
-  'created': { label: 'Created', severity: 'success' },
+  // Content Moderation - all unique
+  'content_created': { label: 'Content Created', severity: 'success' },
+  'content_updated': { label: 'Content Updated', severity: 'warning' },
+  'content_deleted': { label: 'Content Deleted', severity: 'error' },
   'restored': { label: 'Restored', severity: 'success' },
+  'content_approved': { label: 'Content Approved', severity: 'success' },
+  'content_rejected': { label: 'Content Rejected', severity: 'error' },
   
   // Financial
   'purchase': { label: 'Purchase', severity: 'success' },
@@ -70,14 +75,14 @@ const ACTION_LABELS = {
   'banner_updated': { label: 'Banners Updated', severity: 'warning' },
   'commission_updated': { label: 'Commission Updated', severity: 'warning' },
   
-  // Exam Attempt
-  'started': { label: 'Exam Started', severity: 'info' },
-  'submitted': { label: 'Exam Submitted', severity: 'success' },
+  // Exam Attempt - all unique
+  'exam_started': { label: 'Exam Started', severity: 'info' },
+  'exam_submitted': { label: 'Exam Submitted', severity: 'success' },
   'violation': { label: 'Anti-Cheat Violation', severity: 'error' },
   
-  // Tutor Validation / General Moderation Status
-  'approved': { label: 'Approved', severity: 'success' },
-  'rejected': { label: 'Rejected', severity: 'error' }
+  // Tutor Validation - all unique
+  'tutor_approved': { label: 'Tutor Approved', severity: 'success' },
+  'tutor_rejected': { label: 'Tutor Rejected', severity: 'error' }
 };
 
 // ============================================
