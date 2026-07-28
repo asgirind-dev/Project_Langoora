@@ -102,22 +102,36 @@ class NotificationService {
   }
 
   /**
-   * Get all notifications for a user
+   * Get all notifications for a user - OPTIMIZED with limit and pagination
    */
-  async getUserNotifications(userId, limit = 50) {
+  async getUserNotifications(userId, limit = 50, page = 1) {
     try {
+      const offset = (page - 1) * limit;
+      
+      // First query to get total count
+      const countSnapshot = await db.collection('notifications')
+        .where('userId', '==', userId)
+        .get();
+      const total = countSnapshot.size;
+
+      // Then get paginated results
       const snapshot = await db.collection('notifications')
         .where('userId', '==', userId)
         .orderBy('createdAt', 'desc')
         .limit(limit)
+        .offset(offset)
         .get();
 
       const notifications = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-
-      return { success: true, notifications };
+      return {
+        notifications,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit)
+      };
     } catch (error) {
       console.error('❌ Get notifications error:', error);
       return { success: false, error: error.message, notifications: [] };
@@ -125,13 +139,36 @@ class NotificationService {
   }
 
   /**
-   * Get unread notification count for a user
+   * Get latest N notifications for a user - OPTIMIZED for dashboard
    */
-  async getUnreadCount(userId) {
+  async getLatestUserNotifications(userId, limit = 5) {
     try {
       const snapshot = await db.collection('notifications')
         .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('❌ Get latest notifications error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get unread notification count for a user - OPTIMIZED with count only
+   */
+  async getUnreadCount(userId) {
+    try {
+      // Use select to minimize data transfer
+      const snapshot = await db.collection('notifications')
+        .where('userId', '==', userId)
         .where('read', '==', false)
+        .select() // Only fetches document IDs, not full data
         .get();
 
       return snapshot.size;
@@ -158,6 +195,35 @@ class NotificationService {
   }
 
   /**
+   * Mark all notifications as read for a user - OPTIMIZED with batch
+   */
+  async markAllAsRead(userId) {
+    try {
+      const snapshot = await db.collection('notifications')
+        .where('userId', '==', userId)
+        .where('read', '==', false)
+        .select()
+        .get();
+
+      if (snapshot.empty) return { success: true, count: 0 };
+
+      const batch = db.batch();
+      snapshot.docs.forEach(doc => {
+        batch.update(doc.ref, {
+          read: true,
+          readAt: new Date().toISOString()
+        });
+      });
+      await batch.commit();
+
+      return { success: true, count: snapshot.size };
+    } catch (error) {
+      console.error('❌ Mark all as read error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Delete a notification
    */
   async deleteNotification(notificationId) {
@@ -167,6 +233,38 @@ class NotificationService {
     } catch (error) {
       console.error('❌ Delete notification error:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Delete old read notifications - OPTIMIZED to reduce storage
+   */
+  async deleteOldReadNotifications(userId, daysOld = 30) {
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+      const cutoffStr = cutoffDate.toISOString();
+
+      const snapshot = await db.collection('notifications')
+        .where('userId', '==', userId)
+        .where('read', '==', true)
+        .where('createdAt', '<', cutoffStr)
+        .select()
+        .get();
+
+      if (snapshot.empty) return { success: true, count: 0 };
+
+      const batch = db.batch();
+      snapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+
+      console.log(`✅ Deleted ${snapshot.size} old read notifications for user ${userId}`);
+      return { success: true, count: snapshot.size };
+    } catch (error) {
+      console.error('❌ Delete old notifications error:', error);
+      throw error;
     }
   }
 }

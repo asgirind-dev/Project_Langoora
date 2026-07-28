@@ -1,8 +1,16 @@
 // backend/controllers/examExecutionController.js
 const examExecutionService = require('../services/examExecutionService');
 
+// ✅ ADD: Audit Log Service
+const auditLogService = require('../services/auditLogService');
+
+// ✅ Helper for non-blocking audit logging
+const logAudit = (fn, data) => {
+  fn(data).catch(err => console.error('Audit log error:', err));
+};
+
 /**
- * 📝 Start a new exam attempt session matrix
+ * 📝 Start a new exam attempt session matrix - WITH AUDIT LOG
  * POST /api/exam-execution/:examId/start
  */
 const start = async (req, res) => {
@@ -15,6 +23,19 @@ const start = async (req, res) => {
     }
     
     const attempt = await examExecutionService.startExam(examId, studentId);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - STARTED
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: examId,
+      examTitle: attempt.title || 'Exam',
+      attemptId: attempt.attemptId,
+      action: 'started',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(201).json({ success: true, data: attempt });
   } catch (error) {
     console.error('Start exam execution error:', error.message);
@@ -23,7 +44,7 @@ const start = async (req, res) => {
 };
 
 /**
- * 📄 Get exam core blueprints metadata duration info
+ * 📄 Get exam core blueprints metadata duration info (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:examId/metadata
  */
 const metadata = async (req, res) => {
@@ -39,7 +60,7 @@ const metadata = async (req, res) => {
 };
 
 /**
- * 🔒 Fetch Secure Questions Stream (Filter out answer indexes)
+ * 🔒 Fetch Secure Questions Stream (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:examId/questions
  */
 const questions = async (req, res) => {
@@ -54,13 +75,29 @@ const questions = async (req, res) => {
 };
 
 /**
- * 🛡️ Log Anti-Cheat Switch Tab Violations Metrics
+ * 🛡️ Log Anti-Cheat Switch Tab Violations Metrics - WITH AUDIT LOG
  * POST /api/exam-execution/:attemptId/violation
  */
 const violation = async (req, res) => {
   try {
     const { attemptId } = req.params;
+    const studentId = req.user?.id || req.user?.uid;
+    
     const data = await examExecutionService.logViolation(attemptId);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - VIOLATION
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: data.examId || 'unknown',
+      examTitle: data.examTitle || 'Exam',
+      attemptId: attemptId,
+      action: 'violation',
+      violationType: 'tab_switch',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Log runtime violation error:', error.message);
@@ -70,7 +107,7 @@ const violation = async (req, res) => {
 };
 
 /**
- * 📊 Get live attempt session clock status
+ * 📊 Get live attempt session clock status (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:attemptId/status
  */
 const status = async (req, res) => {
@@ -85,7 +122,7 @@ const status = async (req, res) => {
 };
 
 /**
- * 📤 Final Submit Exam Vectors Evaluation Engine
+ * 📤 Final Submit Exam Vectors Evaluation Engine - WITH AUDIT LOG
  * POST /api/exam-execution/:attemptId/submit
  */
 const submit = async (req, res) => {
@@ -95,6 +132,22 @@ const submit = async (req, res) => {
     const studentId = req.user?.id || req.user?.uid;
     
     const result = await examExecutionService.submitExam(attemptId, answers, flagged, autoSubmitted, studentId);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - SUBMITTED
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: result.examId || 'unknown',
+      examTitle: result.title || 'Exam',
+      attemptId: attemptId,
+      action: 'submitted',
+      score: result.percentage || result.score || 0,
+      questions: result.totalQuestions || 0,
+      correct: result.score || 0,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error('Submit exam execution error:', error.message);
@@ -103,7 +156,7 @@ const submit = async (req, res) => {
 };
 
 /**
- * 📊 Fetch analytical evaluation report matrix
+ * 📊 Fetch analytical evaluation report matrix (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:attemptId/results
  */
 const results = async (req, res) => {
@@ -119,7 +172,7 @@ const results = async (req, res) => {
 };
 
 /**
- * 💬 Submit student feedback with ratings - ✅ UPDATED with student details
+ * 💬 Submit student feedback with ratings - WITH AUDIT LOG
  * POST /api/exam-execution/:attemptId/feedback
  */
 const submitFeedback = async (req, res) => {
@@ -294,6 +347,19 @@ const submitFeedback = async (req, res) => {
       console.warn('⚠️ Could not update submission:', subError.message);
     }
 
+    // ✅ EXAM ATTEMPT AUDIT LOG - FEEDBACK SUBMITTED
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: examId || 'unknown',
+      examTitle: examTitle || 'Exam',
+      attemptId: attemptId,
+      action: 'feedback_submitted',
+      score: percentage || 0,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
     return res.status(201).json({ 
       success: true, 
       data: { 
@@ -312,7 +378,7 @@ const submitFeedback = async (req, res) => {
 };
 
 /**
- * 📜 Get student submission history
+ * 📜 Get student submission history (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/submissions/student/:studentId
  */
 const getSubmissions = async (req, res) => {
@@ -328,7 +394,7 @@ const getSubmissions = async (req, res) => {
 };
 
 /**
- * 📊 Get feedback for a specific attempt
+ * 📊 Get feedback for a specific attempt (NO AUDIT - READ ONLY)
  * GET /api/exam-execution/:attemptId/feedback
  */
 const getFeedback = async (req, res) => {

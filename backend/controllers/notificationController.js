@@ -8,41 +8,48 @@ const notificationService = require('../services/NotificationService');
 exports.getUserNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const page = parseInt(req.query.page) || 1;
+    
+    const result = await notificationService.getUserNotifications(userId, limit, page);
+    
+    res.json({
+      success: true,
+      count: result.notifications.length,
+      total: result.total,
+      page: result.page,
+      totalPages: result.totalPages,
+      data: result.notifications
+    });
+  } catch (error) {
+    console.error('❌ Get notifications error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
 
-    if (!userId) {
-      return res.status(400).json({ success: false, message: "User ID is required" });
-    }
-
-    // Direct Root Level Collection Query (Composite Index Error වළක්වා ගැනීමට JS වලින් Sort කිරීම)
-    const snapshot = await db.collection('notifications')
-      .where('userId', '==', userId)
-      .get();
-
-    if (snapshot.empty) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        notifications: []
-      });
-    }
-
-    const notifications = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    // Date එක අනුව අලුත්ම ඒවා උඩට එන සේ Sort කිරීම
-    notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    return res.status(200).json({
+/**
+ * Get latest notifications for dashboard - OPTIMIZED
+ * Returns only the latest 5 notifications
+ */
+exports.getLatestNotifications = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 5;
+    
+    const notifications = await notificationService.getLatestUserNotifications(userId, limit);
+    
+    res.json({
       success: true,
       count: notifications.length,
       notifications: notifications
     });
 
   } catch (error) {
-    console.error('❌ Fetch notifications error:', error);
-    return res.status(500).json({ 
+    console.error('❌ Get latest notifications error:', error);
+    res.status(500).json({ 
       success: false, 
       message: error.message 
     });
@@ -55,6 +62,7 @@ exports.getNotifications = exports.getUserNotifications;
 exports.getUnreadNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
 
     if (!userId) {
       return res.status(400).json({ success: false, message: "User ID is required" });
@@ -63,6 +71,8 @@ exports.getUnreadNotifications = async (req, res) => {
     const snapshot = await db.collection('notifications')
       .where('userId', '==', userId)
       .where('read', '==', false)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
       .get();
 
     if (snapshot.empty) {
@@ -157,34 +167,11 @@ exports.markAllAsRead = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    if (!userId) {
-      return res.status(400).json({ success: false, message: "User ID is required" });
-    }
-
-    const snapshot = await db.collection('notifications')
-      .where('userId', '==', userId)
-      .where('read', '==', false)
-      .get();
-
-    if (snapshot.empty) {
-      return res.json({
-        success: true,
-        message: 'No unread notifications found'
-      });
-    }
-
-    const batch = db.batch();
-    snapshot.docs.forEach(doc => {
-      batch.update(doc.ref, { 
-        read: true, 
-        readAt: new Date().toISOString() 
-      });
-    });
-    await batch.commit();
-
-    return res.json({ 
+    const result = await notificationService.markAllAsRead(userId);
+    
+    res.json({ 
       success: true, 
-      message: `${snapshot.size} notifications marked as read` 
+      message: `${result.count} notifications marked as read` 
     });
   } catch (error) {
     console.error('❌ Mark all as read error:', error);
@@ -237,6 +224,7 @@ exports.deleteReadNotifications = async (req, res) => {
     const snapshot = await db.collection('notifications')
       .where('userId', '==', userId)
       .where('read', '==', true)
+      .select()
       .get();
 
     if (snapshot.empty) {
@@ -259,6 +247,30 @@ exports.deleteReadNotifications = async (req, res) => {
   } catch (error) {
     console.error('❌ Delete read notifications error:', error);
     return res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
+/**
+ * Clean up old read notifications - OPTIMIZED to reduce quota usage
+ */
+exports.cleanupOldNotifications = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const daysOld = parseInt(req.query.daysOld) || 30;
+
+    const result = await notificationService.deleteOldReadNotifications(userId, daysOld);
+    
+    res.json({
+      success: true,
+      message: `${result.count} old notifications cleaned up`,
+      count: result.count
+    });
+  } catch (error) {
+    console.error('❌ Cleanup notifications error:', error);
+    res.status(500).json({ 
       success: false, 
       message: error.message 
     });
