@@ -1050,18 +1050,39 @@ const updateLevelStatus = async (req, res) => {
 
 // =========================================================================
 // 📚 12. Get All Categories (NO AUDIT - READ ONLY)
+// ✅ UPDATED: Now includes ALL categories including archived
 // =========================================================================
 const getAllCategories = async (req, res) => {
   try {
     const snapshot = await db.collection('exam_categories').get();
     
     const categories = [];
-    snapshot.forEach(doc => {
+    for (const doc of snapshot.docs) {
+      const categoryData = doc.data();
+      const categoryId = doc.id;
+      
+      // Fetch levels for each category
+      let levels = [];
+      try {
+        const levelsSnapshot = await db.collection('exam_categories')
+          .doc(categoryId)
+          .collection('levels')
+          .get();
+        
+        levels = levelsSnapshot.docs.map(levelDoc => ({
+          id: levelDoc.id,
+          ...levelDoc.data()
+        }));
+      } catch (levelError) {
+        levels = [];
+      }
+      
       categories.push({
-        id: doc.id,
-        ...doc.data()
+        id: categoryId,
+        ...categoryData,
+        levels: levels
       });
-    });
+    }
     
     return res.status(200).json({
       success: true,
@@ -1168,9 +1189,277 @@ const getLevelById = async (req, res) => {
 };
 
 // =========================================================================
-// 📚 EXPORTS
+// 📚 15. Get Archived Categories ✅ NEW
+// =========================================================================
+const getArchivedCategories = async (req, res) => {
+  try {
+    console.log('📚 Fetching archived categories...');
+    
+    const snapshot = await db.collection('exam_categories')
+      .where('status', '==', 'archived')
+      .get();
+    
+    console.log(`📚 Found ${snapshot.size} archived categories`);
+    
+    const categories = [];
+    for (const doc of snapshot.docs) {
+      const categoryData = doc.data();
+      const categoryId = doc.id;
+      
+      let levels = [];
+      try {
+        const levelsSnapshot = await db.collection('exam_categories')
+          .doc(categoryId)
+          .collection('levels')
+          .get();
+        
+        levels = levelsSnapshot.docs.map(levelDoc => ({
+          id: levelDoc.id,
+          ...levelDoc.data()
+        }));
+      } catch (levelError) {
+        console.log(`No levels found for archived category: ${categoryId}`);
+        levels = [];
+      }
+      
+      categories.push({
+        id: categoryId,
+        ...categoryData,
+        levels: levels
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      categories
+    });
+    
+  } catch (error) {
+    console.error('❌ Get Archived Categories Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch archived categories.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 📚 16. Restore Category from Archived ✅ NEW
+// =========================================================================
+const restoreCategory = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    
+    const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
+    if (!categoryDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found.'
+      });
+    }
+
+    const categoryData = categoryDoc.data();
+    
+    // Check if category is actually archived
+    if (categoryData.status !== 'archived') {
+      return res.status(400).json({
+        success: false,
+        message: 'Category is not archived. Only archived categories can be restored.'
+      });
+    }
+    
+    // Restore to 'inactive' status (user can activate later)
+    await db.collection('exam_categories')
+      .doc(categoryId)
+      .update({
+        status: 'inactive',
+        updated_at: new Date().toISOString(),
+        restored_at: new Date().toISOString(),
+        restored_by: req.user?.email || req.user?.uid || 'admin'
+      });
+    
+    console.log(`✅ Category ${categoryId} restored from archive`);
+
+    // ✅ LANGUAGE MANAGEMENT AUDIT LOG - CATEGORY RESTORED
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'restored',
+      entityType: 'category',
+      entityId: categoryId,
+      entityName: categoryData.category_name || categoryId,
+      changes: { 
+        old_status: 'archived', 
+        new_status: 'inactive',
+        restored_by: req.user?.email || 'admin'
+      },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Category restored successfully. You can now activate it.',
+      category: {
+        id: categoryId,
+        ...categoryData,
+        status: 'inactive'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Restore Category Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to restore category.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 📚 17. Get All Categories Including Archived (for Sync) ✅ NEW
+// =========================================================================
+const getAllCategoriesIncludingArchived = async (req, res) => {
+  try {
+    console.log('📚 Fetching ALL categories including archived for sync...');
+    
+    const snapshot = await db.collection('exam_categories').get();
+    
+    console.log(`📚 Found ${snapshot.size} total categories`);
+    
+    const categories = [];
+    for (const doc of snapshot.docs) {
+      const categoryData = doc.data();
+      const categoryId = doc.id;
+      
+      let levels = [];
+      try {
+        const levelsSnapshot = await db.collection('exam_categories')
+          .doc(categoryId)
+          .collection('levels')
+          .get();
+        
+        levels = levelsSnapshot.docs.map(levelDoc => ({
+          id: levelDoc.id,
+          ...levelDoc.data()
+        }));
+      } catch (levelError) {
+        levels = [];
+      }
+      
+      categories.push({
+        id: categoryId,
+        ...categoryData,
+        levels: levels
+      });
+    }
+    
+    const archivedCount = categories.filter(c => c.status === 'archived').length;
+    const activeCount = categories.filter(c => c.status === 'active').length;
+    const inactiveCount = categories.filter(c => c.status === 'inactive').length;
+    
+    console.log(`✅ Returning ${categories.length} categories (${activeCount} active, ${inactiveCount} inactive, ${archivedCount} archived)`);
+    
+    return res.status(200).json({
+      success: true,
+      schema: categories,
+      stats: {
+        total: categories.length,
+        active: activeCount,
+        inactive: inactiveCount,
+        archived: archivedCount
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Get All Categories Including Archived Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch categories.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 📚 18. Hard Delete Category (Permanent) ✅ NEW
+// =========================================================================
+const hardDeleteCategoryPermanent = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    
+    const categoryDoc = await db.collection('exam_categories').doc(categoryId).get();
+    if (!categoryDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found.'
+      });
+    }
+
+    const categoryData = categoryDoc.data();
+    
+    // Delete all levels
+    const levelsSnapshot = await db.collection('exam_categories')
+      .doc(categoryId)
+      .collection('levels')
+      .get();
+    
+    const batch = db.batch();
+    const levelNames = [];
+    levelsSnapshot.forEach(doc => {
+      const levelData = doc.data();
+      levelNames.push(levelData.level_name || levelData.name || doc.id);
+      batch.delete(doc.ref);
+    });
+    
+    batch.delete(db.collection('exam_categories').doc(categoryId));
+    await batch.commit();
+    
+    console.log(`🗑️ Category ${categoryId} permanently deleted`);
+
+    // ✅ AUDIT LOG
+    logAudit(auditLogService.logLanguageManagement, {
+      userId: req.user?.uid || 'system',
+      userEmail: req.user?.email || 'system@langoora.com',
+      actorId: req.user?.uid || 'system',
+      actorEmail: req.user?.email || 'system@langoora.com',
+      action: 'hard_deleted',
+      entityType: 'category',
+      entityId: categoryId,
+      entityName: categoryData.category_name || categoryId,
+      changes: { 
+        levels_deleted: levelNames,
+        permanent_delete: true,
+        deleted_by: req.user?.email || 'admin'
+      },
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Category permanently deleted.'
+    });
+    
+  } catch (error) {
+    console.error('❌ Hard Delete Category Permanent Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete category permanently.',
+      error: error.message
+    });
+  }
+};
+
+// =========================================================================
+// 📚 EXPORTS - Updated with new functions
 // =========================================================================
 module.exports = {
+  // Existing functions
   getActiveLanguages,
   getActiveSchemaForSystem,
   getLanguageClusterSchema,
@@ -1184,5 +1473,9 @@ module.exports = {
   hardDeleteCategory,
   updateLevelStatus,
   updateLevel,
-  getLevelById
+  getLevelById,
+  getArchivedCategories,
+  restoreCategory,
+  getAllCategoriesIncludingArchived,
+  hardDeleteCategoryPermanent
 };

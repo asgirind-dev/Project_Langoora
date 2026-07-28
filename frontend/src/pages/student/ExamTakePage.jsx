@@ -148,6 +148,36 @@ function SectionProgressBar({ parts, partIndex, qIndex }) {
   );
 }
 
+// ✅ IMPROVED: Helper function to clean HTML and extract text content
+// Handles malformed HTML like: <p data-pm-slice="11 []">もんだい 1 </p>
+function cleanHtmlContent(html) {
+  if (!html) return '';
+  
+  // Step 1: Check if it's a simple paragraph with data attributes
+  // Pattern: <p ...>content</p> where content has no HTML tags
+  const paragraphMatch = html.match(/^<p[^>]*>(.*?)<\/p>$/s);
+  if (paragraphMatch) {
+    const innerContent = paragraphMatch[1];
+    // If inner content has no HTML tags, return it as plain text
+    if (!/<[^>]+>/.test(innerContent)) {
+      return innerContent.trim();
+    }
+    // If inner content has HTML tags, return the cleaned inner content
+    return innerContent.trim();
+  }
+  
+  // Step 2: Remove data-pm-slice and other data attributes from tags
+  let cleaned = html.replace(/data-pm-slice="[^"]*"/g, '');
+  // Remove other data attributes
+  cleaned = cleaned.replace(/\s+data-[a-zA-Z-]+="[^"]*"/g, '');
+  // Remove empty attributes
+  cleaned = cleaned.replace(/\s+[a-zA-Z-]+="[^"]*"\s*/g, ' ');
+  // Remove extra spaces
+  cleaned = cleaned.replace(/\s+/g, ' ');
+  // Trim
+  return cleaned.trim();
+}
+
 export default function ExamTakePage() {
   const { id } = useParams();
   const examId = id;
@@ -726,8 +756,14 @@ export default function ExamTakePage() {
             >
               <Sparkles className="text-white" size={24} />
             </div>
-            <h1 className="text-2xl font-bold text-white mb-2">{examMeta?.title}</h1>
-            <p className="text-gray-400 mb-6 text-sm">{examMeta?.description || 'Good luck!'}</p>
+            <h1 
+              className="text-2xl font-bold text-white mb-2 [&_p]:inline [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+              dangerouslySetInnerHTML={{ __html: examMeta?.title || 'Untitled Exam' }}
+            />
+            <p 
+              className="text-gray-400 mb-6 text-sm [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+              dangerouslySetInnerHTML={{ __html: examMeta?.description || 'Good luck!' }}
+            />
 
             <div className="flex items-center justify-center gap-2 mb-6 flex-wrap">
               {parts.map((p, idx) => {
@@ -888,6 +924,11 @@ export default function ExamTakePage() {
   const isExampleQuestion = isExample === true;
   const SectionIcon = sectionIconFor(currentPart.label);
 
+  // ✅ Clean the text content before rendering
+  const cleanText = currentItem.text ? cleanHtmlContent(currentItem.text) : '';
+  const cleanPassageText = currentItem.passage_text ? cleanHtmlContent(currentItem.passage_text) : '';
+  const cleanExplanation = explanation ? cleanHtmlContent(explanation) : '';
+
   return (
     <div className="min-h-screen bg-[#030810] text-white">
       {/* ─── Header ─── */}
@@ -899,7 +940,10 @@ export default function ExamTakePage() {
             </div>
             <div className="min-w-0">
               <h2 className="font-semibold text-white text-sm truncate">{currentPart.label}</h2>
-              <p className="text-[11px] text-gray-500 truncate hidden sm:block">{examMeta?.title || 'Exam'}</p>
+              <p 
+                className="text-[11px] text-gray-500 truncate hidden sm:block [&_p]:inline [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+                dangerouslySetInnerHTML={{ __html: examMeta?.title || 'Exam' }}
+              />
             </div>
           </div>
 
@@ -1054,17 +1098,23 @@ export default function ExamTakePage() {
                 </div>
               )}
 
-              {currentItem.passage_text && (
-                <div className="text-sm text-gray-400 mb-4 leading-relaxed bg-white/[0.02] border border-white/5 rounded-xl p-4">
-                  {currentItem.passage_text}
-                </div>
+              {/* ✅ Passage Text as HTML - FIXED with cleanHtmlContent */}
+              {cleanPassageText && (
+                <div 
+                  className="text-sm text-gray-400 mb-4 leading-relaxed bg-white/[0.02] border border-white/5 rounded-xl p-4 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+                  dangerouslySetInnerHTML={{ __html: cleanPassageText }}
+                />
               )}
+
+              {/* ✅ Question Text as HTML - FIXED with cleanHtmlContent */}
               <div className="mb-6 sm:mb-8">
-                <h3 className="text-base sm:text-xl font-semibold text-white leading-relaxed">
-                  {currentItem.text}
-                </h3>
+                <div 
+                  className="text-base sm:text-xl font-semibold text-white leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+                  dangerouslySetInnerHTML={{ __html: cleanText || '&nbsp;' }}
+                />
               </div>
 
+              {/* ✅ Question Image */}
               {hasImage && (
                 <div className="mb-6 sm:mb-8">
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-center">
@@ -1087,6 +1137,7 @@ export default function ExamTakePage() {
                 </div>
               )}
 
+              {/* ✅ Options as HTML - FIXED */}
               <div className="space-y-2.5 sm:space-y-3">
                 {(currentItem.options || []).map((opt, idx) => {
                   const selectedOpt = selected === idx;
@@ -1118,9 +1169,10 @@ export default function ExamTakePage() {
                       >
                         {String.fromCharCode(65 + idx)}
                       </div>
-                      <span className={`text-xs sm:text-sm leading-relaxed ${isDisabled ? 'text-gray-500' : ''}`}>
-                        {opt}
-                      </span>
+                      <span 
+                        className={`text-xs sm:text-sm leading-relaxed ${isDisabled ? 'text-gray-500' : ''} [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300`}
+                        dangerouslySetInnerHTML={{ __html: opt || '' }}
+                      />
                       {selectedOpt && <CheckCircle size={16} className="ml-auto text-indigo-300 flex-shrink-0" />}
                       {isExample && isCorrect && !selectedOpt && (
                         <CheckCircle size={16} className="ml-auto text-emerald-400 flex-shrink-0" />
@@ -1130,6 +1182,7 @@ export default function ExamTakePage() {
                 })}
               </div>
 
+              {/* ✅ Example Question Explanation as HTML - FIXED with cleanHtmlContent */}
               {isExample && correctAnswerLetter && (
                 <div className="mt-4 p-4 bg-white/5 border border-white/10 rounded-xl">
                   <button
@@ -1145,7 +1198,7 @@ export default function ExamTakePage() {
                   </button>
 
                   <AnimatePresence>
-                    {showExplanation && explanation && (
+                    {showExplanation && cleanExplanation && (
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
@@ -1155,7 +1208,10 @@ export default function ExamTakePage() {
                       >
                         <div className="mt-3 p-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-sm text-gray-300 leading-relaxed flex gap-2">
                           <Info size={15} className="text-indigo-400 flex-shrink-0 mt-0.5" />
-                          <span>{explanation}</span>
+                          <span 
+                            className="[&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+                            dangerouslySetInnerHTML={{ __html: cleanExplanation }}
+                          />
                         </div>
                       </motion.div>
                     )}
@@ -1282,7 +1338,7 @@ export default function ExamTakePage() {
   );
 }
 
-// ─── Palette Component ────────────────────────────────────────────────── (Flag removed)
+// ─── Palette Component ──────────────────────────────────────────────────
 function PaletteContent({
   filteredQs,
   allQuestions,

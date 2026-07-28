@@ -6,14 +6,18 @@ import {
   Search, Filter, RefreshCw, Award, TrendingUp,
   Power, Trash2, AlertTriangle, Percent, Settings,
   Target, BarChart3, Sliders, ListChecks, Eye, Clock,
-  Coins, BarChart4
+  Coins, BarChart4, Archive
 } from 'lucide-react';
 import {
+  fetchAllLanguageSchema,
   fetchLanguageSchema,
   createLanguageCategory,
   createCategoryLevel,
   updateCategoryStatus,
-  deleteCategory
+  deleteCategory,
+  restoreCategory,
+  hardDeleteCategory,
+  updateCategory
 } from '../../services/languageService';
 import GlassCard from '/src/components/ui/GlassCard';
 import Button from '/src/components/ui/Button';
@@ -147,6 +151,7 @@ export default function LanguageConfigPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [confirmDelete, setConfirmDelete] = useState({ show: false, categoryId: null, categoryName: '' });
+  const [confirmHardDelete, setConfirmHardDelete] = useState({ show: false, categoryId: null, categoryName: '' });
 
   // ----------------------------------------------------------------------------
   // Helper: Toast notifications
@@ -162,13 +167,17 @@ export default function LanguageConfigPage() {
   const syncLanguageSchema = async () => {
     try {
       setLoading(true);
-      const data = await fetchLanguageSchema();
+      // ✅ FIXED: Fetch ALL categories including archived
+      const data = await fetchAllLanguageSchema();
       if (data.success) {
         setSchema(data.schema);
+        const archivedCount = data.schema.filter(c => c.status === 'archived').length;
         console.log('📊 Schema loaded with scoring_method:', data.schema.map(c => ({ 
           name: c.category_name, 
-          scoring_method: c.scoring_method 
+          scoring_method: c.scoring_method,
+          status: c.status
         })));
+        console.log(`📊 Archived categories: ${archivedCount}`);
       }
     } catch (err) {
       console.error(err);
@@ -238,9 +247,10 @@ export default function LanguageConfigPage() {
     }
   };
 
+  // ✅ UPDATED: Restore category using dedicated API
   const handleRestoreCategory = async (categoryId) => {
     try {
-      const result = await updateCategoryStatus(categoryId, 'inactive');
+      const result = await restoreCategory(categoryId);
       if (result.success) {
         setSchema((prev) =>
           prev.map((cat) =>
@@ -254,18 +264,40 @@ export default function LanguageConfigPage() {
     }
   };
 
-  const handleDeleteCategory = async () => {
+  // ✅ UPDATED: Archive category (soft delete) - keep in list
+  const handleArchiveCategory = async () => {
     const { categoryId } = confirmDelete;
     if (!categoryId) return;
     try {
       const result = await deleteCategory(categoryId);
       if (result.success) {
-        setSchema((prev) => prev.filter((cat) => cat.id !== categoryId));
+        // ✅ FIXED: Update status to 'archived' instead of removing from list
+        setSchema((prev) =>
+          prev.map((cat) =>
+            cat.id === categoryId ? { ...cat, status: 'archived' } : cat
+          )
+        );
         setConfirmDelete({ show: false, categoryId: null, categoryName: '' });
         showNotification('Category archived successfully. It can be restored later.', 'success');
       }
     } catch (err) {
       showNotification('Failed to archive category.', 'error');
+    }
+  };
+
+  // ✅ NEW: Hard delete category (permanent)
+  const handleHardDeleteCategory = async () => {
+    const { categoryId } = confirmHardDelete;
+    if (!categoryId) return;
+    try {
+      const result = await hardDeleteCategory(categoryId);
+      if (result.success) {
+        setSchema((prev) => prev.filter((cat) => cat.id !== categoryId));
+        setConfirmHardDelete({ show: false, categoryId: null, categoryName: '' });
+        showNotification('Category permanently deleted.', 'success');
+      }
+    } catch (err) {
+      showNotification('Failed to permanently delete category.', 'error');
     }
   };
 
@@ -464,7 +496,7 @@ export default function LanguageConfigPage() {
   };
 
   // ----------------------------------------------------------------------------
-  // ✅ NEW: Render Level-wise Passing Score Display
+  // Render Level-wise Passing Score Display
   // ----------------------------------------------------------------------------
   const renderLevelPassingScore = (level, category) => {
     const effectivePassingType = level.passing_type || category.passing_type;
@@ -635,6 +667,7 @@ export default function LanguageConfigPage() {
   // ----------------------------------------------------------------------------
   const totalLanguages = new Set(schema.map((c) => c.language)).size;
   const totalActiveExams = schema.filter((c) => c.status === 'active').length;
+  const totalArchived = schema.filter((c) => c.status === 'archived').length;
   const totalLevels = schema.reduce((acc, curr) => acc + (curr.levels?.length || 0), 0);
   const avgCredits = (() => {
     if (totalLevels === 0) return '—';
@@ -645,14 +678,18 @@ export default function LanguageConfigPage() {
     return (totalCredits / totalLevels).toFixed(0);
   })();
 
+  // ✅ FIXED: Filter to show archived categories when 'deleted' filter is selected
   const filteredSchema = schema.filter((cat) => {
+    // Map 'deleted' filter to 'archived' status
+    const effectiveStatus = statusFilter === 'deleted' ? 'archived' : statusFilter;
+    
     if (
       searchTerm &&
       !cat.category_name.toLowerCase().includes(searchTerm.toLowerCase()) &&
       !cat.language.toLowerCase().includes(searchTerm.toLowerCase())
     )
       return false;
-    if (statusFilter !== 'all' && cat.status !== statusFilter) return false;
+    if (effectiveStatus !== 'all' && cat.status !== effectiveStatus) return false;
     return true;
   });
 
@@ -735,7 +772,7 @@ export default function LanguageConfigPage() {
       </motion.div>
 
       {/* Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 select-none">
         {[
           {
             label: 'Total Languages',
@@ -750,6 +787,13 @@ export default function LanguageConfigPage() {
             icon: Award,
             color: 'text-emerald-500 bg-emerald-500/5 border-emerald-500/10',
             sub: 'Active frameworks',
+          },
+          {
+            label: 'Archived',
+            value: totalArchived,
+            icon: Archive,
+            color: 'text-amber-500 bg-amber-500/5 border-amber-500/10',
+            sub: 'In archive',
           },
           {
             label: 'Level Tiers',
@@ -829,7 +873,7 @@ export default function LanguageConfigPage() {
                     : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-white/10'
                 }`}
               >
-                {s}
+                {s === 'deleted' ? 'Archived' : s}
               </button>
             ))}
           </div>
@@ -855,6 +899,7 @@ export default function LanguageConfigPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {filteredSchema.map((cat, index) => {
               const hasLevels = cat.levels && cat.levels.length > 0;
+              const isArchived = cat.status === 'archived';
               
               return (
                 <motion.div
@@ -863,7 +908,9 @@ export default function LanguageConfigPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
                 >
-                  <GlassCard className="p-6 relative transition-all border-white/10 hover:border-white/20 hover:shadow-lg hover:shadow-blue-500/5 group">
+                  <GlassCard className={`p-6 relative transition-all border-white/10 hover:border-white/20 hover:shadow-lg hover:shadow-blue-500/5 group ${
+                    isArchived ? 'opacity-75' : ''
+                  }`}>
                     {/* Category Header */}
                     <div className="flex justify-between items-start mb-3 border-b border-white/5 pb-3">
                       <div>
@@ -880,8 +927,8 @@ export default function LanguageConfigPage() {
                         className={`text-[10px] px-2 py-0.5 border rounded-md uppercase font-semibold ${
                           cat.status === 'active'
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : cat.status === 'deleted'
-                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            : cat.status === 'archived'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                             : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
                         }`}
                       >
@@ -896,12 +943,14 @@ export default function LanguageConfigPage() {
                           <Settings size={12} className="text-blue-400" />
                           Configuration
                         </span>
-                        <button
-                          onClick={() => openConfigModal(cat.id)}
-                          className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
-                        >
-                          <Eye size={12} /> Configure
-                        </button>
+                        {!isArchived && (
+                          <button
+                            onClick={() => openConfigModal(cat.id)}
+                            className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+                          >
+                            <Eye size={12} /> Configure
+                          </button>
+                        )}
                       </div>
                       {renderConfigSummary(
                         cat.passing_type, 
@@ -912,7 +961,7 @@ export default function LanguageConfigPage() {
                     </div>
 
                     {/* Credit Value for Category (when no levels) */}
-                    {!hasLevels && (
+                    {!hasLevels && !isArchived && (
                       <div className="mb-3 p-2 bg-white/5 rounded-lg border border-white/5">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
@@ -930,8 +979,8 @@ export default function LanguageConfigPage() {
                     <div className="space-y-2 mb-4">
                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                         <Layers size={13} className="text-purple-400" /> 
-                        {hasLevels ? `Active Level Layers (${cat.levels.length})` : 'No Levels Configured'}
-                        {hasLevels && (
+                        {hasLevels ? `Level Layers (${cat.levels.length})` : 'No Levels Configured'}
+                        {hasLevels && !isArchived && (
                           <span className="text-[9px] text-gray-500 font-normal ml-1">
                             (Levels can override configuration)
                           </span>
@@ -940,11 +989,13 @@ export default function LanguageConfigPage() {
                       {!hasLevels ? (
                         <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
                           <p className="text-xs text-gray-500 italic">
-                            No levels mapped yet. Add levels to configure credit values.
+                            {isArchived ? 'Archived category - no levels available' : 'No levels mapped yet. Add levels to configure credit values.'}
                           </p>
-                          <div className="flex items-center gap-2">
-                            {renderCreditDisplay(cat, false)}
-                          </div>
+                          {!isArchived && (
+                            <div className="flex items-center gap-2">
+                              {renderCreditDisplay(cat, false)}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-2 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
@@ -977,18 +1028,20 @@ export default function LanguageConfigPage() {
                                     {renderScoringMethodBadge(lvl.scoring_method || cat.scoring_method)}
                                     {/* Credit Display */}
                                     {renderCreditDisplay(lvl, true)}
-                                    {/* Config Button */}
-                                    <button
-                                      onClick={() => openConfigModal(cat.id, lvl.id)}
-                                      className="p-1 bg-white/5 hover:bg-blue-500/10 rounded-lg transition-colors"
-                                      title="Configure level configuration"
-                                    >
-                                      <Settings size={12} className="text-gray-400 hover:text-blue-400" />
-                                    </button>
+                                    {/* Config Button - only for non-archived */}
+                                    {!isArchived && (
+                                      <button
+                                        onClick={() => openConfigModal(cat.id, lvl.id)}
+                                        className="p-1 bg-white/5 hover:bg-blue-500/10 rounded-lg transition-colors"
+                                        title="Configure level configuration"
+                                      >
+                                        <Settings size={12} className="text-gray-400 hover:text-blue-400" />
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
 
-                                {/* ✅ NEW: Level-wise Passing Score Display */}
+                                {/* Level-wise Passing Score Display */}
                                 {renderLevelPassingScore(lvl, cat)}
                               </div>
                             );
@@ -1003,52 +1056,63 @@ export default function LanguageConfigPage() {
                         <User size={11} /> {cat.created_by ? cat.created_by.split('@')[0] : 'system'}
                       </div>
                       <div className="flex items-center gap-2">
-                        {cat.status !== 'deleted' && (
-                          <button
-                            onClick={() => handleToggleStatus(cat.id, cat.status)}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border ${
-                              cat.status === 'active'
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
-                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                            }`}
-                          >
-                            <Power size={12} />
-                            {cat.status === 'active' ? 'Deactivate' : 'Activate'}
-                          </button>
+                        {/* Active/Inactive controls - hide for archived */}
+                        {!isArchived && (
+                          <>
+                            <button
+                              onClick={() => handleToggleStatus(cat.id, cat.status)}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border ${
+                                cat.status === 'active'
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                              }`}
+                            >
+                              <Power size={12} />
+                              {cat.status === 'active' ? 'Deactivate' : 'Activate'}
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                setConfirmDelete({ show: true, categoryId: cat.id, categoryName: cat.category_name })
+                              }
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-rose-500/20 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"
+                            >
+                              <Trash2 size={12} />
+                              Archive
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setActiveCategoryId(cat.id);
+                                setIsLvlModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors border border-blue-500/10 group-hover:border-blue-500/30"
+                            >
+                              <Plus size={14} /> Add Level
+                            </button>
+                          </>
                         )}
 
-                        {cat.status !== 'deleted' && (
-                          <button
-                            onClick={() =>
-                              setConfirmDelete({ show: true, categoryId: cat.id, categoryName: cat.category_name })
-                            }
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-rose-500/20 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"
-                          >
-                            <Trash2 size={12} />
-                            Archive
-                          </button>
-                        )}
-
-                        {cat.status === 'deleted' && (
-                          <button
-                            onClick={() => handleRestoreCategory(cat.id)}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-emerald-500/20 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
-                          >
-                            <RefreshCw size={12} className="rotate-180" />
-                            Restore
-                          </button>
-                        )}
-
-                        {cat.status !== 'deleted' && (
-                          <button
-                            onClick={() => {
-                              setActiveCategoryId(cat.id);
-                              setIsLvlModalOpen(true);
-                            }}
-                            className="px-3 py-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors border border-blue-500/10 group-hover:border-blue-500/30"
-                          >
-                            <Plus size={14} /> Add Level
-                          </button>
+                        {/* Archived controls */}
+                        {isArchived && (
+                          <>
+                            <button
+                              onClick={() => handleRestoreCategory(cat.id)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-emerald-500/20 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                            >
+                              <RefreshCw size={12} className="rotate-180" />
+                              Restore
+                            </button>
+                            <button
+                              onClick={() =>
+                                setConfirmHardDelete({ show: true, categoryId: cat.id, categoryName: cat.category_name })
+                              }
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-red-500/20 text-red-400 bg-red-500/10 hover:bg-red-500/20"
+                            >
+                              <Trash2 size={12} />
+                              Delete Permanently
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1192,7 +1256,6 @@ export default function LanguageConfigPage() {
       </AnimatePresence>
 
       {/* --- MODAL: Add Level Tier --- */}
-      {/* ✅ FIXED: Sticky Header */}
       <AnimatePresence>
         {isLvlModalOpen && (
           <Portal>
@@ -1205,7 +1268,6 @@ export default function LanguageConfigPage() {
               >
                 <GlassCard className="p-0 bg-white dark:bg-[#0a0f1e] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
                   
-                  {/* ✅ Sticky Header */}
                   <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-white/5 sticky top-0 z-20 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
                     <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                       <Layers className="text-purple-500" size={18} /> Append Level Tier Mapping
@@ -1218,7 +1280,6 @@ export default function LanguageConfigPage() {
                     </button>
                   </div>
 
-                  {/* ✅ Scrollable Content */}
                   <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                     <form onSubmit={handleCreateLevel} className="space-y-4">
                       {error && (
@@ -1241,7 +1302,6 @@ export default function LanguageConfigPage() {
                         />
                       </div>
 
-                      {/* Scoring Method Selection */}
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
                           Scoring Method
@@ -1267,7 +1327,6 @@ export default function LanguageConfigPage() {
                         </p>
                       </div>
 
-                      {/* Scoring Config (when GROUPED_SECTION is selected) */}
                       {lvlForm.scoring_method === 'GROUPED_SECTION' && (
                         <div className="space-y-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
                           <h4 className="text-xs font-bold text-blue-400">Grouped Section Configuration</h4>
@@ -1398,7 +1457,6 @@ export default function LanguageConfigPage() {
                     </form>
                   </div>
 
-                  {/* ✅ Fixed Footer */}
                   <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
                     <Button
                       type="button"
@@ -1427,7 +1485,6 @@ export default function LanguageConfigPage() {
       </AnimatePresence>
 
       {/* --- MODAL: Configure Level Settings --- */}
-      {/* ✅ FIXED: Sticky Header */}
       <AnimatePresence>
         {isConfigModalOpen && (
           <Portal>
@@ -1440,7 +1497,6 @@ export default function LanguageConfigPage() {
               >
                 <GlassCard className="p-0 bg-white dark:bg-[#0a0f1e] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
                   
-                  {/* ✅ Sticky Header */}
                   <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-white/5 sticky top-0 z-20 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
                     <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                       <Settings className="text-blue-500" size={18} />
@@ -1457,9 +1513,7 @@ export default function LanguageConfigPage() {
                     </button>
                   </div>
 
-                  {/* ✅ Scrollable Content */}
                   <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-                    {/* Scoring Method Selection */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
                         Scoring Method
@@ -1488,7 +1542,6 @@ export default function LanguageConfigPage() {
                       </p>
                     </div>
 
-                    {/* Scoring Config (when GROUPED_SECTION) */}
                     {configForm.scoringMethod === 'GROUPED_SECTION' && (
                       <div className="space-y-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
                         <h4 className="text-xs font-bold text-blue-400">Grouped Section Configuration</h4>
@@ -1586,7 +1639,6 @@ export default function LanguageConfigPage() {
                       </div>
                     )}
 
-                    {/* Passing Type Selection */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
                         Passing Type
@@ -1629,7 +1681,6 @@ export default function LanguageConfigPage() {
                       </select>
                     </div>
 
-                    {/* Dynamic Config based on Passing Type */}
                     {configForm.passingType === 'TOTAL_AND_SECTION' && (
                       <div className="space-y-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
                         <h4 className="text-xs font-bold text-blue-400">JLPT Configuration</h4>
@@ -1867,7 +1918,6 @@ export default function LanguageConfigPage() {
                     <div className="h-4" />
                   </div>
 
-                  {/* ✅ Fixed Footer */}
                   <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0f1e] flex-shrink-0">
                     <Button
                       type="button"
@@ -1934,10 +1984,61 @@ export default function LanguageConfigPage() {
                   </Button>
                   <button
                     type="button"
-                    onClick={handleDeleteCategory}
+                    onClick={handleArchiveCategory}
                     className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-xl shadow-lg transition-colors"
                   >
                     Yes, Archive
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </Portal>
+        )}
+      </AnimatePresence>
+
+      {/* --- CONFIRM PERMANENT DELETE MODAL --- */}
+      <AnimatePresence>
+        {confirmHardDelete.show && (
+          <Portal>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-sm bg-[#0f1629] border border-red-500/30 rounded-2xl p-6 shadow-2xl text-left"
+              >
+                <div className="flex items-center gap-3 text-red-400 mb-4">
+                  <div className="p-2 bg-red-500/10 rounded-xl border border-red-500/20">
+                    <AlertTriangle size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Permanently Delete?</h3>
+                    <p className="text-xs text-gray-400">This action cannot be undone</p>
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-300 mb-6 leading-relaxed">
+                  Are you sure you want to <span className="text-red-400 font-bold">permanently delete</span> the category{' '}
+                  <span className="text-white font-bold">"{confirmHardDelete.categoryName}"</span>?
+                  This will remove the category and all its levels from the database forever.
+                </p>
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="text-xs border border-white/5 bg-white/5 hover:bg-white/10"
+                    onClick={() => setConfirmHardDelete({ show: false, categoryId: null, categoryName: '' })}
+                  >
+                    Cancel
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleHardDeleteCategory}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-xl shadow-lg transition-colors"
+                  >
+                    Yes, Delete Permanently
                   </button>
                 </div>
               </motion.div>

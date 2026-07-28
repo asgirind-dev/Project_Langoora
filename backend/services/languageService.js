@@ -2,7 +2,58 @@
 const { db } = require('../config/firebase');
 
 /**
+ * 📚 Fetch All Exam Categories with their levels from Firebase
+ * ✅ FIXED: Fetch ALL categories including archived
+ */
+const fetchAllExamSchema = async () => {
+  try {
+    // Get ALL exam categories (no status filter)
+    const categoriesSnapshot = await db.collection('exam_categories').get();
+    
+    const categories = [];
+    
+    for (const doc of categoriesSnapshot.docs) {
+      const categoryData = doc.data();
+      const categoryId = doc.id;
+      
+      // Get levels sub-collection for this category
+      let levels = [];
+      try {
+        const levelsSnapshot = await db.collection('exam_categories')
+          .doc(categoryId)
+          .collection('levels')
+          .get();
+        
+        levels = levelsSnapshot.docs.map(levelDoc => ({
+          id: levelDoc.id,
+          ...levelDoc.data()
+        }));
+      } catch (levelError) {
+        console.log(`No levels found for category: ${categoryId}`);
+        levels = [];
+      }
+      
+      categories.push({
+        id: categoryId,
+        ...categoryData,
+        levels: levels
+      });
+    }
+    
+    return {
+      success: true,
+      schema: categories
+    };
+    
+  } catch (error) {
+    console.error('Fetch All Exam Schema Error:', error);
+    throw new Error('Failed to fetch exam schema from database.');
+  }
+};
+
+/**
  * 📚 Fetch Active Exam Categories with their levels from Firebase
+ * ✅ FIXED: Only active categories
  */
 const fetchActiveExamSchema = async () => {
   try {
@@ -94,6 +145,7 @@ const getExamCategoryWithLevels = async (categoryId) => {
 };
 
 module.exports = {
+  fetchAllExamSchema,
   fetchActiveExamSchema,
   getExamCategoryWithLevels
 };

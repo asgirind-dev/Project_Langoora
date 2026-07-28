@@ -409,10 +409,11 @@ export default function MyExamsPage() {
                           </div>
                         </div>
 
-                        {/* Title (Clean HTML Tags) */}
-                        <h3 className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words">
-                          {cleanTitle(exam.title)}
-                        </h3>
+                        {/* ✅ Title rendered as HTML - FIXED with inline style to prevent background */}
+                        <div 
+                          className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words [&_p]:inline [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300"
+                          dangerouslySetInnerHTML={{ __html: exam.title || '' }}
+                        />
 
                         {/* Score Display */}
                         {isCompleted && scorePercentage !== null && (
@@ -423,11 +424,12 @@ export default function MyExamsPage() {
                           />
                         )}
 
-                        {/* Description */}
+                        {/* ✅ Description rendered as HTML - FIXED with inline style to prevent background */}
                         {exam.description && (
-                          <p className={`text-xs text-gray-400 ${viewMode === 'list' ? '' : 'line-clamp-2'} leading-relaxed`}>
-                            {exam.description}
-                          </p>
+                          <div 
+                            className={`text-xs text-gray-400 ${viewMode === 'list' ? '' : 'line-clamp-2'} leading-relaxed [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300`}
+                            dangerouslySetInnerHTML={{ __html: exam.description }}
+                          />
                         )}
 
                         {/* Meta Tags */}
