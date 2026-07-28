@@ -256,6 +256,9 @@ const deleteStudentExam = async (req, res) => {
 // =========================================================================
 // 4. Purchase an Exam - WITH FINANCIAL AUDIT LOG
 // =========================================================================
+// =========================================================================
+// 4. Purchase an Exam (FIXED UNDEFINED QUERY & CREDIT DEDUCTION + NOTIFICATION)
+// =========================================================================
 const purchaseExam = async (req, res) => {
   try {
     const studentId = req.user?.uid || req.user?.id;
@@ -394,6 +397,23 @@ const purchaseExam = async (req, res) => {
       });
     });
 
+    // 🔔 🎯 AUTO CREATE NOTIFICATION FOR STUDENT
+    try {
+      const examTitle = examData?.title || examData?.level_name || targetExamId;
+      await db.collection('notifications').add({
+        userId: studentId,
+        type: 'purchase',
+        title: 'Exam Purchase Successful! 🎉',
+        message: `You successfully purchased "${examTitle}". ${requiredCredits} credits were deducted from your account.`,
+        creditDeducted: requiredCredits,
+        read: false,
+        actionUrl: '/student/dashboard',
+        createdAt: new Date().toISOString()
+      });
+    } catch (notifErr) {
+      console.error("Failed to send purchase notification:", notifErr);
+      // Main purchase flow එක නොනවත්වා ඉදිරියට යයි
+    }
     // ✅ FINANCIAL AUDIT LOG - SUCCESSFUL PURCHASE
     logAudit(auditLogService.logFinancial, {
       userId: studentId,
