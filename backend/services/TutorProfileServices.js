@@ -38,13 +38,12 @@ class TutorProfileServices {
         return { success: true, message: 'Profile updated successfully' };
     }
 
-    // 3. Delete Tutor Account & Subcollections (Merged & Fixed)
+    // 3. Delete Tutor Account & Subcollections
     async deleteTutorAccount(uid) {
         try {
             const userRef = db.collection('users').doc(uid);
             const cardsSnapshot = await userRef.collection('bankCards').get();
             
-            // එකවුන්ට් එක අයින් කරන්න කලින් බැංකු කාඩ් සබ්-කලෙක්ෂන් එක Batch එකකින් ඩිලීට් කරනවා
             if (!cardsSnapshot.empty) {
                 const batch = db.batch();
                 cardsSnapshot.forEach(doc => {
@@ -53,7 +52,6 @@ class TutorProfileServices {
                 await batch.commit();
             }
 
-            // ඊටපස්සේ මේන් යූසර් ඩොකියුමන්ට් එක ඩිලීට් කරනවා
             await userRef.delete();
 
             return { success: true, message: 'Tutor data deleted successfully' };
@@ -70,7 +68,7 @@ class TutorProfileServices {
         return cards;
     }
     
-    // 5. Add Bank Card (Bank Account)
+    // 5. Add Bank Card
     async addBankCard(uid, cardData) {
         const cardsRef = db.collection('users').doc(uid).collection('bankCards');
         
@@ -84,7 +82,6 @@ class TutorProfileServices {
         const cleanAccountNo = accountNo.replace(/\s+/g, '').replace(/-/g, '');
         const isOnlyDigits = /^\d+$/.test(cleanAccountNo);
 
-        // Frontend logic එකට මැච් වෙන්න හදපු ලංකාවේ එකවුන්ට් නම්බර් වැලිඩේෂන් (9 to 16 digits)
         if (!isOnlyDigits || cleanAccountNo.length < 9 || cleanAccountNo.length > 16) {
             throw new Error('Invalid Bank Account Number. Please enter a valid number.');
         }
@@ -108,6 +105,39 @@ class TutorProfileServices {
         const cardRef = db.collection('users').doc(uid).collection('bankCards').doc(cardId);
         await cardRef.delete();
         return { success: true, message: 'Bank account disconnected successfully' };
+    }
+
+    // NEW FUNCTION 1: tutor_applications එකෙන් cv_url එක ලබා ගැනීම
+    async getTutorQualification(uid) {
+        const snapshot = await db.collection('tutor_applications')
+            .where('user_id', '==', uid)
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) return null;
+        
+        const doc = snapshot.docs[0];
+        return { appId: doc.id, ...doc.data() };
+    }
+
+    // NEW FUNCTION 2: tutor_applications එකේ cv_url Update කිරීම
+    async updateTutorQualification(uid, cvUrl) {
+        const snapshot = await db.collection('tutor_applications')
+            .where('user_id', '==', uid)
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) {
+            throw new Error('No registration record found in tutor_applications.');
+        }
+
+        const docRef = snapshot.docs[0].ref;
+        await docRef.update({
+            cv_url: cvUrl,
+            updated_at: new Date().toISOString()
+        });
+
+        return { success: true, message: 'Qualification certificate updated successfully' };
     }
 }
 
