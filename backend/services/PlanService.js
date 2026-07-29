@@ -1,4 +1,3 @@
-// backend/services/PlanService.js
 const { db } = require('../config/firebase');
 const notificationService = require('./NotificationService');
 
@@ -42,20 +41,25 @@ class PlanService {
       const payload = {
         ...planData,
         popular: planData.popular === true || planData.popular === 'true',
-        active: planData.active !== undefined ? (planData.active === true || planData.active === 'true') : true,
+        active: false,
         status: 'pending',
         createdAt: new Date().toISOString()
       };
       const docRef = await db.collection('subscription_plans').add(payload);
       const doc = await docRef.get();
-      await notificationService.sendToRole(['admin', 'super_admin'], {
+
+      // 🔔 Trigger Notification for Admin Review
+      const notificationPayload = {
         type: 'plan_created',
         title: '🆕 New Plan Created',
         message: `Plan "${planData.name}" (LKR ${planData.price}) created by finance team. Needs review.`,
         actionUrl: '/admin/revenue?tab=approvals',
         planId: doc.id,
         planName: planData.name
-      });
+      };
+
+      await notificationService.sendToRole(['admin', 'super_admin'], notificationPayload);
+
       return { id: doc.id, ...doc.data() };
     } catch (error) {
       throw new Error(`Error creating plan: ${error.message}`);
@@ -72,35 +76,20 @@ class PlanService {
       const currentData = doc.data();
       const updatePayload = { updatedAt: new Date().toISOString() };
       
-      if (planData.sortOrder !== undefined) {
-        updatePayload.sortOrder = planData.sortOrder;
-      }
-      if (planData.name !== undefined) {
-        updatePayload.name = planData.name;
-      }
-      if (planData.price !== undefined) {
-        updatePayload.price = planData.price;
-      }
-      if (planData.credits !== undefined) {
-        updatePayload.credits = planData.credits;
-      }
-      if (planData.features !== undefined) {
-        updatePayload.features = planData.features;
-      }
-      if (planData.popular !== undefined) {
-        updatePayload.popular = planData.popular === true || planData.popular === 'true';
-      }
-      if (planData.active !== undefined) {
-        updatePayload.active = planData.active === true || planData.active === 'true';
-      }
+      if (planData.sortOrder !== undefined) updatePayload.sortOrder = planData.sortOrder;
+      if (planData.name !== undefined) updatePayload.name = planData.name;
+      if (planData.price !== undefined) updatePayload.price = planData.price;
+      if (planData.credits !== undefined) updatePayload.credits = planData.credits;
+      if (planData.features !== undefined) updatePayload.features = planData.features;
+      if (planData.popular !== undefined) updatePayload.popular = planData.popular === true || planData.popular === 'true';
+      if (planData.active !== undefined) updatePayload.active = planData.active === true || planData.active === 'true';
       
-      // ✅ FIX: If plan is rejected and being updated, set status to 'pending' for re-approval
       if (currentData.status === 'rejected') {
         updatePayload.status = 'pending';
+        updatePayload.active = false;
         updatePayload.reviewNotes = '';
         updatePayload.reviewedAt = null;
         
-        // Notify admin that plan has been resubmitted
         await notificationService.sendToRole(['admin', 'super_admin'], {
           type: 'plan_resubmitted',
           title: '🔄 Plan Resubmitted for Review',
@@ -111,29 +100,7 @@ class PlanService {
         });
       }
       
-      // If status is explicitly provided in update, use it (but only if not rejected)
-      if (planData.status !== undefined && planData.status !== currentData.status && currentData.status !== 'rejected') {
-        updatePayload.status = planData.status;
-      }
-      
-      const needsReapproval = (planData.status !== undefined && 
-                               planData.status !== currentData.status && 
-                               currentData.status === 'approved' && 
-                               currentData.status !== 'rejected');
-      
       await docRef.update(updatePayload);
-      
-      if (needsReapproval) {
-        await notificationService.sendToRole(['admin', 'super_admin'], {
-          type: 'plan_updated',
-          title: '🔄 Plan Updated',
-          message: `Plan "${currentData.name}" has been updated and needs re-review.`,
-          actionUrl: '/admin/revenue?tab=approvals',
-          planId: id,
-          planName: currentData.name
-        });
-      }
-      
       const updated = await docRef.get();
       return { id, ...updated.data() };
     } catch (error) {
@@ -157,7 +124,6 @@ class PlanService {
       if (!doc.exists) {
         throw new Error('Plan not found');
       }
-      const planData = doc.data();
       const updatePayload = {
         status: 'approved',
         active: true,
@@ -166,14 +132,9 @@ class PlanService {
         updatedAt: new Date().toISOString()
       };
       await docRef.update(updatePayload);
-      await notificationService.sendToRole(['finance', 'finance_admin'], {
-        type: 'plan_approved',
-        title: '✅ Plan Approved',
-        message: `Plan "${planData.name}" has been approved${notes ? `: "${notes}"` : ''}`,
-        actionUrl: '/finance-admin/subscriptions',
-        planId: id,
-        planName: planData.name
-      });
+
+      // (Duplicate නොවෙන්න Controller එකෙන් විතරක් Send වෙනවා)
+
       const updated = await docRef.get();
       return { id, ...updated.data() };
     } catch (error) {
@@ -188,7 +149,6 @@ class PlanService {
       if (!doc.exists) {
         throw new Error('Plan not found');
       }
-      const planData = doc.data();
       const updatePayload = {
         status: 'rejected',
         active: false,
@@ -197,14 +157,9 @@ class PlanService {
         updatedAt: new Date().toISOString()
       };
       await docRef.update(updatePayload);
-      await notificationService.sendToRole(['finance', 'finance_admin'], {
-        type: 'plan_rejected',
-        title: '❌ Plan Rejected',
-        message: `Plan "${planData.name}" has been rejected${notes ? `: "${notes}"` : ''}`,
-        actionUrl: '/finance-admin/subscriptions',
-        planId: id,
-        planName: planData.name
-      });
+
+      // (Duplicate නොවෙන්න Controller එකෙන් විතරක් Send වෙනවා)
+
       const updated = await docRef.get();
       return { id, ...updated.data() };
     } catch (error) {

@@ -1,10 +1,12 @@
-// backend/routes/notificationRoutes.js
 const express = require('express');
 const router = express.Router();
 const notificationController = require('../controllers/notificationController');
 
 // 📥 Get all notifications for a user
 router.get('/:userId', notificationController.getNotifications);
+
+// 📥 Get latest N notifications (Fixes 404 Error)
+router.get('/:userId/latest', notificationController.getLatestNotifications);
 
 // 📥 Get unread notifications
 router.get('/:userId/unread', notificationController.getUnreadNotifications);

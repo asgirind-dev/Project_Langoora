@@ -1,4 +1,3 @@
-// backend/controllers/notificationController.js
 const { db } = require('../config/firebase');
 const notificationService = require('../services/NotificationService');
 
@@ -22,21 +21,17 @@ exports.getNotifications = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Get notifications error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 /**
- * Get latest notifications for dashboard - OPTIMIZED
- * Returns only the latest 5 notifications
+ * Get latest notifications for dashboard
  */
 exports.getLatestNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
-    const limit = parseInt(req.query.limit) || 5;
+    const limit = parseInt(req.query.limit) || 3;
     
     const notifications = await notificationService.getLatestUserNotifications(userId, limit);
     
@@ -47,10 +42,7 @@ exports.getLatestNotifications = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Get latest notifications error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -60,7 +52,7 @@ exports.getUnreadNotifications = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
 
     const snapshot = await db.collection('notifications')
-      .where('userId', '==', userId)
+      .where('userId', '==', String(userId))
       .where('read', '==', false)
       .orderBy('createdAt', 'desc')
       .limit(limit)
@@ -78,17 +70,13 @@ exports.getUnreadNotifications = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Get unread notifications error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 exports.getUnreadCount = async (req, res) => {
   try {
     const { userId } = req.params;
-
     const count = await notificationService.getUnreadCount(userId);
     
     res.json({
@@ -97,10 +85,7 @@ exports.getUnreadCount = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Get unread count error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -109,38 +94,22 @@ exports.getUnreadCount = async (req, res) => {
 exports.markAsRead = async (req, res) => {
   try {
     const { notificationId } = req.params;
-    
     await notificationService.markAsRead(notificationId);
-    
-    res.json({ 
-      success: true, 
-      message: 'Notification marked as read' 
-    });
+    res.json({ success: true, message: 'Notification marked as read' });
   } catch (error) {
     console.error('❌ Mark as read error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 exports.markAllAsRead = async (req, res) => {
   try {
     const { userId } = req.params;
-
     const result = await notificationService.markAllAsRead(userId);
-    
-    res.json({ 
-      success: true, 
-      message: `${result.count} notifications marked as read` 
-    });
+    res.json({ success: true, message: `${result.count} notifications marked as read` });
   } catch (error) {
     console.error('❌ Mark all as read error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -149,79 +118,47 @@ exports.markAllAsRead = async (req, res) => {
 exports.deleteNotification = async (req, res) => {
   try {
     const { notificationId } = req.params;
-    
     await notificationService.deleteNotification(notificationId);
-    
-    res.json({ 
-      success: true, 
-      message: 'Notification deleted' 
-    });
+    res.json({ success: true, message: 'Notification deleted' });
   } catch (error) {
     console.error('❌ Delete notification error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 exports.deleteReadNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
-
     const snapshot = await db.collection('notifications')
-      .where('userId', '==', userId)
+      .where('userId', '==', String(userId))
       .where('read', '==', true)
       .select()
       .get();
     
     if (snapshot.empty) {
-      return res.json({
-        success: true,
-        message: 'No read notifications found to delete'
-      });
+      return res.json({ success: true, message: 'No read notifications found to delete' });
     }
 
     const batch = db.batch();
-    snapshot.docs.forEach(doc => {
-      batch.delete(doc.ref);
-    });
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
     
-    res.json({ 
-      success: true, 
-      message: `${snapshot.size} read notifications deleted` 
-    });
+    res.json({ success: true, message: `${snapshot.size} read notifications deleted` });
   } catch (error) {
     console.error('❌ Delete read notifications error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-/**
- * Clean up old read notifications - OPTIMIZED to reduce quota usage
- */
 exports.cleanupOldNotifications = async (req, res) => {
   try {
     const { userId } = req.params;
     const daysOld = parseInt(req.query.daysOld) || 30;
-
     const result = await notificationService.deleteOldReadNotifications(userId, daysOld);
-    
-    res.json({
-      success: true,
-      message: `${result.count} old notifications cleaned up`,
-      count: result.count
-    });
+    res.json({ success: true, message: `${result.count} old notifications cleaned up`, count: result.count });
   } catch (error) {
     console.error('❌ Cleanup notifications error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -247,16 +184,9 @@ exports.sendCustomNotification = async (req, res) => {
       planName: planName || null
     });
     
-    res.json({
-      success: true,
-      message: 'Notification sent successfully',
-      data: result
-    });
+    res.json({ success: true, message: 'Notification sent successfully', data: result });
   } catch (error) {
     console.error('❌ Send custom notification error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };

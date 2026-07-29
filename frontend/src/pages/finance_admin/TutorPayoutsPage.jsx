@@ -1,4 +1,3 @@
-// frontend/src/pages/finance_admin/TutorPayoutsPage.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,6 +11,7 @@ import {
 import GlassCard from '../../components/ui/GlassCard';
 import { getRates } from '../../services/globalConfigService';
 import { createPayout, getActiveTutors } from '../../services/payoutService';
+import FinanceNotifications from '../../components/finance/FinanceNotifications'; // 👈 Bell Icon Import
 
 const EXCHANGE_RATE = 20.00;
 const PLATFORM_COMMISSION = 0.20;
@@ -27,6 +27,7 @@ export default function TutorPayoutsPage() {
   const [processingId, setProcessingId] = useState(null);
   const [transactions, setTransactions] = useState({ totalCredits: 0, totalAmount: 0, count: 0 });
   const [declinedCount, setDeclinedCount] = useState(0);
+  const [error, setError] = useState(null);
   
   // Add Payout Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -44,7 +45,6 @@ export default function TutorPayoutsPage() {
     qualifications: ''
   });
 
-  // ⭐ Fetch system settings
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -63,7 +63,6 @@ export default function TutorPayoutsPage() {
     fetchSettings();
   }, []);
 
-  // ⭐ Fetch tutors with REAL data AND status from payouts
   const fetchTutors = async () => {
     try {
       setLoading(true);
@@ -71,7 +70,6 @@ export default function TutorPayoutsPage() {
 
       const API_URL = import.meta.env.VITE_API_URL || '';
       
-      // Fetch both tutors and payouts in parallel
       const [tutorsRes, payoutsRes] = await Promise.all([
         axios.get(`${API_URL}/api/payouts/active-tutors`),
         axios.get(`${API_URL}/api/payouts/get-all`)
@@ -81,15 +79,12 @@ export default function TutorPayoutsPage() {
         const allPayouts = payoutsRes.data?.payouts || [];
         const stats = payoutsRes.data?.stats || {};
         
-        // ✅ Map tutors with status from payouts
         const tutorsWithStatus = (tutorsRes.data.tutors || []).map(tutor => {
-          // Check if tutor has a settled payout
           const hasSettledPayout = allPayouts.some(p => 
             p.tutorId === tutor.id && 
             (p.status === 'Settled' || p.status === 'settled')
           );
           
-          // Check if tutor has a pending payout
           const hasPendingPayout = allPayouts.some(p => 
             p.tutorId === tutor.id && 
             (p.status === 'Pending' || p.status === 'pending')
@@ -104,9 +99,7 @@ export default function TutorPayoutsPage() {
         });
         
         setTutors(tutorsWithStatus);
-        console.log('✅ Tutors with REAL data and status:', tutorsWithStatus);
         
-        // ✅ Update stats from API
         setTransactions({
           totalCredits: stats.totalTokens || 0,
           totalAmount: stats.totalAmount || 0,
@@ -118,7 +111,6 @@ export default function TutorPayoutsPage() {
         setTutors([]);
       }
 
-      // Fetch transactions
       const txRes = await axios.get(`${API_URL}/api/payouts/total-credits`);
       if (txRes.data?.success) {
         setTransactions({
@@ -141,7 +133,6 @@ export default function TutorPayoutsPage() {
     fetchTutors();
   }, []);
 
-  // ⭐ Fetch transactions
   const fetchTransactions = async () => {
     try {
       const API_URL = import.meta.env.VITE_API_URL || '';
@@ -159,7 +150,6 @@ export default function TutorPayoutsPage() {
     }
   };
 
-  // ⭐ Get declined count
   useEffect(() => {
     const fetchDeclinedCount = async () => {
       try {
@@ -175,7 +165,6 @@ export default function TutorPayoutsPage() {
     fetchDeclinedCount();
   }, []);
 
-  // ⭐ Process payout (Settle/Decline)
   const handleProcessPayout = async (tutorId, action) => {
     try {
       setProcessingId(tutorId);
@@ -212,10 +201,8 @@ export default function TutorPayoutsPage() {
                 )
               );
               await fetchTransactions();
-              console.log('✅ Payout settled successfully!');
             } else {
               setTutors(prevTutors => prevTutors.filter(t => t.id !== tutorId));
-              console.log('❌ Payout declined');
             }
           }
         }
@@ -229,7 +216,6 @@ export default function TutorPayoutsPage() {
     }
   };
 
-  // ⭐ Delete declined payout
   const handleDeleteDeclined = async (id) => {
     if (!confirm('Delete this declined payout?')) return;
     try {
@@ -244,7 +230,6 @@ export default function TutorPayoutsPage() {
     }
   };
 
-  // ⭐ Clear all declined
   const clearAllDeclined = async () => {
     if (!confirm(`Delete all ${declinedCount} declined payouts?`)) return;
     try {
@@ -263,7 +248,6 @@ export default function TutorPayoutsPage() {
     }
   };
 
-  // ⭐ Add new payout using payoutService
   const handleAddPayout = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -309,15 +293,11 @@ export default function TutorPayoutsPage() {
     }
   };
 
-  // ⭐ Statistics
   const pendingCount = tutors.filter(t => t.status === 'Pending').length;
   const settledCount = tutors.filter(t => t.status === 'Settled').length;
   const totalTokensAll = tutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
   const totalPayout = tutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
 
-  console.log('📊 UI Stats:', { pendingCount, settledCount, totalTokensAll });
-
-  // ⭐ Filter logic
   const filteredTutors = tutors.filter(t => {
     if (t.status === 'Declined') return false;
     const matchFilter = filter === 'all' || t.status.toLowerCase() === filter.toLowerCase();
@@ -327,7 +307,6 @@ export default function TutorPayoutsPage() {
     return matchFilter && matchSearch;
   });
 
-  // ⭐ Status config
   const getStatusConfig = (status) => {
     const configs = {
       'Pending': { 
@@ -348,7 +327,6 @@ export default function TutorPayoutsPage() {
     return configs[status] || configs['Pending'];
   };
 
-  // ⭐ Loading
   if (loading || settingsLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[500px] space-y-4">
@@ -358,10 +336,9 @@ export default function TutorPayoutsPage() {
     );
   }
 
-  // ⭐ Render
   return (
     <div className="space-y-6 p-6">
-      {/* HEADER */}
+      {/* HEADER WITH BELL NOTIFICATION */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -393,8 +370,10 @@ export default function TutorPayoutsPage() {
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            {/* 🔥 ADD PAYOUT BUTTON */}
+          <div className="flex items-center gap-3">
+            {/* 🔔 Notification Bell Icon */}
+            <FinanceNotifications />
+
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -560,13 +539,13 @@ export default function TutorPayoutsPage() {
                       </div>
                     </div>
 
-                    {/* REAL DATA DISPLAY */}
+                    {/* REAL DATA DISPLAY - FIXED PROPER PROPERTY REFERENCES */}
                     <div className="grid grid-cols-3 gap-2 my-4 p-3 bg-black/30 rounded-xl border border-white/5">
                       <div className="text-center">
                         <p className="text-[10px] text-gray-400 uppercase font-bold">Total Credits</p>
-                        <p className="text-lg font-bold text-white">{payout.totalTokens} Credits</p>
+                        <p className="text-lg font-bold text-white">{totalTokens} Credits</p>
                         <p className="text-[10px] text-gray-500">
-                          {payout.paperCount} papers • {payout.studentCount} students
+                          {paperCount} papers • {studentCount} students
                         </p>
                         {paperCount > 0 && (
                           <p className="text-[10px] text-emerald-400/60">
@@ -578,7 +557,7 @@ export default function TutorPayoutsPage() {
                       <div className="text-center border-x border-white/10">
                         <p className="text-[10px] text-rose-400 uppercase font-bold">System Commission (20%)</p>
                         <p className="text-lg font-bold text-rose-400">
-                          - LKR {payout.commissionAmount?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          - LKR {commissionAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                         <p className="text-[8px] text-gray-500">
                           {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × {(platformCommission * 100).toFixed(0)}%
@@ -588,7 +567,7 @@ export default function TutorPayoutsPage() {
                       <div className="text-center">
                         <p className="text-[10px] text-emerald-400 uppercase font-bold">Net Tutor Payout (80%)</p>
                         <p className="text-xl font-bold text-emerald-400">
-                          LKR {payout.netPayout?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          LKR {netPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                         <p className="text-[8px] text-gray-500">
                           {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × 80%
@@ -669,7 +648,7 @@ export default function TutorPayoutsPage() {
         )}
       </AnimatePresence>
 
-      {/* ⭐ ADD PAYOUT MODAL */}
+      {/* ADD PAYOUT MODAL */}
       <AnimatePresence>
         {showAddModal && (
           <motion.div

@@ -1,121 +1,44 @@
-// backend/services/emailService.js
 const nodemailer = require('nodemailer');
 const { db } = require('../config/firebase');
 const emailLogService = require('./emailLogService');
-const emailRateLimitService = require('./emailRateLimitService');
 
 class EmailService {
   constructor() {
-    this.transporter = null;
-    this.config = null;
-    this.initialized = false;
-  }
+    const isSecure = process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465';
 
-  /**
-   * Load configuration from Firestore
-   */
-  async loadConfig() {
-    try {
-      const configDoc = await db.collection('system_settings').doc('global_config').get();
-      this.config = configDoc.exists ? configDoc.data() : null;
-      console.log('✅ Firestore config loaded:', this.config ? 'Yes' : 'No');
-      return this.config;
-    } catch (error) {
-      console.error('Failed to load email config from Firestore:', error.message);
-      return null;
-    }
-  }
-
-  /**
-   * Get sender email from system settings or fallback to env
-   */
-  getSenderEmail() {
-    return this.config?.senderEmail || process.env.SMTP_USER || process.env.EMAIL_USER || 'noreply@langoora.com';
-  }
-
-  /**
-   * Get sender name from system settings or fallback
-   */
-  getSenderName() {
-    return this.config?.senderName || 'Langoora';
-  }
-
-  /**
-   * Get complete sender info
-   */
-  getSenderInfo() {
-    const name = this.getSenderName();
-    const email = this.getSenderEmail();
-    return `${name} <${email}>`;
-  }
-
-  /**
-   * Initialize email transporter with system settings
-   */
-  async initialize() {
-    try {
-      await this.loadConfig();
-
-      const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
-      const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD;
-      const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-      const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
-      const smtpSecure = process.env.SMTP_SECURE === 'true' || false;
-
-      if (!smtpUser || !smtpPass) {
-        console.error('❌ SMTP credentials missing!');
-        console.error('   SMTP_USER:', smtpUser ? 'Set' : 'Missing');
-        console.error('   SMTP_PASS:', smtpPass ? 'Set' : 'Missing');
-        throw new Error('SMTP credentials are missing. Check your .env file.');
+    // 📧 Setup Nodemailer Transporter (Direct SSL Support on Port 465)
+    this.transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT) || 465,
+      secure: isSecure, // true for 465
+      auth: {
+        user: process.env.SMTP_USER || 'asgirind186@gmail.com',
+        pass: process.env.SMTP_PASS || 'lawjbrxaermacijm'
+      },
+      connectionTimeout: 10000, // 10s Connection Timeout
+      greetingTimeout: 10000,   // 10s Greeting Timeout
+      socketTimeout: 10000,     // 10s Socket Timeout
+      tls: {
+        rejectUnauthorized: false
       }
+    });
 
-      console.log('📧 Initializing email service...');
-      console.log(`   SMTP Host: ${smtpHost}`);
-      console.log(`   SMTP Port: ${smtpPort}`);
-      console.log(`   SMTP User: ${smtpUser}`);
-      console.log(`   SMTP Secure: ${smtpSecure}`);
-
-      const smtpConfig = {
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpSecure,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass
-        }
-      };
-
-      this.transporter = nodemailer.createTransport(smtpConfig);
-      await this.transporter.verify();
-      this.initialized = true;
-      console.log(`✅ Email service initialized successfully!`);
-      console.log(`   Sender: ${this.getSenderInfo()}`);
-      return true;
-
-    } catch (error) {
-      console.error('❌ Email service initialization failed:', error.message);
-      this.initialized = false;
-      return false;
-    }
+    this.defaultAdminEmail = process.env.ADMIN_EMAIL || 'asgirind186@gmail.com';
   }
 
-  /**
-   * Ensure transporter is initialized before sending
-   */
-  async ensureInitialized() {
-    if (!this.initialized || !this.transporter) {
-      console.log('⚠️ Email service not initialized, initializing now...');
-      await this.initialize();
-    }
-    if (!this.initialized || !this.transporter) {
-      throw new Error('Email service failed to initialize. Check your configuration.');
-    }
+  // 💡 Required for TutorValidationService & Other Services Initialization
+  async initialize() {
     return true;
   }
 
-  /**
-   * Helper: Header HTML matching logo.html branding exactly
-   */
+  async ensureInitialized() {
+    return true;
+  }
+
+  getSenderInfo() {
+    return `"Langoora Platform" <${process.env.SMTP_USER || 'asgirind186@gmail.com'}>`;
+  }
+
   getHeaderHtml() {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     return `
@@ -141,9 +64,6 @@ class EmailService {
     `;
   }
 
-  /**
-   * Helper: Footer HTML
-   */
   getFooterHtml(supportEmail = 'support@langoora.com') {
     return `
       <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center; color: #64748b; font-size: 12px; line-height: 1.8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
@@ -159,41 +79,100 @@ class EmailService {
     `;
   }
 
-  // =========================================================================
-  // 📚 SEND TUTOR APPROVAL EMAIL
-  // =========================================================================
-  async sendTutorApprovalEmail(tutorEmail, tutorName, tutorId) {
+  // 1. Send Generic Notification Email
+  async sendNotificationEmail(toEmail, title, message) {
+    const recipient = toEmail || this.defaultAdminEmail;
+    const subject = `Langoora Alert: ${title}`;
+
     const logData = {
-      recipient: tutorEmail,
-      type: 'tutor_approval',
-      senderEmail: this.getSenderEmail(),
-      senderName: this.getSenderName(),
-      subject: 'Welcome to Langoora – Your Tutor Account is Now Active',
-      metadata: { tutorId, tutorName }
+      recipient: recipient,
+      type: 'system_notification',
+      senderEmail: process.env.SMTP_USER,
+      senderName: 'Langoora Platform',
+      subject: subject,
+      metadata: { title, message, originalRecipient: toEmail }
     };
 
     try {
-      const rateCheck = await emailRateLimitService.canSend(tutorEmail);
-      if (!rateCheck.allowed) {
-        logData.status = 'failed';
-        logData.error = rateCheck.reason;
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"><title>${title}</title></head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  ${this.getHeaderHtml()}
+                  <div style="padding: 10px 0;">
+                    <h2 style="color: #38bdf8; font-size: 20px; font-weight: 700; margin: 0 0 16px 0;">${title}</h2>
+                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-left: 4px solid #38bdf8; border-radius: 12px; padding: 18px 20px; margin: 20px 0;">
+                      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6; margin: 0;">${message}</p>
+                    </div>
+                  </div>
+                  ${this.getFooterHtml()}
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: recipient,
+        subject: subject,
+        html: htmlContent
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+
+      logData.status = 'sent';
+      logData.messageId = info.messageId;
+      if (emailLogService && emailLogService.logEmail) {
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${tutorEmail}: ${rateCheck.reason}`);
-        return { success: false, error: rateCheck.reason };
       }
 
-      await this.ensureInitialized();
-      await this.loadConfig();
+      console.log(`✅ [Nodemailer] Email sent successfully to ${recipient}`);
+      return { success: true, messageId: info.messageId };
 
-      const loginLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/login`;
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      if (emailLogService && emailLogService.logEmail) {
+        await emailLogService.logEmail(logData);
+      }
+      console.error('❌ [Nodemailer] Failed to send email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 2. Subscription Plan Approved / Rejected Email (Sent to Plan Creator)
+  async sendPlanStatusEmail(toEmail, planName, status, notes = '') {
+    const isApproved = status === 'approved';
+    const recipient = toEmail || 'himashikashmira30@gmail.com';
+    const subject = isApproved ? `🎉 Subscription Plan Approved: ${planName}` : `⚠️ Action Required: Subscription Plan Rejected (${planName})`;
+
+    const logData = {
+      recipient: recipient,
+      type: isApproved ? 'plan_approved' : 'plan_rejected',
+      senderEmail: process.env.SMTP_USER,
+      senderName: 'Langoora Platform',
+      subject: subject,
+      metadata: { planName, status, notes, originalRecipient: toEmail }
+    };
+
+    try {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const actionUrl = `${frontendUrl}/finance-admin/subscriptions`;
 
       const htmlContent = `
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Welcome to Langoora - Tutor Account Approved</title>
+          <title>${isApproved ? 'Plan Approved' : 'Plan Rejected'}</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
@@ -204,74 +183,40 @@ class EmailService {
                   ${this.getHeaderHtml()}
 
                   <div style="padding: 0 4px;">
-                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0; line-height: 1.4;">
-                      Welcome aboard, <span style="color: #38bdf8;">${tutorName}</span>!
+                    <h1 style="font-size: 22px; font-weight: 700; color: ${isApproved ? '#34d399' : '#f87171'}; margin: 0 0 16px 0;">
+                      ${isApproved ? '🎉 Subscription Plan Approved!' : '⚠️ Subscription Plan Rejected'}
                     </h1>
                     
                     <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
-                      We are pleased to inform you that your tutor application has been <strong style="color: #ffffff;">approved</strong>. 
-                      Your qualifications have been verified, and you are now officially part of the Langoora tutor community.
+                      Your created subscription tier <strong style="color: #ffffff;">"${planName}"</strong> has been reviewed by the Admin team.
                     </p>
 
-                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 18px 20px; margin: 20px 0; text-align: center;">
-                      <h3 style="color: #34d399; margin: 0 0 4px 0; font-size: 16px; font-weight: 700;">Account Activated</h3>
-                      <p style="color: #6ee7b7; margin: 0; font-size: 13px;">Your tutor dashboard is now accessible.</p>
-                    </div>
-
-                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
-
-                    <div style="margin: 20px 0;">
-                      <h4 style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8; margin: 0 0 16px 0; text-align: center;">
-                        What You Can Do Now
-                      </h4>
-                      
+                    <div style="background: ${isApproved ? 'rgba(52, 211, 153, 0.08)' : 'rgba(248, 113, 113, 0.08)'}; border: 1px solid ${isApproved ? 'rgba(52, 211, 153, 0.25)' : 'rgba(248, 113, 113, 0.25)'}; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <h3 style="color: ${isApproved ? '#34d399' : '#f87171'}; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">Review Status</h3>
                       <table border="0" cellpadding="0" cellspacing="0" width="100%">
                         <tr>
-                          <td width="50%" style="padding: 0 6px 12px 0;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">01</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Create Exam Packs</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Design & publish mock exams</div>
-                            </div>
-                          </td>
-                          <td width="50%" style="padding: 0 0 12px 6px;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">02</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Earn Revenue</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Monetize your expertise</div>
-                            </div>
-                          </td>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Plan Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${planName}</td>
                         </tr>
                         <tr>
-                          <td width="50%" style="padding: 0 6px 0 0;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">03</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Track Performance</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Monitor exam analytics</div>
-                            </div>
-                          </td>
-                          <td width="50%" style="padding: 0 0 0 6px;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">04</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">View Reviews</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">See student feedback</div>
-                            </div>
-                          </td>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Status</td>
+                          <td style="color: ${isApproved ? '#34d399' : '#f87171'}; font-size: 13px; text-align: right; font-weight: 700; text-transform: uppercase;">${status}</td>
                         </tr>
+                        ${notes ? `
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 8px 0 0 0;" colspan="2">
+                            <strong style="color: #cbd5e1;">Admin Reason / Notes:</strong><br>
+                            <span style="color: #94a3b8; font-style: italic;">"${notes}"</span>
+                          </td>
+                        </tr>` : ''}
                       </table>
                     </div>
-
-                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
 
                     <div style="text-align: center; margin: 24px 0 16px 0;">
-                      <a href="${loginLink}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
-                        Sign In to Your Account →
+                      <a href="${actionUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        ${isApproved ? 'View Subscriptions Portal →' : 'Edit & Resubmit Plan →'}
                       </a>
                     </div>
-
-                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
-                      <strong style="color: #94a3b8;">Next Steps:</strong> Once signed in, start by creating your first exam pack and setting your pricing. Students are waiting to learn from your expertise.
-                    </p>
                   </div>
 
                   ${this.getFooterHtml()}
@@ -286,290 +231,48 @@ class EmailService {
 
       const mailOptions = {
         from: this.getSenderInfo(),
-        to: tutorEmail,
-        subject: 'Welcome to Langoora – Your Tutor Account is Now Active',
+        to: recipient,
+        subject: subject,
         html: htmlContent
       };
 
-      const result = await this.transporter.sendMail(mailOptions);
-      
+      const info = await this.transporter.sendMail(mailOptions);
+
       logData.status = 'sent';
-      logData.messageId = result.messageId;
-      await emailLogService.logEmail(logData);
-      
-      console.log(`✅ Approval email sent to ${tutorEmail}`);
-      return { success: true, messageId: result.messageId };
-
-    } catch (error) {
-      logData.status = 'failed';
-      logData.error = error.message;
-      await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send approval email:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // =========================================================================
-  // 📚 SEND TUTOR REJECTION EMAIL
-  // =========================================================================
-  async sendTutorRejectionEmail(tutorEmail, tutorName, rejectionReason = null) {
-    const logData = {
-      recipient: tutorEmail,
-      type: 'tutor_rejection',
-      senderEmail: this.getSenderEmail(),
-      senderName: this.getSenderName(),
-      subject: 'Langoora – Update on Your Tutor Application',
-      metadata: { tutorName, rejectionReason }
-    };
-
-    try {
-      const rateCheck = await emailRateLimitService.canSend(tutorEmail);
-      if (!rateCheck.allowed) {
-        logData.status = 'failed';
-        logData.error = rateCheck.reason;
+      logData.messageId = info.messageId;
+      if (emailLogService && emailLogService.logEmail) {
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${tutorEmail}: ${rateCheck.reason}`);
-        return { success: false, error: rateCheck.reason };
       }
 
-      await this.ensureInitialized();
-      await this.loadConfig();
-
-      const supportEmail = process.env.SUPPORT_EMAIL || 'support@langoora.com';
-      const signupLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/register?role=tutor`;
-
-      const defaultReason = 'Your application did not meet our qualification requirements at this time.';
-      const reason = rejectionReason || defaultReason;
-
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Langoora - Tutor Application Update</title>
-        </head>
-        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
-            <tr>
-              <td align="center">
-                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-                  
-                  ${this.getHeaderHtml()}
-
-                  <div style="padding: 0 4px;">
-                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
-                      Hello <span style="color: #f87171;">${tutorName}</span>,
-                    </h1>
-                    
-                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
-                      We have carefully reviewed your tutor application. After thorough evaluation of your 
-                      submitted qualifications and credentials, we regret to inform you that your application 
-                      has been <strong style="color: #f87171;">declined</strong> at this time.
-                    </p>
-
-                    <div style="background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.25); border-radius: 12px; padding: 20px; margin: 20px 0;">
-                      <h3 style="color: #f87171; margin: 0 0 8px 0; font-size: 15px; font-weight: 700; text-align: center;">Application Status: Declined</h3>
-                      <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: block; margin-bottom: 6px;">Reason for Decision</span>
-                      <p style="background: #18090a; padding: 12px 14px; border-radius: 8px; color: #fca5a5; font-size: 13px; border-left: 3px solid #f87171; line-height: 1.6; margin: 0;">
-                        "${reason}"
-                      </p>
-                    </div>
-
-                    <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px;">
-                      We encourage you to review our tutor requirements and consider reapplying in the future with additional qualifications or updated credentials.
-                    </p>
-
-                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
-
-                    <div style="background: #0f1629; padding: 16px; border-radius: 10px; margin: 20px 0; border-left: 3px solid #38bdf8;">
-                      <h4 style="color: #38bdf8; margin: 0 0 4px 0; font-size: 13px; font-weight: 700;">Need Clarification?</h4>
-                      <p style="color: #94a3b8; font-size: 13px; margin: 0; line-height: 1.6;">
-                        If you believe this decision was made in error or need further clarification, please contact our support team at 
-                        <a href="mailto:${supportEmail}" style="color: #38bdf8; text-decoration: none;">${supportEmail}</a>.
-                      </p>
-                    </div>
-
-                    <div style="margin: 24px 0;">
-                      <a href="${signupLink}" target="_blank" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; background: #3b82f6; color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; margin-bottom: 10px;">
-                        Reapply as Tutor
-                      </a>
-                      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" target="_blank" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; background: transparent; color: #94a3b8 !important; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 14px; text-align: center; border: 1px solid #334155;">
-                        Return to Langoora
-                      </a>
-                    </div>
-                  </div>
-
-                  ${this.getFooterHtml(supportEmail)}
-
-                </div>
-              </td>
-            </tr>
-          </table>
-        </body>
-        </html>
-      `;
-
-      const mailOptions = {
-        from: this.getSenderInfo(),
-        to: tutorEmail,
-        subject: 'Langoora – Update on Your Tutor Application',
-        html: htmlContent
-      };
-
-      const result = await this.transporter.sendMail(mailOptions);
-      
-      logData.status = 'sent';
-      logData.messageId = result.messageId;
-      await emailLogService.logEmail(logData);
-      
-      console.log(`✅ Rejection email sent to ${tutorEmail}`);
-      return { success: true, messageId: result.messageId };
+      console.log(`✅ [Nodemailer] Plan status email sent to ${recipient}`);
+      return { success: true, messageId: info.messageId };
 
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
-      await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send rejection email:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // =========================================================================
-  // 📚 SEND TEST EMAIL
-  // =========================================================================
-  async sendTestEmail(to, senderEmail, senderName) {
-    const logData = {
-      recipient: to,
-      type: 'test',
-      senderEmail: senderEmail || this.getSenderEmail(),
-      senderName: senderName || this.getSenderName(),
-      subject: 'Langoora – Email Configuration Test'
-    };
-
-    try {
-      const rateCheck = await emailRateLimitService.canSend(to);
-      if (!rateCheck.allowed) {
-        logData.status = 'failed';
-        logData.error = rateCheck.reason;
+      if (emailLogService && emailLogService.logEmail) {
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for test email: ${rateCheck.reason}`);
-        return { success: false, error: rateCheck.reason };
       }
-
-      await this.ensureInitialized();
-      await this.loadConfig();
-
-      const fromName = senderName || this.getSenderName();
-      const fromEmail = senderEmail || this.getSenderEmail();
-
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Langoora - Email Test</title>
-        </head>
-        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
-            <tr>
-              <td align="center">
-                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
-                  
-                  ${this.getHeaderHtml()}
-
-                  <div style="text-align: center; padding: 0 4px;">
-                    <div style="width: 52px; height: 52px; margin: 0 auto 16px auto; line-height: 52px; background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 14px; color: #34d399; font-size: 20px; font-weight: 700;">✓</div>
-                    <h2 style="color: #34d399; font-size: 20px; margin: 0 0 8px 0; font-weight: 700;">Email Configuration Test</h2>
-                    <p style="color: #94a3b8; font-size: 14px; margin: 0 0 20px 0;">If you are reading this email, your email settings are configured correctly!</p>
-                    
-                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px; margin: 20px 0; text-align: left;">
-                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sender Name</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${fromName}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sender Email</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${fromEmail}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sent To</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${to}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Time</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' })}</td>
-                        </tr>
-                      </table>
-                    </div>
-                  </div>
-
-                  ${this.getFooterHtml()}
-
-                </div>
-              </td>
-            </tr>
-          </table>
-        </body>
-        </html>
-      `;
-
-      const mailOptions = {
-        from: `${fromName} <${fromEmail}>`,
-        to: to,
-        subject: 'Langoora – Email Configuration Test',
-        html: htmlContent
-      };
-
-      const result = await this.transporter.sendMail(mailOptions);
-      
-      logData.status = 'sent';
-      logData.messageId = result.messageId;
-      await emailLogService.logEmail(logData);
-      
-      console.log(`✅ Test email sent to ${to}`);
-      return { success: true, messageId: result.messageId };
-
-    } catch (error) {
-      logData.status = 'failed';
-      logData.error = error.message;
-      await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send test email:', error.message);
+      console.error('❌ [Nodemailer] Failed to send plan status email:', error.message);
       return { success: false, error: error.message };
     }
   }
 
-  // =========================================================================
-  // 📚 SEND CATEGORY CREATED EMAIL - NEW
-  // =========================================================================
+  // 3. Category Created Email (Sent to Finance Admin / Himi)
   async sendCategoryCreatedEmail(financeEmail, categoryName, language, categoryId, createdBy) {
+    const recipient = financeEmail || 'himashikashmira30@gmail.com';
+    const subject = `📚 New Exam Category Created: ${categoryName}`;
+
     const logData = {
-      recipient: financeEmail,
+      recipient: recipient,
       type: 'category_created',
-      senderEmail: this.getSenderEmail(),
-      senderName: this.getSenderName(),
-      subject: `📚 New Exam Category Created: ${categoryName}`,
-      metadata: { categoryName, language, categoryId, createdBy }
+      senderEmail: process.env.SMTP_USER,
+      senderName: 'Langoora Platform',
+      subject: subject,
+      metadata: { categoryName, language, categoryId, createdBy, originalRecipient: financeEmail }
     };
 
     try {
-      const rateCheck = await emailRateLimitService.canSend(financeEmail);
-      if (!rateCheck.allowed) {
-        logData.status = 'failed';
-        logData.error = rateCheck.reason;
-        await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
-        return { success: false, error: rateCheck.reason };
-      }
-
-      await this.ensureInitialized();
-      await this.loadConfig();
-
       const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
 
       const htmlContent = `
@@ -577,7 +280,6 @@ class EmailService {
         <html>
         <head>
           <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>New Exam Category Created</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
@@ -626,11 +328,6 @@ class EmailService {
                         Configure Credit Values →
                       </a>
                     </div>
-
-                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
-                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
-                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
-                    </p>
                   </div>
 
                   ${this.getFooterHtml()}
@@ -645,56 +342,48 @@ class EmailService {
 
       const mailOptions = {
         from: this.getSenderInfo(),
-        to: financeEmail,
-        subject: `📚 New Exam Category Created: ${categoryName}`,
+        to: recipient,
+        subject: subject,
         html: htmlContent
       };
 
-      const result = await this.transporter.sendMail(mailOptions);
-      
+      const info = await this.transporter.sendMail(mailOptions);
+
       logData.status = 'sent';
-      logData.messageId = result.messageId;
-      await emailLogService.logEmail(logData);
-      
-      console.log(`✅ Category created email sent to ${financeEmail}`);
-      return { success: true, messageId: result.messageId };
+      logData.messageId = info.messageId;
+      if (emailLogService && emailLogService.logEmail) {
+        await emailLogService.logEmail(logData);
+      }
+
+      console.log(`✅ [Nodemailer] Category created email sent to ${recipient}`);
+      return { success: true, messageId: info.messageId };
 
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
-      await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send category created email:', error.message);
+      if (emailLogService && emailLogService.logEmail) {
+        await emailLogService.logEmail(logData);
+      }
+      console.error('❌ [Nodemailer] Failed to send category created email:', error.message);
       return { success: false, error: error.message };
     }
   }
 
-  // =========================================================================
-  // 📚 SEND LEVEL CREATED EMAIL - NEW
-  // =========================================================================
+  // 4. Level Created Email (Sent to Finance Admin / Himi)
   async sendLevelCreatedEmail(financeEmail, levelName, categoryName, categoryId, levelId, createdBy) {
+    const recipient = financeEmail || 'himashikashmira30@gmail.com';
+    const subject = `📝 New Level Created: ${levelName}`;
+
     const logData = {
-      recipient: financeEmail,
+      recipient: recipient,
       type: 'level_created',
-      senderEmail: this.getSenderEmail(),
-      senderName: this.getSenderName(),
-      subject: `📝 New Level Created: ${levelName}`,
-      metadata: { levelName, categoryName, categoryId, levelId, createdBy }
+      senderEmail: process.env.SMTP_USER,
+      senderName: 'Langoora Platform',
+      subject: subject,
+      metadata: { levelName, categoryName, categoryId, levelId, createdBy, originalRecipient: financeEmail }
     };
 
     try {
-      const rateCheck = await emailRateLimitService.canSend(financeEmail);
-      if (!rateCheck.allowed) {
-        logData.status = 'failed';
-        logData.error = rateCheck.reason;
-        await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
-        return { success: false, error: rateCheck.reason };
-      }
-
-      await this.ensureInitialized();
-      await this.loadConfig();
-
       const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
 
       const htmlContent = `
@@ -702,7 +391,6 @@ class EmailService {
         <html>
         <head>
           <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>New Level Created</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
@@ -751,11 +439,6 @@ class EmailService {
                         Set Credit Value →
                       </a>
                     </div>
-
-                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
-                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
-                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
-                    </p>
                   </div>
 
                   ${this.getFooterHtml()}
@@ -770,26 +453,191 @@ class EmailService {
 
       const mailOptions = {
         from: this.getSenderInfo(),
-        to: financeEmail,
-        subject: `📝 New Level Created: ${levelName}`,
+        to: recipient,
+        subject: subject,
         html: htmlContent
       };
 
-      const result = await this.transporter.sendMail(mailOptions);
-      
+      const info = await this.transporter.sendMail(mailOptions);
+
       logData.status = 'sent';
-      logData.messageId = result.messageId;
-      await emailLogService.logEmail(logData);
-      
-      console.log(`✅ Level created email sent to ${financeEmail}`);
-      return { success: true, messageId: result.messageId };
+      logData.messageId = info.messageId;
+      if (emailLogService && emailLogService.logEmail) {
+        await emailLogService.logEmail(logData);
+      }
+
+      console.log(`✅ [Nodemailer] Level created email sent to ${recipient}`);
+      return { success: true, messageId: info.messageId };
 
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
-      await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send level created email:', error.message);
+      if (emailLogService && emailLogService.logEmail) {
+        await emailLogService.logEmail(logData);
+      }
+      console.error('❌ [Nodemailer] Failed to send level created email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 5. Exam Credit Configured Email (Sent to Main Admin: asgirind186@gmail.com)
+  async sendCreditConfiguredEmail(adminEmail, examName, creditValue, configuredBy = 'Finance Admin') {
+    const recipient = adminEmail || this.defaultAdminEmail;
+    const subject = `💳 Exam Credits Configured: ${examName}`;
+
+    const logData = {
+      recipient: recipient,
+      type: 'credit_configured',
+      senderEmail: process.env.SMTP_USER,
+      senderName: 'Langoora Platform',
+      subject: subject,
+      metadata: { examName, creditValue, configuredBy }
+    };
+
+    try {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const actionUrl = `${frontendUrl}/finance-admin/exam-credits`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"><title>Exam Credits Configured</title></head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  ${this.getHeaderHtml()}
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #34d399; margin: 0 0 16px 0;">
+                      💳 Exam Credits Configured
+                    </h1>
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      Credit valuation for <strong style="color: #ffffff;">"${examName}"</strong> has been successfully configured and approved by <strong style="color: #ffffff;">${configuredBy}</strong>.
+                    </p>
+                    <div style="background: rgba(52, 211, 153, 0.08); border: 1px solid rgba(52, 211, 153, 0.25); border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Exam / Level</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${examName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Configured Credit Value</td>
+                          <td style="color: #34d399; font-size: 16px; text-align: right; font-weight: 800;">${creditValue} Credits</td>
+                        </tr>
+                      </table>
+                    </div>
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${actionUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        View Exam Credits Portal →
+                      </a>
+                    </div>
+                  </div>
+                  ${this.getFooterHtml()}
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const info = await this.transporter.sendMail({
+        from: this.getSenderInfo(),
+        to: recipient,
+        subject: subject,
+        html: htmlContent
+      });
+
+      logData.status = 'sent';
+      logData.messageId = info.messageId;
+      if (emailLogService && emailLogService.logEmail) await emailLogService.logEmail(logData);
+
+      console.log(`✅ [Nodemailer] Credit Configured Email sent to ${recipient}`);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      if (emailLogService && emailLogService.logEmail) await emailLogService.logEmail(logData);
+      console.error('❌ [Nodemailer] Failed to send credit configured email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 6. Exam Credit Revision Requested Email (Sent to Main Admin: asgirind186@gmail.com)
+  async sendCreditRevisionEmail(adminEmail, examName, reason = '', requestedBy = 'Finance Admin') {
+    const recipient = adminEmail || this.defaultAdminEmail;
+    const subject = `⚠️ Exam Credit Valuation Pending Revision: ${examName}`;
+
+    const logData = {
+      recipient: recipient,
+      type: 'credit_revision_requested',
+      senderEmail: process.env.SMTP_USER,
+      senderName: 'Langoora Platform',
+      subject: subject,
+      metadata: { examName, reason, requestedBy }
+    };
+
+    try {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const actionUrl = `${frontendUrl}/finance-admin/exam-credits`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"><title>Exam Credit Revision Pending</title></head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  ${this.getHeaderHtml()}
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #fbbf24; margin: 0 0 16px 0;">
+                      ⚠️ Exam Credit Valuation Pending Revision
+                    </h1>
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      Finance Admin (<strong style="color: #ffffff;">${requestedBy}</strong>) has requested a revision / rejected the proposed credit value for <strong style="color: #ffffff;">"${examName}"</strong>.
+                    </p>
+                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <h3 style="color: #fbbf24; margin: 0 0 8px 0; font-size: 14px; font-weight: 700;">Revision Details</h3>
+                      <p style="color: #cbd5e1; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ${reason ? `<strong>Reason / Notes:</strong> "${reason}"` : 'Please review and re-adjust the credit requirements.'}
+                      </p>
+                    </div>
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${actionUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        Review & Re-adjust Credits →
+                      </a>
+                    </div>
+                  </div>
+                  ${this.getFooterHtml()}
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const info = await this.transporter.sendMail({
+        from: this.getSenderInfo(),
+        to: recipient,
+        subject: subject,
+        html: htmlContent
+      });
+
+      logData.status = 'sent';
+      logData.messageId = info.messageId;
+      if (emailLogService && emailLogService.logEmail) await emailLogService.logEmail(logData);
+
+      console.log(`✅ [Nodemailer] Credit Revision Email sent to ${recipient}`);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      if (emailLogService && emailLogService.logEmail) await emailLogService.logEmail(logData);
+      console.error('❌ [Nodemailer] Failed to send credit revision email:', error.message);
       return { success: false, error: error.message };
     }
   }

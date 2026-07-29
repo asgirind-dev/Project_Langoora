@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import CreditValuationService from "../../services/CreditValuationService";
+import FinanceNotifications from "../../components/finance/FinanceNotifications";
 
 function ExamCreditValuation() {
   const [allLevels, setAllLevels] = useState([]);
@@ -17,25 +18,20 @@ function ExamCreditValuation() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [updating, setUpdating] = useState(false);
-
-  // ✅ Get current user from localStorage
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // Get user data from localStorage
     const userData = localStorage.getItem('user');
     if (userData) {
       try {
         const parsed = JSON.parse(userData);
         setUser(parsed);
-        console.log('👤 Current user:', parsed);
       } catch (e) {
         console.error('Error parsing user data:', e);
       }
     }
   }, []);
 
-  // ✅ Check if user is Finance Admin
   const isFinanceAdmin = () => {
     if (!user) return false;
     const role = user.role || user.userType || user.type || '';
@@ -52,8 +48,8 @@ function ExamCreditValuation() {
         year: 'numeric', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit'
       });
-    } catch {
-      return dateString;
+    } catch (e) {
+      return String(dateString);
     }
   };
 
@@ -61,7 +57,6 @@ function ExamCreditValuation() {
     setLoading(true);
     try {
       const levelsData = await CreditValuationService.getCategories();
-      console.log('📊 Fetched levels data:', levelsData);
       setAllLevels(levelsData || []);
       const uniqueCategories = [...new Set((levelsData || []).map(l => l.categoryId))];
       if (uniqueCategories.length > 0 && !selectedCategory) {
@@ -123,28 +118,16 @@ function ExamCreditValuation() {
 
   const handleUpdateLevel = async (categoryId, levelId, currentCredit, levelName) => {
     const creditToUpdate = tempCredits[levelId] !== undefined ? tempCredits[levelId] : currentCredit;
-    const parentCategory = allLevels.find(l => l.categoryId === categoryId);
-    const parentName = parentCategory ? parentCategory.categoryName : '';
-    const fullExamName = parentName ? `${parentName} - ${levelName}` : levelName;
 
     try {
       setUpdating(true);
       await CreditValuationService.updateLevelCredits(categoryId, levelId, parseInt(creditToUpdate) || 0);
       
-      setAllLevels(allLevels.map((lvl) =>
-        lvl.id === levelId && lvl.categoryId === categoryId 
-          ? { ...lvl, credits: parseInt(creditToUpdate) || 0, isCreditSet: true } 
-          : lvl
+      setAllLevels(prevLevels => prevLevels.map((lvlItem) =>
+        lvlItem.id === levelId && lvlItem.categoryId === categoryId 
+          ? { ...lvlItem, credits: parseInt(creditToUpdate) || 0, isCreditSet: true } 
+          : lvlItem
       ));
-      
-      setCreditHistory(prev => [{
-        id: `local_${Date.now()}`,
-        examName: fullExamName,
-        previousCredits: parseInt(currentCredit) || 0,
-        newCredits: parseInt(creditToUpdate) || 0,
-        wasPending: currentCredit === 0 || !lvl?.isCreditSet,
-        updatedAt: new Date().toISOString()
-      }, ...prev]);
 
       setTempCredits((prev) => {
         const updated = { ...prev };
@@ -153,7 +136,11 @@ function ExamCreditValuation() {
       });
 
       alert(`✅ Credits for ${levelName} updated successfully!`);
-      fetchData();
+      
+      setTimeout(() => {
+        fetchCreditHistory();
+      }, 500);
+
     } catch (error) {
       alert('❌ Failed to update level credits.');
     } finally {
@@ -163,24 +150,16 @@ function ExamCreditValuation() {
 
   const handleUpdateCategory = async (categoryId, currentCredit, categoryName) => {
     const creditToUpdate = tempCredits[categoryId] !== undefined ? tempCredits[categoryId] : currentCredit;
+
     try {
       setUpdating(true);
       await CreditValuationService.updateCategoryCredits(categoryId, parseInt(creditToUpdate) || 0);
       
-      setAllLevels(allLevels.map((lvl) =>
-        lvl.id === categoryId && lvl.categoryId === categoryId 
-          ? { ...lvl, credits: parseInt(creditToUpdate) || 0, isCreditSet: true } 
-          : lvl
+      setAllLevels(prevLevels => prevLevels.map((lvlItem) =>
+        lvlItem.id === categoryId && lvlItem.categoryId === categoryId 
+          ? { ...lvlItem, credits: parseInt(creditToUpdate) || 0, isCreditSet: true } 
+          : lvlItem
       ));
-      
-      setCreditHistory(prev => [{
-        id: `local_${Date.now()}`,
-        examName: categoryName,
-        previousCredits: parseInt(currentCredit) || 0,
-        newCredits: parseInt(creditToUpdate) || 0,
-        wasPending: currentCredit === 0,
-        updatedAt: new Date().toISOString()
-      }, ...prev]);
 
       setTempCredits((prev) => {
         const updated = { ...prev };
@@ -189,7 +168,11 @@ function ExamCreditValuation() {
       });
 
       alert(`✅ Credits for ${categoryName} updated successfully!`);
-      fetchData();
+      
+      setTimeout(() => {
+        fetchCreditHistory();
+      }, 500);
+
     } catch (error) {
       alert('❌ Failed to update category credits.');
     } finally {
@@ -199,13 +182,12 @@ function ExamCreditValuation() {
 
   return (
     <div className="space-y-8 text-gray-100 font-sans relative">
-      {/* Background effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-20 right-20 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-20 left-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
 
-      {/* Header - Finance Admin badge removed */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 pb-6 border-b border-white/10">
         <div>
           <div className="flex items-center gap-3">
@@ -226,7 +208,10 @@ function ExamCreditValuation() {
           </div>
         </div>
 
+        {/* 🎯 Top Action Bar */}
         <div className="flex items-center gap-3">
+          <FinanceNotifications />
+
           <button 
             onClick={fetchData} 
             className="p-3 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all text-gray-300 hover:text-white cursor-pointer active:scale-95 shadow-sm"
@@ -234,6 +219,7 @@ function ExamCreditValuation() {
           >
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
+
           <button 
             onClick={() => {
               fetchCreditHistory();
@@ -246,7 +232,6 @@ function ExamCreditValuation() {
         </div>
       </div>
 
-      {/* Category Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-gradient-to-r from-[#0f1424] to-[#0b0e1b] p-4 rounded-2xl border border-white/10 shadow-xl gap-4">
         <div className="flex items-center gap-2.5">
           <Award size={18} className="text-amber-400" />
@@ -266,7 +251,6 @@ function ExamCreditValuation() {
         </div>
       </div>
 
-      {/* Levels Grid */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 text-gray-400 space-y-4">
           <div className="p-4 bg-amber-500/10 rounded-full border border-amber-500/20 animate-bounce">
@@ -283,14 +267,9 @@ function ExamCreditValuation() {
               const displayName = hasLevels ? item.name : item.categoryName;
               const parentName = hasLevels ? item.categoryName : null;
               
-              // ✅ Check if credit is pending
               const isCreditSet = item.isCreditSet === true;
               const isPending = !isCreditSet || item.credits === 0;
-              
-              // ✅ Check if user can edit (Finance Admin only)
               const canEdit = isFinanceAdmin() && !isDeleted;
-
-              console.log(`🔍 ${displayName}: isCreditSet=${item.isCreditSet}, credits=${item.credits}, isPending=${isPending}, canEdit=${canEdit}`);
 
               return (
                 <motion.div 
@@ -315,12 +294,11 @@ function ExamCreditValuation() {
                             {displayName.toUpperCase()}
                           </h3>
                           {parentName && (
-                            <span className="text-[11px] text-purple-400 font-semibold mt-0.5 block flex items-center gap-1">
+                            <span className="text-[11px] text-purple-400 font-semibold mt-0.5 flex items-center gap-1">
                               <Sparkles size={11} /> {parentName}
                             </span>
                           )}
                         </div>
-                        {/* ✅ Only ONE Pending badge - removed the duplicate */}
                         <span className={`text-[9px] px-2.5 py-0.5 rounded-full uppercase font-bold tracking-wider border ${
                           isDeleted 
                             ? 'bg-red-500/10 text-red-400 border-red-500/20' 
@@ -332,7 +310,6 @@ function ExamCreditValuation() {
                         </span>
                       </div>
 
-                      {/* ✅ Credit Input */}
                       <div className={`flex items-center justify-between bg-black/40 rounded-xl p-3 mb-6 border transition-colors ${
                         isPending && canEdit
                           ? 'border-amber-500/20 group-hover:border-amber-500/30'
@@ -344,7 +321,6 @@ function ExamCreditValuation() {
                           <Coins size={16} className="text-amber-400" />
                           <span className="text-xs font-bold text-gray-300">Credits Required</span>
                           
-                          {/* ✅ Only show label for Finance Admin on pending items */}
                           {!isDeleted && isPending && canEdit && (
                             <span className="ml-1 px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[9px] font-medium flex items-center gap-1 animate-pulse">
                               <Clock size={9} /> Set Credit Value
@@ -369,7 +345,6 @@ function ExamCreditValuation() {
                         />
                       </div>
 
-                      {/* ✅ Role-based access message - only for non-finance admin */}
                       {isPending && !canEdit && !isDeleted && (
                         <div className="text-center text-[10px] text-gray-500 mb-3">
                           🔒 Only Finance Admin can set credit values
@@ -377,7 +352,6 @@ function ExamCreditValuation() {
                       )}
                     </div>
 
-                    {/* ✅ Update Button */}
                     {hasLevels ? (
                       <button 
                         onClick={() => handleUpdateLevel(item.categoryId, item.id, item.credits, item.name)}

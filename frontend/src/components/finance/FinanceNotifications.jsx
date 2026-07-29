@@ -1,25 +1,27 @@
-// frontend/src/components/finance/FinanceNotifications.jsx
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Bell, Check, CheckCheck, X, Trash2, 
-  Clock, Loader2, AlertCircle, ChevronRight
+  Bell, CheckCheck, X, Loader2, RefreshCw 
 } from 'lucide-react';
 import notificationService from '../../services/notificationService';
 import { useAuth } from '../../context/AuthContext';
 
 // Helper to format time
 const formatTime = (timestamp) => {
-  if (!timestamp) return '';
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diff = now - date;
-  
-  if (diff < 60000) return 'Just now';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-  return date.toLocaleDateString();
+  if (!timestamp) return 'Just now';
+  try {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+    
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+    return date.toLocaleDateString();
+  } catch {
+    return 'Recently';
+  }
 };
 
 export default function FinanceNotifications() {
@@ -29,37 +31,55 @@ export default function FinanceNotifications() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
-  const [deleting, setDeleting] = useState(null);
   const dropdownRef = useRef(null);
 
-  const userId = user?.uid || user?.id;
+  // Logged-in User ID
+  const userId = user?.uid || user?.id || user?._id;
 
-  // Load latest notifications only (limit: 5)
+  // Load real notifications from DB (Latest 3)
   const loadNotifications = async () => {
     if (!userId) return;
     setLoading(true);
     try {
-      const [latestNotifs, count] = await Promise.all([
-        notificationService.getLatestNotifications(userId, 5),
-        notificationService.getUnreadCount(userId)
+      console.log("Current Logged-in User ID:", userId);
+
+      // 🎯 FIXED FUNCTION NAME HERE: `getLatestNotifications`
+      const [notifRes, countRes] = await Promise.all([
+        notificationService.getLatestNotifications(userId, 3).catch((err) => {
+          console.error("Error fetching notifications list:", err);
+          return [];
+        }),
+        notificationService.getUnreadCount(userId).catch((err) => {
+          console.error("Error fetching unread count:", err);
+          return 0;
+        })
       ]);
-      setNotifications(latestNotifs);
-      setUnreadCount(count);
+
+      let rawList = Array.isArray(notifRes) 
+        ? notifRes 
+        : (notifRes?.notifications || notifRes?.data || []);
+
+      const top3List = rawList.slice(0, 3);
+      setNotifications(top3List);
+
+      const actualUnread = top3List.filter(n => !n.read).length;
+      setUnreadCount(top3List.length === 0 ? 0 : (typeof countRes === 'number' ? countRes : actualUnread));
+
     } catch (error) {
-      console.error('Error loading notifications:', error);
+      console.error('Error loading notifications from DB:', error);
+      setNotifications([]);
+      setUnreadCount(0);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load unread count on mount
   useEffect(() => {
     if (userId) {
       loadNotifications();
     }
-  }, [userId]);
+  }, [user, userId]);
 
-  // Click outside to close
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -70,240 +90,134 @@ export default function FinanceNotifications() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!isOpen) return;
-    const interval = setInterval(loadNotifications, 30000);
-    return () => clearInterval(interval);
-  }, [isOpen]);
-
-  const handleMarkAsRead = async (notificationId) => {
+  const handleMarkAsRead = async (id) => {
     try {
-      await notificationService.markAsRead(notificationId);
-      setNotifications(prev => 
-        prev.map(n => 
-          n.id === notificationId ? { ...n, read: true } : n
-        )
-      );
+      await notificationService.markAsRead(id).catch(() => null);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (error) {
-      console.error('Error marking as read:', error);
+    } catch (err) {
+      console.error('Error marking as read:', err);
     }
   };
 
   const handleMarkAllAsRead = async () => {
-    if (markingAll || unreadCount === 0) return;
+    if (!userId) return;
     setMarkingAll(true);
     try {
-      await notificationService.markAllAsRead(userId);
-      setNotifications(prev => 
-        prev.map(n => ({ ...n, read: true }))
-      );
+      await notificationService.markAllAsRead(userId).catch(() => null);
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
-    } catch (error) {
-      console.error('Error marking all as read:', error);
+    } catch (err) {
+      console.error('Error marking all as read:', err);
     } finally {
       setMarkingAll(false);
     }
   };
 
-  const handleDelete = async (notificationId) => {
-    setDeleting(notificationId);
-    try {
-      await notificationService.deleteNotification(notificationId);
-      setNotifications(prev => 
-        prev.filter(n => n.id !== notificationId)
-      );
-      // If deleted notification was unread, decrement count
-      const deleted = notifications.find(n => n.id === notificationId);
-      if (deleted && !deleted.read) {
-        setUnreadCount(prev => Math.max(0, prev - 1));
-      }
-    } catch (error) {
-      console.error('Error deleting notification:', error);
-    } finally {
-      setDeleting(null);
-    }
-  };
-
-  const handleDeleteAllRead = async () => {
-    try {
-      await notificationService.deleteReadNotifications(userId);
-      setNotifications(prev => prev.filter(n => !n.read));
-    } catch (error) {
-      console.error('Error deleting read notifications:', error);
-    }
-  };
-
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Bell Icon with Badge */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 rounded-xl hover:bg-white/10 transition-colors duration-200"
-        aria-label="Notifications"
+        onClick={() => {
+          setIsOpen(!isOpen);
+          if (!isOpen) loadNotifications();
+        }}
+        className="relative p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all duration-200 cursor-pointer active:scale-95"
+        title="Notifications"
       >
-        <Bell size={22} className="text-gray-300 hover:text-white transition-colors" />
+        <Bell size={18} className="text-gray-300 hover:text-white" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-slate-900">
-            {unreadCount > 99 ? '99+' : unreadCount}
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-black font-extrabold text-[9px] rounded-full flex items-center justify-center border-2 border-[#0b0f1d] animate-pulse">
+            {unreadCount}
           </span>
         )}
       </button>
 
-      {/* Dropdown */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="absolute right-0 mt-3 w-[420px] max-w-[90vw] bg-[#0d1222] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50"
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className="absolute right-0 mt-3 w-80 sm:w-96 bg-[#0b0f1d] border border-white/15 rounded-2xl shadow-2xl z-50 overflow-hidden"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+            <div className="p-3.5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div className="flex items-center gap-2">
-                <span className="text-white font-bold text-sm">Notifications</span>
+                <Bell size={15} className="text-amber-400" />
+                <span className="text-xs font-bold text-white">Notifications</span>
                 {unreadCount > 0 && (
-                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full border border-amber-500/30">
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full text-[9px] font-bold">
                     {unreadCount} new
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1">
+
+              <div className="flex items-center gap-2">
                 {unreadCount > 0 && (
-                  <button
+                  <button 
                     onClick={handleMarkAllAsRead}
                     disabled={markingAll}
-                    className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors text-xs flex items-center gap-1"
+                    className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
                   >
-                    {markingAll ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <>
-                        <CheckCheck size={14} />
-                        <span className="hidden sm:inline">Read all</span>
-                      </>
-                    )}
+                    {markingAll ? <Loader2 size={12} className="animate-spin" /> : <CheckCheck size={12} />} 
+                    Read all
                   </button>
                 )}
-                <button
-                  onClick={handleDeleteAllRead}
-                  className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-red-400 transition-colors"
-                  title="Delete all read notifications"
+                <button 
+                  onClick={() => setIsOpen(false)}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer"
                 >
-                  <Trash2 size={14} />
+                  <X size={14} />
                 </button>
               </div>
             </div>
 
-            {/* Notification List */}
-            <div className="max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
-              {loading && notifications.length === 0 ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 size={24} className="animate-spin text-blue-400" />
+            <div className="max-h-80 overflow-y-auto divide-y divide-white/5">
+              {loading ? (
+                <div className="p-8 text-center text-xs text-gray-500 flex flex-col items-center gap-2">
+                  <Loader2 size={20} className="animate-spin text-blue-400" />
+                  <span>Checking notifications...</span>
                 </div>
               ) : notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
-                    <Bell size={28} className="text-gray-600" />
-                  </div>
-                  <p className="text-gray-400 text-sm font-medium">No notifications</p>
-                  <p className="text-gray-600 text-xs mt-1">You're all caught up!</p>
+                <div className="p-8 text-center text-xs text-gray-500 flex flex-col items-center gap-2">
+                  <Bell size={24} className="text-gray-600" />
+                  <p className="text-gray-400 font-semibold">No notifications</p>
+                  <p className="text-[10px] text-gray-600">You are all caught up!</p>
                 </div>
               ) : (
-                notifications.map((notif, index) => (
-                  <motion.div
-                    key={notif.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                    className={`group relative px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors ${
-                      !notif.read ? 'bg-blue-500/5 border-l-2 border-l-blue-500' : ''
+                notifications.map((item) => (
+                  <div 
+                    key={item.id || item._id} 
+                    onClick={() => !item.read && handleMarkAsRead(item.id)}
+                    className={`p-3.5 hover:bg-white/[0.04] transition-colors flex gap-3 cursor-pointer ${
+                      !item.read ? 'bg-amber-500/[0.04]' : ''
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      {/* Status Indicator */}
-                      <div className="flex-shrink-0 mt-0.5">
-                        {!notif.read ? (
-                          <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                        ) : (
-                          <div className="w-2 h-2 rounded-full bg-gray-600" />
-                        )}
+                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${!item.read ? 'bg-amber-400 animate-pulse' : 'bg-gray-600'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className={`text-xs ${!item.read ? 'font-bold text-white' : 'font-medium text-gray-300'} truncate`}>
+                          {item.title || 'System Alert'}
+                        </h4>
+                        <span className="text-[9px] text-gray-500 shrink-0">{formatTime(item.createdAt || item.time)}</span>
                       </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className={`text-sm ${!notif.read ? 'text-white font-semibold' : 'text-gray-300'}`}>
-                              {notif.title}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">
-                              {notif.message}
-                            </p>
-                          </div>
-                          <span className="text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0">
-                            {formatTime(notif.createdAt)}
-                          </span>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-2 mt-2">
-                          {!notif.read && (
-                            <button
-                              onClick={() => handleMarkAsRead(notif.id)}
-                              className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-0.5"
-                            >
-                              <Check size={12} /> Mark read
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDelete(notif.id)}
-                            disabled={deleting === notif.id}
-                            className="text-[10px] text-gray-500 hover:text-red-400 transition-colors flex items-center gap-0.5"
-                          >
-                            {deleting === notif.id ? (
-                              <Loader2 size={10} className="animate-spin" />
-                            ) : (
-                              <Trash2 size={10} />
-                            )}
-                            Delete
-                          </button>
-                          {notif.actionUrl && notif.actionUrl !== '/' && (
-                            <a
-                              href={notif.actionUrl}
-                              className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-0.5"
-                            >
-                              View <ChevronRight size={10} />
-                            </a>
-                          )}
-                        </div>
-                      </div>
+                      <p className="text-[11px] text-gray-400 mt-0.5 leading-snug line-clamp-2">
+                        {item.message || item.description || ''}
+                      </p>
                     </div>
-                  </motion.div>
+                  </div>
                 ))
               )}
             </div>
 
-            {/* Footer */}
-            {notifications.length > 0 && (
-              <div className="px-4 py-2 border-t border-white/5 flex justify-between items-center">
-                <span className="text-[10px] text-gray-500">
-                  Showing latest {notifications.length} notifications
-                </span>
-                <button
-                  onClick={() => {
-                    setIsOpen(false);
-                    // Navigate to full notifications page if needed
-                  }}
-                  className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  View all
-                </button>
-              </div>
-            )}
+            <div className="p-2.5 bg-white/[0.01] border-t border-white/5 flex items-center justify-between px-4">
+              <span className="text-[9px] text-gray-500">Real-time sync</span>
+              <button 
+                onClick={loadNotifications}
+                className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw size={10} className={loading ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

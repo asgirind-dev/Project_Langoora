@@ -1,861 +1,410 @@
-const { db } = require("../config/firebase");
+const nodemailer = require('nodemailer');
+const { db } = require('../config/firebase');
+const emailLogService = require('./emailLogService');
 
-/**
- * Small helper to keep field defaults consistent across create/update paths.
- * Section-agnostic on purpose: Listening, Grammar, Vocabulary, Reading all
- * flow through the same normalization so they are written identically.
- */
-const normalizeCategoryId = (categoryId) => {
-  if (!categoryId) return "";
-  return categoryId.toUpperCase().replace(/[\s_]/g, "-").trim();
-};
+class EmailService {
+  constructor() {
+    this.transporter = null;
+    this.config = null;
+    this.initialized = false;
+  }
 
-/**
- * Splits the flat `questions` array (as sent by the frontend for every
- * section — Vocabulary, Grammar, Listening, Reading, etc.) into:
- *  - problems: entries with is_problem === true
- *  - subQuestionsByProblem: sub-questions grouped by their parent_problem_id
- *
- * This is intentionally the single source of truth for that split so
- * create/update never drift apart or special-case a particular section.
- */
-const splitQuestionsByProblem = (questions = []) => {
-  const problems = questions.filter((q) => q.is_problem === true);
-  const subQuestions = questions.filter((q) => q.is_problem === false);
-
-  const subQuestionsByProblem = {};
-  subQuestions.forEach((q) => {
-    const parentId = q.parent_problem_id;
-    if (!parentId) return; // orphaned sub-question with no parent problem is skipped, not silently dropped into a shared bucket
-    if (!subQuestionsByProblem[parentId]) {
-      subQuestionsByProblem[parentId] = [];
+  async loadConfig() {
+    try {
+      const configDoc = await db.collection('system_settings').doc('global_config').get();
+      this.config = configDoc.exists ? configDoc.data() : null;
+      return this.config;
+    } catch (error) {
+      console.error('Failed to load email config from Firestore:', error.message);
+      return null;
     }
-    subQuestionsByProblem[parentId].push(q);
-  });
+  }
 
-  return { problems, subQuestions, subQuestionsByProblem };
-};
+  getSenderEmail() {
+    return this.config?.senderEmail || process.env.SMTP_USER || process.env.EMAIL_USER || 'asgirind186@gmail.com';
+  }
 
-/**
- * Writes `problems` (and their example_question / sub_questions
- * sub-collections) under the given exam document ref, using a single
- * Firestore batch. Same logic for every section: Vocabulary, Grammar,
- * Listening, Reading, etc.
- */
-const writeProblemsBatch = (examRef, problems, subQuestionsByProblem) => {
-  const batch = db.batch();
+  getSenderName() {
+    return this.config?.senderName || 'Langoora Platform';
+  }
 
-  problems.forEach((problem, index) => {
-    const problemId = `problem_${String(index + 1).padStart(2, "0")}`;
-    const problemRef = examRef.collection("problems").doc(problemId);
+  getSenderInfo() {
+    return `"${this.getSenderName()}" <${this.getSenderEmail()}>`;
+  }
 
-    const problemSubQuestions = subQuestionsByProblem[problem.id] || [];
+  /**
+   * Initialize Gmail Transporter (IPv4 Forced & Direct SSL)
+   */
+  async initialize() {
+    try {
+      await this.loadConfig();
 
-    const problemData = {
-      problem_number: index + 1,
-      section: problem.section,
-      problem_title: problem.problem_title
-        ? problem.problem_title.trim()
-        : `Problem ${index + 1}`,
-      explanation: problem.explanation || "",
-      problem_image_url: problem.problem_image_url || null,
-      total_sub_questions: problemSubQuestions.length,
-      created_at: new Date().toISOString(),
+      const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+      const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD;
+
+      if (!smtpUser || !smtpPass) {
+        console.error('❌ SMTP credentials missing in .env!');
+        throw new Error('SMTP credentials missing');
+      }
+
+      console.log('📧 Initializing Gmail IPv4 direct service...');
+
+      // ✅ FIX: SSL Port 465 + Family 4 (Force IPv4 to bypass ENETUNREACH)
+      this.transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        },
+        family: 4, // 👈 FORCES IPv4 (Fixes ENETUNREACH network error)
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      await this.transporter.verify();
+      this.initialized = true;
+      console.log(`✅ Email service initialized successfully for: ${smtpUser}`);
+      return true;
+
+    } catch (error) {
+      console.error('❌ Email service initialization failed:', error.message);
+      this.initialized = false;
+      return false;
+    }
+  }
+
+  async ensureInitialized() {
+    if (!this.initialized || !this.transporter) {
+      console.log('⚠️ Email service not initialized, initializing now...');
+      await this.initialize();
+    }
+    if (!this.initialized || !this.transporter) {
+      throw new Error('Email service failed to initialize.');
+    }
+    return true;
+  }
+
+  getHeaderHtml() {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    return `
+      <div style="text-align: center; padding-bottom: 28px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 28px;">
+        <a href="${frontendUrl}" target="_blank" style="text-decoration: none; display: inline-block;">
+          <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+            <tr>
+              <td style="vertical-align: middle;">
+                <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%); border-radius: 12px; text-align: center; line-height: 36px; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);">
+                  <img src="https://img.icons8.com/ios-filled/50/ffffff/open-book.png" width="18" height="18" alt="Langoora Logo" style="vertical-align: middle; margin-top: -2px; display: inline-block;" />
+                </div>
+              </td>
+              <td style="vertical-align: middle; padding-left: 10px;">
+                <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">Langoora</span><span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 800; color: #06b6d4;">.com</span>
+              </td>
+            </tr>
+          </table>
+        </a>
+        <p style="color: #64748b; margin: 6px 0 0 0; font-size: 11px; letter-spacing: 1px; font-weight: 500; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          PRECISION CBTs FOR LANGUAGE MASTERY
+        </p>
+      </div>
+    `;
+  }
+
+  getFooterHtml(supportEmail = 'support@langoora.com') {
+    return `
+      <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center; color: #64748b; font-size: 12px; line-height: 1.8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        <p style="margin: 0 0 6px 0;">
+          This is an automated notification from Langoora.<br>
+          If you have any questions, please contact our support team at 
+          <a href="mailto:${supportEmail}" style="color: #38bdf8; text-decoration: none;">${supportEmail}</a>
+        </p>
+        <p style="margin: 0; font-size: 11px; color: #475569;">
+          &copy; ${new Date().getFullYear()} Langoora. All rights reserved.
+        </p>
+      </div>
+    `;
+  }
+
+  // 🔔 1. SEND SYSTEM NOTIFICATION EMAIL
+  async sendNotificationEmail(toEmail, title, message) {
+    const logData = {
+      recipient: toEmail,
+      type: 'system_notification',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `Langoora Alert: ${title}`,
+      metadata: { title, message }
     };
 
-    batch.set(problemRef, problemData);
+    try {
+      await this.ensureInitialized();
 
-    if (problem.example_question) {
-      const exampleRef = problemRef
-        .collection("example_question")
-        .doc("example");
-      const exampleData = {
-        text: problem.example_question.trim(),
-        options: problem.options || ["", "", "", ""],
-        correct_answer_index: Number(problem.example_correct_option || 0),
-        explanation: problem.example_explanation || "",
-        image_url: problem.example_image_url || null,
-        audio_url: problem.example_audio_url || null,
-        created_at: new Date().toISOString(),
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"><title>${title}</title></head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  ${this.getHeaderHtml()}
+                  <div style="padding: 10px 0;">
+                    <h2 style="color: #38bdf8; font-size: 20px; font-weight: 700; margin: 0 0 16px 0;">${title}</h2>
+                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-left: 4px solid #38bdf8; border-radius: 12px; padding: 18px 20px; margin: 20px 0;">
+                      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6; margin: 0;">${message}</p>
+                    </div>
+                  </div>
+                  ${this.getFooterHtml()}
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: toEmail,
+        subject: `Langoora Notification: ${title}`,
+        html: htmlContent
       };
-      batch.set(exampleRef, exampleData);
+
+      const result = await this.transporter.sendMail(mailOptions);
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      await emailLogService.logEmail(logData);
+
+      console.log(`✅ Notification Email sent successfully to ${toEmail}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      await emailLogService.logEmail(logData);
+      console.error('❌ Failed to send notification email:', error.message);
+      return { success: false, error: error.message };
     }
+  }
 
-    if (problemSubQuestions.length > 0) {
-      const subQuestionsCollectionRef = problemRef.collection("sub_questions");
-
-      problemSubQuestions.forEach((sub, subIndex) => {
-        const subId = `sub_${String(subIndex + 1).padStart(2, "0")}`;
-        const subRef = subQuestionsCollectionRef.doc(subId);
-
-        const subData = {
-          sub_number: subIndex + 1,
-          text: sub.text ? sub.text.trim() : "",
-          type: sub.type || "mcq",
-          options: sub.options || ["", "", "", ""],
-          correct_answer_index: Number(sub.correct || 0),
-          explanation: sub.explanation || "",
-          image_url: sub.image_url || null,
-          audio_url: sub.audio_url || null,
-          created_at: new Date().toISOString(),
-        };
-
-        batch.set(subRef, subData);
-      });
-    }
-  });
-
-  return batch;
-};
-
-/**
- * Create a new exam with problems and sub-questions.
- * DB shape (unchanged, identical for every section):
- *   exams/{examId}                                  -> exam metadata
- *   exams/{examId}/problems/{problemId}              -> problem block
- *   exams/{examId}/problems/{problemId}/example_question/example
- *   exams/{examId}/problems/{problemId}/sub_questions/{subId}
- *
- * Language detection added for Quality Audits.
- */
-const createExamInDB = async (examData) => {
-  try {
-    const {
-      title,
-      category_id,
-      level_id,
-      duration_minutes,
-      description,
-      status,
-      sections,
-      questions = [],
-      thumbnail,
-      tutor_id,
-      tutor_name,
-    } = examData;
-
-    // 🚀 Determine language from category (default: japanese)
-    let language = "japanese";
-    if (category_id && category_id.toLowerCase().includes("topik")) {
-      language = "korean";
-    }
-
-    const normalizedCategoryId = normalizeCategoryId(category_id);
-    const validTutorId = tutor_id || "mock_tutor_id";
-    const validTutorName = tutor_name || "Expert Tutor";
-
-    const cleanExamId = `exam_${normalizedCategoryId || "general"}_${level_id || "no_level"}_${Date.now()}`;
-    const examRef = db.collection("exams").doc(cleanExamId);
-
-    const { problems, subQuestions, subQuestionsByProblem } =
-      splitQuestionsByProblem(questions);
-
-    const examMetadata = {
-      title: (title || "").trim(),
-      category_id: normalizedCategoryId,
-      level_id: level_id || "",
-      duration_minutes: Number(duration_minutes) || 0,
-      description: description ? description.trim() : "",
-      status: status || "draft",
-      sections: sections || [],
-      thumbnail: thumbnail || null,
-      tutor_id: validTutorId,
-      tutor_name: validTutorName,
-      isModernExam: true,
-      total_problems: problems.length,
-      total_questions: subQuestions.length,
-      students: 0,
-      revenue: 0,
-      rating: 0,
-      reviews: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      language: language, // ✅ Added language field for Quality Audits
+  // 📚 2. SEND CATEGORY CREATED EMAIL
+  async sendCategoryCreatedEmail(financeEmail, categoryName, language, categoryId, createdBy) {
+    const logData = {
+      recipient: financeEmail,
+      type: 'category_created',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `📚 New Exam Category Created: ${categoryName}`,
+      metadata: { categoryName, language, categoryId, createdBy }
     };
 
-    await examRef.set(examMetadata);
+    try {
+      await this.ensureInitialized();
 
-    if (problems.length > 0) {
-      const batch = writeProblemsBatch(
-        examRef,
-        problems,
-        subQuestionsByProblem,
-      );
-      await batch.commit();
+      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>New Exam Category Created</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      📚 New Exam Category Created
+                    </h1>
+                    
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      A new exam category has been created by <strong style="color: #ffffff;">${createdBy}</strong>.
+                    </p>
+
+                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <h3 style="color: #38bdf8; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">Category Details</h3>
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${categoryName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Language</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${language}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category ID</td>
+                          <td style="color: #38bdf8; font-size: 12px; text-align: right; font-family: monospace;">${categoryId}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ⏳ <strong>Action Required:</strong> Please review this new category and configure credit values for its levels.
+                      </p>
+                    </div>
+
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${financeUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        Configure Credit Values →
+                      </a>
+                    </div>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: financeEmail,
+        subject: `📚 New Exam Category Created: ${categoryName}`,
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Category created email sent to ${financeEmail}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send category created email:', error.message);
+      return { success: false, error: error.message };
     }
-
-    console.log(
-      `Exam created: ${cleanExamId} for tutor: ${validTutorId} (problems: ${problems.length}, sub-questions: ${subQuestions.length})`,
-    );
-
-    return { success: true, examId: cleanExamId };
-  } catch (error) {
-    console.error("Exam Creation Service Error:", error);
-    throw new Error(error.message);
   }
-};
 
-/**
- * Get all exams for a specific tutor.
- */
-const getTutorExamsFromDB = async (tutorId) => {
-  try {
-    if (!tutorId) {
-      console.warn("No tutor ID provided, returning empty array");
-      return [];
-    }
-
-    const snapshot = await db
-      .collection("exams")
-      .where("tutor_id", "==", tutorId)
-      .get();
-    const examsList = [];
-
-    snapshot.forEach((doc) => {
-      examsList.push({ id: doc.id, ...doc.data() });
-    });
-
-    // Recycle Bin: exams soft-deleted (isDeleted: true) no longer show in
-    // "My Exams". Docs created before this feature have no `isDeleted`
-    // field at all, which is treated as "not deleted".
-    const activeExamsList = examsList.filter((exam) => exam.isDeleted !== true);
-
-    activeExamsList.sort(
-      (a, b) => new Date(b.created_at) - new Date(a.created_at),
-    );
-
-    return activeExamsList;
-  } catch (error) {
-    console.error("Get Tutor Exams Service Error:", error);
-    return [];
-  }
-};
-
-/**
- * Get Student Exams
- */
-const getStudentExamsFromDB = async (studentId = null) => {
-  try {
-    let query = db.collection("student_exams");
-
-    if (studentId) {
-      query = query.where("studentId", "==", studentId);
-    }
-
-    const snapshot = await query.get();
-    const examsList = [];
-
-    snapshot.forEach((doc) => {
-      examsList.push({ id: doc.id, ...doc.data() });
-    });
-
-    examsList.sort(
-      (a, b) =>
-        new Date(b.startTime || b.created_at) -
-        new Date(a.startTime || a.created_at),
-    );
-
-    return examsList;
-  } catch (error) {
-    console.error("Get Student Exams Service Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Get a single exam by ID (with access control), including all problems,
- * their example_question and sub_questions sub-collections, for every
- * section (Vocabulary, Grammar, Listening, Reading, ...).
- */
-const getExamByIdFromDB = async (examId, tutorId) => {
-  try {
-    const examDoc = await db.collection("exams").doc(examId).get();
-
-    if (!examDoc.exists) {
-      throw new Error("Exam not found");
-    }
-
-    const examData = examDoc.data();
-
-    if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error("You do not have permission to access this exam");
-    }
-
-    const problemsSnapshot = await db
-      .collection("exams")
-      .doc(examId)
-      .collection("problems")
-      .get();
-
-    const problems = [];
-
-    for (const problemDoc of problemsSnapshot.docs) {
-      const problemData = problemDoc.data();
-      const problemId = problemDoc.id;
-
-      let example = null;
-      try {
-        const exampleDoc = await db
-          .collection("exams")
-          .doc(examId)
-          .collection("problems")
-          .doc(problemId)
-          .collection("example_question")
-          .doc("example")
-          .get();
-
-        if (exampleDoc.exists) {
-          example = exampleDoc.data();
-        }
-      } catch (exampleError) {
-        example = null;
-      }
-
-      const subQuestionsSnapshot = await db
-        .collection("exams")
-        .doc(examId)
-        .collection("problems")
-        .doc(problemId)
-        .collection("sub_questions")
-        .get();
-
-      const subQuestions = subQuestionsSnapshot.docs.map((subDoc) => ({
-        id: subDoc.id,
-        ...subDoc.data(),
-      }));
-
-      problems.push({
-        id: problemId,
-        ...problemData,
-        example,
-        sub_questions: subQuestions,
-      });
-    }
-
-    // Keep a stable, predictable order for the editor UI.
-    problems.sort((a, b) => (a.problem_number || 0) - (b.problem_number || 0));
-
-    return {
-      success: true,
-      exam: {
-        id: examId,
-        ...examData,
-        problems,
-      },
+  // 📝 3. SEND LEVEL CREATED EMAIL
+  async sendLevelCreatedEmail(financeEmail, levelName, categoryName, categoryId, levelId, createdBy) {
+    const logData = {
+      recipient: financeEmail,
+      type: 'level_created',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: `📝 New Level Created: ${levelName}`,
+      metadata: { levelName, categoryName, categoryId, levelId, createdBy }
     };
-  } catch (error) {
-    console.error("Get Exam By ID Service Error:", error);
-    throw new Error(error.message);
+
+    try {
+      await this.ensureInitialized();
+
+      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>New Level Created</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      📝 New Exam Level Created
+                    </h1>
+                    
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      A new level has been added to <strong style="color: #ffffff;">${categoryName}</strong> by <strong style="color: #ffffff;">${createdBy}</strong>.
+                    </p>
+
+                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 20px; margin: 20px 0;">
+                      <h3 style="color: #38bdf8; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">Level Details</h3>
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Level Name</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${levelName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category</td>
+                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${categoryName}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Level ID</td>
+                          <td style="color: #38bdf8; font-size: 12px; text-align: right; font-family: monospace;">${levelId}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ⏳ <strong>Action Required:</strong> Credit valuation is pending for this level. Please set the credit value.
+                      </p>
+                    </div>
+
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${financeUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        Set Credit Value →
+                      </a>
+                    </div>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: financeEmail,
+        subject: `📝 New Level Created: ${levelName}`,
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Level created email sent to ${financeEmail}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send level created email:', error.message);
+      return { success: false, error: error.message };
+    }
   }
-};
+}
 
-/**
- * Soft-delete an exam (with access control). Marks the exam as deleted
- * instead of removing it, so it can be restored later from the Recycle Bin.
- * Nested problems/sub_questions are left in place untouched.
- */
-const softDeleteExamFromDB = async (examId, tutorId) => {
-  try {
-    const examDoc = await db.collection("exams").doc(examId).get();
-
-    if (!examDoc.exists) {
-      throw new Error("Exam not found");
-    }
-
-    const examData = examDoc.data();
-
-    if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error("You do not have permission to delete this exam");
-    }
-
-    await db.collection("exams").doc(examId).update({
-      isDeleted: true,
-      deleted_at: new Date().toISOString(),
-    });
-
-    return { success: true, message: "Exam moved to Recycle Bin." };
-  } catch (error) {
-    console.error("Soft Delete Exam Service Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Restore a soft-deleted exam back to "My Exams" (with access control).
- */
-const restoreExamFromDB = async (examId, tutorId) => {
-  try {
-    const examDoc = await db.collection("exams").doc(examId).get();
-
-    if (!examDoc.exists) {
-      throw new Error("Exam not found");
-    }
-
-    const examData = examDoc.data();
-
-    if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error("You do not have permission to restore this exam");
-    }
-
-    await db.collection("exams").doc(examId).update({
-      isDeleted: false,
-      deleted_at: null,
-    });
-
-    return { success: true, message: "Exam restored successfully." };
-  } catch (error) {
-    console.error("Restore Exam Service Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Get all soft-deleted exams for a specific tutor (Recycle Bin view).
- */
-const getDeletedExamsFromDB = async (tutorId) => {
-  try {
-    if (!tutorId) {
-      console.warn("No tutor ID provided, returning empty array");
-      return [];
-    }
-
-    const snapshot = await db
-      .collection("exams")
-      .where("tutor_id", "==", tutorId)
-      .get();
-    const examsList = [];
-
-    snapshot.forEach((doc) => {
-      examsList.push({ id: doc.id, ...doc.data() });
-    });
-
-    const deletedExamsList = examsList.filter(
-      (exam) => exam.isDeleted === true,
-    );
-
-    deletedExamsList.sort(
-      (a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0),
-    );
-
-    return deletedExamsList;
-  } catch (error) {
-    console.error("Get Deleted Exams Service Error:", error);
-    return [];
-  }
-};
-
-/**
- * Permanently delete an exam (with access control), including all nested
- * problems / example_question / sub_questions sub-collections.
- * Used by the Recycle Bin's "Permanent Delete" action.
- */
-const permanentlyDeleteExamFromDB = async (examId, tutorId) => {
-  try {
-    const examDoc = await db.collection("exams").doc(examId).get();
-
-    if (!examDoc.exists) {
-      throw new Error("Exam not found");
-    }
-
-    const examData = examDoc.data();
-
-    if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error("You do not have permission to delete this exam");
-    }
-
-    const problemsSnapshot = await db
-      .collection("exams")
-      .doc(examId)
-      .collection("problems")
-      .get();
-
-    const batch = db.batch();
-
-    for (const problemDoc of problemsSnapshot.docs) {
-      const problemId = problemDoc.id;
-
-      try {
-        const exampleDoc = await db
-          .collection("exams")
-          .doc(examId)
-          .collection("problems")
-          .doc(problemId)
-          .collection("example_question")
-          .doc("example")
-          .get();
-
-        if (exampleDoc.exists) {
-          batch.delete(exampleDoc.ref);
-        }
-      } catch (e) {
-        // no example_question sub-collection for this problem, nothing to delete
-      }
-
-      const subQuestionsSnapshot = await db
-        .collection("exams")
-        .doc(examId)
-        .collection("problems")
-        .doc(problemId)
-        .collection("sub_questions")
-        .get();
-
-      subQuestionsSnapshot.forEach((subDoc) => batch.delete(subDoc.ref));
-
-      batch.delete(problemDoc.ref);
-    }
-
-    batch.delete(db.collection("exams").doc(examId));
-
-    await batch.commit();
-
-    return { success: true, message: "Exam deleted successfully!" };
-  } catch (error) {
-    console.error("Delete Exam Service Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Delete Student Exam
- */
-const deleteStudentExamFromDB = async (examDocId) => {
-  try {
-    const examRef = db.collection("student_exams").doc(examDocId);
-    const doc = await examRef.get();
-    if (!doc.exists) {
-      throw new Error("Exam not found in database");
-    }
-
-    await examRef.delete();
-    return { success: true, message: "Exam successfully deleted!" };
-  } catch (error) {
-    console.error("Delete Student Exam Service Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Update exam status (with access control)
- */
-const updateExamStatusInDB = async (examId, status, tutorId) => {
-  try {
-    const examDoc = await db.collection("exams").doc(examId).get();
-
-    if (!examDoc.exists) {
-      throw new Error("Exam not found");
-    }
-
-    const examData = examDoc.data();
-
-    if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error("You do not have permission to update this exam");
-    }
-
-    await db.collection("exams").doc(examId).update({
-      status,
-      updated_at: new Date().toISOString(),
-    });
-
-    return { success: true, message: `Exam status updated to ${status}` };
-  } catch (error) {
-    console.error("Update Exam Status Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Update exam draft (auto-save, with access control).
- * Metadata-only write — problems/sub_questions are NOT touched here so
- * that the throttled autosave never needs to re-write nested
- * sub-collections on every cycle. Full problem/question persistence
- * happens through updateExamInDB (Save Draft / Deploy Exam).
- */
-const updateExamDraftInDB = async (examId, draftData, tutorId) => {
-  try {
-    const examDoc = await db.collection("exams").doc(examId).get();
-
-    if (!examDoc.exists) {
-      throw new Error("Exam not found");
-    }
-
-    const examData = examDoc.data();
-
-    if (tutorId && examData.tutor_id !== tutorId) {
-      throw new Error("You do not have permission to update this exam");
-    }
-
-    const {
-      title,
-      category_id,
-      level_id,
-      duration_minutes,
-      description,
-      sections,
-      questions = [],
-      thumbnail,
-      status,
-    } = draftData;
-
-    const normalizedCategoryId = normalizeCategoryId(category_id);
-    const { problems, subQuestions } = splitQuestionsByProblem(questions);
-
-    await db
-      .collection("exams")
-      .doc(examId)
-      .update({
-        title: (title || "").trim(),
-        category_id: normalizedCategoryId,
-        level_id: level_id || "",
-        duration_minutes: Number(duration_minutes) || 0,
-        description: description || "",
-        sections: sections || [],
-        thumbnail: thumbnail || null,
-        status: status || "draft",
-        total_problems: problems.length,
-        total_questions: subQuestions.length,
-        updated_at: new Date().toISOString(),
-      });
-
-    return { success: true, message: "Draft updated successfully." };
-  } catch (error) {
-    console.error("Update Exam Draft Service Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Update Existing Exam (Full Update, with access control).
- * Replaces all problems/sub_questions with the payload the editor sent,
- * the same way for every section — Vocabulary, Grammar, Listening, Reading.
- */
-const updateExamInDB = async (examId, examData, tutorId) => {
-  try {
-    const examDoc = await db.collection("exams").doc(examId).get();
-
-    if (!examDoc.exists) {
-      throw new Error("Exam not found");
-    }
-
-    const existingExam = examDoc.data();
-
-    if (tutorId && existingExam.tutor_id !== tutorId) {
-      throw new Error("You do not have permission to update this exam");
-    }
-
-    const {
-      title,
-      category_id,
-      level_id,
-      duration_minutes,
-      description,
-      status,
-      sections,
-      questions = [],
-      thumbnail,
-    } = examData;
-
-    const normalizedCategoryId = normalizeCategoryId(category_id);
-
-    // Delete all existing problems and sub-questions before re-inserting.
-    const problemsSnapshot = await db
-      .collection("exams")
-      .doc(examId)
-      .collection("problems")
-      .get();
-
-    const deleteBatch = db.batch();
-
-    for (const problemDoc of problemsSnapshot.docs) {
-      const problemId = problemDoc.id;
-
-      try {
-        const exampleDoc = await db
-          .collection("exams")
-          .doc(examId)
-          .collection("problems")
-          .doc(problemId)
-          .collection("example_question")
-          .doc("example")
-          .get();
-
-        if (exampleDoc.exists) {
-          deleteBatch.delete(exampleDoc.ref);
-        }
-      } catch (e) {
-        // no example_question sub-collection for this problem, nothing to delete
-      }
-
-      const subQuestionsSnapshot = await db
-        .collection("exams")
-        .doc(examId)
-        .collection("problems")
-        .doc(problemId)
-        .collection("sub_questions")
-        .get();
-
-      subQuestionsSnapshot.forEach((subDoc) => deleteBatch.delete(subDoc.ref));
-
-      deleteBatch.delete(problemDoc.ref);
-    }
-
-    await deleteBatch.commit();
-
-    const { problems, subQuestions, subQuestionsByProblem } =
-      splitQuestionsByProblem(questions);
-
-    await db
-      .collection("exams")
-      .doc(examId)
-      .update({
-        title: (title || "").trim(),
-        category_id: normalizedCategoryId,
-        level_id: level_id || "",
-        duration_minutes: Number(duration_minutes) || 0,
-        description: description || "",
-        status: status || "draft",
-        sections: sections || [],
-        thumbnail: thumbnail || null,
-        total_problems: problems.length,
-        total_questions: subQuestions.length,
-        updated_at: new Date().toISOString(),
-      });
-
-    if (problems.length > 0) {
-      const examRef = db.collection("exams").doc(examId);
-      const newBatch = writeProblemsBatch(
-        examRef,
-        problems,
-        subQuestionsByProblem,
-      );
-      await newBatch.commit();
-    }
-
-    return { success: true, message: "Exam updated successfully." };
-  } catch (error) {
-    console.error("Update Exam Service Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-// =========================================================================
-// ✅ QUALITY AUDITS FUNCTIONS (from HEAD)
-// =========================================================================
-
-/**
- * Get pending exams filtered by validator's language
- */
-const getPendingExamsByLanguage = async (language) => {
-  try {
-    const snapshot = await db
-      .collection("exams")
-      .where("status", "==", "pending")
-      .where("language", "==", language)
-      .get();
-
-    const examsList = [];
-    snapshot.forEach((doc) => {
-      examsList.push({ id: doc.id, ...doc.data() });
-    });
-    return examsList;
-  } catch (error) {
-    console.error("Get Pending Exams Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Approve exam (publish)
- */
-const approveExam = async (examId, validatorId) => {
-  try {
-    const examRef = db.collection("exams").doc(examId);
-    await db.runTransaction(async (transaction) => {
-      const doc = await transaction.get(examRef);
-      if (!doc.exists) {
-        throw new Error("Exam not found");
-      }
-      const data = doc.data();
-      if (data.status !== "pending") {
-        throw new Error("Exam is no longer pending.");
-      }
-      transaction.update(examRef, {
-        status: "published",
-        validatorId: validatorId,
-        reviewedAt: new Date().toISOString(),
-        publishedAt: new Date().toISOString(),
-        rejectionFeedback: null, // clear any previous feedback
-      });
-    });
-    return { success: true, message: "Exam approved and published." };
-  } catch (error) {
-    console.error("Approve Exam Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-/**
- * Reject exam with feedback + create notification
- */
-const rejectExam = async (examId, validatorId, feedback) => {
-  try {
-    const examRef = db.collection("exams").doc(examId);
-    let examData;
-
-    await db.runTransaction(async (transaction) => {
-      const doc = await transaction.get(examRef);
-      if (!doc.exists) {
-        throw new Error("Exam not found");
-      }
-      examData = doc.data();
-      if (examData.status !== "pending") {
-        throw new Error("Exam is no longer pending.");
-      }
-      transaction.update(examRef, {
-        status: "rejected",
-        validatorId: validatorId,
-        reviewedAt: new Date().toISOString(),
-        rejectionFeedback: feedback || [],
-        publishedAt: null,
-      });
-    });
-
-    // Create notification for tutor
-    const notification = {
-      userId: examData.tutor_id,
-      type: "exam_rejected",
-      examId: examId,
-      examTitle: examData.title,
-      message: `Your exam "${examData.title}" was rejected by a validator. Please review the feedback.`,
-      read: false,
-      createdAt: new Date().toISOString(),
-    };
-    await db.collection("notifications").add(notification);
-
-    return { success: true, message: "Exam rejected. Tutor notified." };
-  } catch (error) {
-    console.error("Reject Exam Error:", error);
-    throw new Error(error.message);
-  }
-};
-
-// =========================================================================
-// 📦 EXPORT ALL
-// =========================================================================
-module.exports = {
-  createExamInDB,
-  getTutorExamsFromDB,
-  getStudentExamsFromDB,
-  getExamByIdFromDB,
-  softDeleteExamFromDB,
-  restoreExamFromDB,
-  getDeletedExamsFromDB,
-  permanentlyDeleteExamFromDB,
-  deleteStudentExamFromDB,
-  updateExamStatusInDB,
-  updateExamDraftInDB,
-  updateExamInDB,
-  // Quality Audits exports
-  getPendingExamsByLanguage,
-  approveExam,
-  rejectExam,
-};
+module.exports = new EmailService();

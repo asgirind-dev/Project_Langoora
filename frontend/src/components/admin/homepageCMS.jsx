@@ -138,7 +138,8 @@ const HomepageCMS = forwardRef((props, ref) => {
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
       <div className="xl:col-span-5 space-y-6">
         <GlassCard className="p-5 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider text-gray-400">1. Staged Core Asset Queue</h3>
+          {/* ✅ Fixed CSS conflict warning here: Removed 'text-white' to prevent conflict with 'text-gray-400' */}
+          <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400">1. Staged Core Asset Queue</h3>
           {isLoading ? (
             <div className="flex items-center justify-center py-12 gap-2">
               <RefreshCw className="animate-spin text-purple-400" size={18} />
@@ -214,7 +215,8 @@ const HomepageCMS = forwardRef((props, ref) => {
             </GlassCard>
 
             <GlassCard className="p-5 space-y-4">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider text-gray-400 flex items-center gap-2"><Type size={14} className="text-blue-400" /> 2. Configuration Parameters</h3>
+              {/* ✅ Fixed CSS conflict warning here: Removed 'text-white' to prevent conflict with 'text-gray-400' */}
+              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 flex items-center gap-2"><Type size={14} className="text-blue-400" /> 2. Configuration Parameters</h3>
               <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-16 h-12 rounded bg-slate-900 overflow-hidden border border-white/10"><img src={activeBanner.url} className="w-full h-full object-cover" alt="Selected layout thumbnail" /></div>

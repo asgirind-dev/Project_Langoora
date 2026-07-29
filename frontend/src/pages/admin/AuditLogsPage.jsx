@@ -1,4 +1,3 @@
-// frontend/src/pages/admin/AuditLogsPage.jsx
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -34,6 +33,7 @@ const TYPE_LABELS = {
   'plan_management': { label: 'Plan Management', icon: TrendingUp, color: 'text-rose-400' }
 };
 
+// ✅ FIXED: All Keys are now unique (Duplicates Removed)
 const ACTION_LABELS = {
   // Authentication
   'login': { label: 'Login', severity: 'info' },
@@ -42,7 +42,7 @@ const ACTION_LABELS = {
   'logout': { label: 'Logout', severity: 'info' },
   'login_failed': { label: 'Login Failed', severity: 'error' },
   
-  // User Lifecycle
+  // User Lifecycle & Status
   'provisioned': { label: 'Staff Provisioned', severity: 'success' },
   'suspended': { label: 'User Suspended', severity: 'error' },
   'activated': { label: 'User Activated', severity: 'success' },
@@ -52,15 +52,13 @@ const ACTION_LABELS = {
   // Privilege Changes
   'added': { label: 'Privileges Added', severity: 'success' },
   'removed': { label: 'Privileges Removed', severity: 'error' },
-  'updated': { label: 'Privileges Updated', severity: 'warning' },
+  'updated': { label: 'Updated', severity: 'warning' },
   'created_role': { label: 'Role Created', severity: 'success' },
   'updated_role': { label: 'Role Updated', severity: 'warning' },
   'deleted_role': { label: 'Role Deleted', severity: 'error' },
   
-  // Content Moderation
+  // Content & Plan Actions
   'created': { label: 'Created', severity: 'success' },
-  'updated': { label: 'Updated', severity: 'warning' },
-  'deleted': { label: 'Deleted', severity: 'error' },
   'restored': { label: 'Restored', severity: 'success' },
   'approved': { label: 'Approved', severity: 'success' },
   'rejected': { label: 'Rejected', severity: 'error' },
@@ -81,9 +79,9 @@ const ACTION_LABELS = {
   'submitted': { label: 'Exam Submitted', severity: 'success' },
   'violation': { label: 'Anti-Cheat Violation', severity: 'error' },
   
-  // Tutor Validation
-  'approved': { label: 'Tutor Approved', severity: 'success' },
-  'rejected': { label: 'Tutor Rejected', severity: 'error' }
+  // Tutor Validation Unique Keys
+  'tutor_approved': { label: 'Tutor Approved', severity: 'success' },
+  'tutor_rejected': { label: 'Tutor Rejected', severity: 'error' }
 };
 
 // ============================================
@@ -142,9 +140,6 @@ export default function AuditLogsPage() {
       }
     } catch (error) {
       console.error('Error fetching audit logs:', error);
-      if (error.response?.status === 403) {
-        // Handle permission error
-      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -304,7 +299,7 @@ export default function AuditLogsPage() {
                   />
                 </div>
 
-                {/* ✅ Type Filter - Dark Theme Dropdown */}
+                {/* Type Filter */}
                 <select
                   value={typeFilter}
                   onChange={e => setTypeFilter(e.target.value)}
@@ -323,7 +318,7 @@ export default function AuditLogsPage() {
                   ))}
                 </select>
 
-                {/* ✅ Action Filter - Dark Theme Dropdown */}
+                {/* Action Filter */}
                 <select
                   value={actionFilter}
                   onChange={e => setActionFilter(e.target.value)}
@@ -347,7 +342,7 @@ export default function AuditLogsPage() {
                   })}
                 </select>
 
-                {/* ✅ Date Range - Dark Theme */}
+                {/* Date Range */}
                 <div className="flex items-center gap-2">
                   <input
                     type="date"
