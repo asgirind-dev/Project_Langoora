@@ -11,8 +11,9 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import FinanceService from '../../services/financeService'; 
 import PlanService from "../../services/PlanService";
-import CreditValuationService from "../../services/CreditValuationService"; // 👈 මේක එකතු කරන්න
+import CreditValuationService from "../../services/CreditValuationService";
 import GlassCard from '../../components/ui/GlassCard';
+import FinanceNotifications from '../../components/finance/FinanceNotifications';
 
 export default function FinanceDashboard() {
   const navigate = useNavigate();
@@ -38,7 +39,7 @@ export default function FinanceDashboard() {
 
   const kpiData = [
     { label: 'Total Revenue', value: stats.totalRevenue, icon: DollarSign, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'up', change: '+12%' },
-    { label: 'Active Credits', value: stats.activeCredits, icon: Wallet, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: 'up', change: '+8%' },
+    { label: 'Total Payouts', value: stats.activeCredits, icon: Wallet, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: 'up', change: 'Monthly' }, // 👈 Renamed from Active Credits
     { label: 'Growth', value: `${stats.growth}%`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'up', change: '+5%' },
     { label: 'Active Users', value: stats.activeUsers.toString(), icon: Activity, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'up', change: '+5%' }
   ];
@@ -54,16 +55,16 @@ export default function FinanceDashboard() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 🚀 FAST LIGHTWEIGHT CALLS ONLY
-        const [statsData, txData, chartDataRes] = await Promise.all([
+        const [statsData, txData, chartDataRes, realPlans, realCategories] = await Promise.all([
           FinanceService.getDashboardStats().catch(() => null),
           FinanceService.getRecentTransactions().catch(() => []),
-          FinanceService.getRevenueChartData().catch(() => [])
+          FinanceService.getRevenueChartData().catch(() => []),
+          PlanService.getAllPlans().catch(() => []),
+          CreditValuationService.getCategories().catch(() => [])
         ]);
 
         const revenueVal = statsData?.totalRevenue !== undefined ? statsData.totalRevenue : 0;
 
-        // 1. Primary Stats Update
         setStats({
           totalRevenue: statsData?.totalRevenue !== undefined ? `LKR ${statsData.totalRevenue.toLocaleString()}` : 'LKR 0',
           rawRevenue: revenueVal,
@@ -74,18 +75,22 @@ export default function FinanceDashboard() {
           avgTransaction: statsData?.avgTransaction !== undefined ? `LKR ${statsData.avgTransaction.toLocaleString()}` : 'LKR 0'
         });
 
-        // 2. Secondary Metrics (Quick Fast Updates)
+        const plansList = Array.isArray(realPlans) ? realPlans : [];
+        const activePlansCount = plansList.filter(p => p.active === true || p.status === 'approved' || p.status === 'active').length;
+        
         setPlansMetrics({
-          totalPlans: 3, // Custom active plans count
-          activePlans: 3
+          totalPlans: statsData?.totalPlans !== undefined ? statsData.totalPlans : plansList.length,
+          activePlans: statsData?.activePlans !== undefined ? statsData.activePlans : activePlansCount
         });
 
+        const categoriesList = Array.isArray(realCategories) ? realCategories : [];
+        const uniqueCatIds = [...new Set(categoriesList.map(c => c.categoryId || c.id))];
+
         setExamMetrics({
-          totalCategories: 4,
+          totalCategories: statsData?.totalCategories !== undefined ? statsData.totalCategories : uniqueCatIds.length,
           totalCreditsPool: statsData?.activeCredits || 0
         });
 
-        // 3. Transactions & Chart Update
         setTransactions(Array.isArray(txData) ? txData : []);
         setChartData(Array.isArray(chartDataRes) ? chartDataRes : []);
 
@@ -129,7 +134,7 @@ export default function FinanceDashboard() {
       const summaryData = [
         ['Metric Description', 'Value'],
         ['Total Cumulative Revenue', stats.totalRevenue],
-        ['Active Credits Pool', `${stats.activeCredits} Credits`],
+        ['Total Payouts Pool', `${stats.activeCredits} Credits`],
         ['Month-over-Month Growth', `${stats.growth}%`],
         ['Active System Users', `${stats.activeUsers} Users`],
         ['Total Subscription Plans', plansMetrics.totalPlans.toString()],
@@ -190,7 +195,7 @@ export default function FinanceDashboard() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading Financial Data...</p>
+          <p className="text-gray-400">Loading Real Financial Data...</p>
         </div>
       </div>
     );
@@ -221,7 +226,7 @@ export default function FinanceDashboard() {
                   </span>
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                    <span className="text-xs text-emerald-400">Live</span>
+                    <span className="text-xs text-emerald-400">Live DB</span>
                   </div>
                 </div>
               </div>
@@ -229,6 +234,8 @@ export default function FinanceDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
+            <FinanceNotifications />
+
             <button 
               onClick={handleExportPDF}
               disabled={exporting}
@@ -306,7 +313,7 @@ export default function FinanceDashboard() {
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                   <TrendingUp size={18} className="text-blue-400" /> Revenue Overview
                 </h3>
-                <p className="text-xs text-gray-500 mt-1">Monthly revenue vs credit transactions</p>
+                <p className="text-xs text-gray-500 mt-1">Monthly successful revenue vs credit transactions</p>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
@@ -320,7 +327,6 @@ export default function FinanceDashboard() {
               </div>
             </div>
 
-            {/* 🎯 Updated AreaChart with Formatted Tooltip and Y-Axis */}
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={chartData.length > 0 ? chartData : [{ month: 'No Data', revenue: 0, credits: 0 }]}>
                 <defs>
@@ -360,7 +366,7 @@ export default function FinanceDashboard() {
           </GlassCard>
         </motion.div>
 
-        {/* 🎯 Quick Stats Section with Live Data */}
+        {/* Quick Stats Section */}
         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>
           <GlassCard className="p-6 border-white/10 hover:border-purple-500/20 transition-all duration-300 h-full">
             <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-6">
@@ -383,7 +389,7 @@ export default function FinanceDashboard() {
                   change: 'Based on Revenue' 
                 },
                 { 
-                  label: 'Credit Pool', 
+                  label: 'Total Payouts Pool', 
                   value: stats.activeCredits.toString(), 
                   icon: Coins, 
                   color: 'text-amber-400', 
@@ -436,7 +442,7 @@ export default function FinanceDashboard() {
 
           {displayedTransactions.length === 0 ? (
             <div className="text-center py-8 text-gray-400 text-sm">
-              No transactions found.
+              No transactions recorded in database.
             </div>
           ) : (
             <div className="overflow-x-auto">

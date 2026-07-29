@@ -256,9 +256,6 @@ const deleteStudentExam = async (req, res) => {
 // =========================================================================
 // 4. Purchase an Exam - WITH FINANCIAL AUDIT LOG
 // =========================================================================
-// =========================================================================
-// 4. Purchase an Exam (FIXED UNDEFINED QUERY & CREDIT DEDUCTION + NOTIFICATION)
-// =========================================================================
 const purchaseExam = async (req, res) => {
   try {
     const studentId = req.user?.uid || req.user?.id;
@@ -397,23 +394,6 @@ const purchaseExam = async (req, res) => {
       });
     });
 
-    // 🔔 🎯 AUTO CREATE NOTIFICATION FOR STUDENT
-    try {
-      const examTitle = examData?.title || examData?.level_name || targetExamId;
-      await db.collection('notifications').add({
-        userId: studentId,
-        type: 'purchase',
-        title: 'Exam Purchase Successful! 🎉',
-        message: `You successfully purchased "${examTitle}". ${requiredCredits} credits were deducted from your account.`,
-        creditDeducted: requiredCredits,
-        read: false,
-        actionUrl: '/student/dashboard',
-        createdAt: new Date().toISOString()
-      });
-    } catch (notifErr) {
-      console.error("Failed to send purchase notification:", notifErr);
-      // Main purchase flow එක නොනවත්වා ඉදිරියට යයි
-    }
     // ✅ FINANCIAL AUDIT LOG - SUCCESSFUL PURCHASE
     logAudit(auditLogService.logFinancial, {
       userId: studentId,
@@ -704,14 +684,7 @@ const getTutorExams = async (req, res) => {
 const getExamById = async (req, res) => {
   try {
     const { examId } = req.params;
-    const user = req.user;
-
-    // Only tutors need to be restricted to their own exams.
-    // Admins and validators can view any exam.
-    let tutorId = null;
-    if (user.role !== "validator" && user.role !== "admin") {
-      tutorId = user?.id || user?.uid;
-    }
+    const tutorId = req.user?.id || req.user?.uid;
 
     const result = await examServices.getExamByIdFromDB(examId, tutorId);
 
@@ -1322,7 +1295,7 @@ const rejectExam = async (req, res) => {
 };
 
 // =========================================================================
-// 📋 NEW: Get my audits (exams validated by this validator)
+// ✅ NEW: Get my audits (exams reviewed by the validator)
 // =========================================================================
 const getMyAudits = async (req, res) => {
   try {
@@ -1331,23 +1304,45 @@ const getMyAudits = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const examsList = await examServices.getMyAuditsFromDB(validatorId);
+    // 📌 Fetch all exam-related audits by this validator from audit_logs
+    const auditSnapshot = await db
+      .collection('audit_logs')
+      .where('actorId', '==', validatorId)
+      .where('entityType', '==', 'exam')
+      .orderBy('timestamp', 'desc')
+      .get();
+
+    const audits = [];
+    auditSnapshot.forEach(doc => {
+      const data = doc.data();
+      audits.push({
+        id: doc.id,
+        examId: data.entityId,
+        examName: data.entityName,
+        action: data.action, // 'approved' හෝ 'rejected'
+        feedback: data.feedback || '',
+        timestamp: data.timestamp || data.createdAt || new Date().toISOString(),
+        actorEmail: data.actorEmail,
+        changes: data.changes || null,
+      });
+    });
+
     return res.status(200).json({
       success: true,
-      exams: examsList,
+      audits,
     });
   } catch (error) {
     console.error("Get My Audits Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch audits.",
+      message: "Failed to fetch audit history.",
       error: error.message,
     });
   }
 };
 
 // =========================================================================
-// ✅ EXPORT ALL FUNCTIONS (fully merged)
+// ✅ EXPORT ALL FUNCTIONS (with getMyAudits added)
 // =========================================================================
 module.exports = {
   createExam,
@@ -1371,4 +1366,5 @@ module.exports = {
   getPendingExams,
   approveExam,
   rejectExam,
+  getMyAudits, // ✅ මෙය එකතු කර ඇත
 };

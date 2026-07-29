@@ -43,6 +43,9 @@ const { initSubscriptionCron } = require('./services/subscriptionCron');
 // ============================================
 const { scheduleMonthlySettlement } = require('./services/autoSettleService');
 
+// ✅ NEW: Import node-cron
+const cron = require('node-cron');
+
 const app = express();
 
 // Middlewares
@@ -51,8 +54,6 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ✅ Apply maintenance middleware FIRST (before routes)
-// This will check maintenance status for ALL requests
-// But skip paths that don't need it (like auth)
 app.use(maintenanceMiddleware);
 
 // Routing Middleware 
@@ -85,10 +86,21 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // ⏰ Initialize Cron Job
 initSubscriptionCron();
 
+// ============================================
+// ✅ NEW: Auto-Settle Cron Job (Every 25th at 12:00 AM)
+// ============================================
+cron.schedule('0 0 25 * *', async () => {
+    console.log('📅 Running monthly payout settlement (25th)');
+    try {
+        const result = await scheduleMonthlySettlement();
+        console.log('✅ Auto-settlement completed:', result);
+    } catch (error) {
+        console.error('❌ Auto-settlement failed:', error);
+    }
+});
+
 // 🚀 Start Server
 const PORT = process.env.PORT || 5000;
-
-
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

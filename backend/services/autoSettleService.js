@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const { db } = require('../config/firebase');
+const emailService = require('./emailService');
 
 // ============================================
 // AUTO SETTLE SERVICE - හැම මාසේම 25 වෙනිදා
@@ -35,7 +36,7 @@ const getPlatformCommission = async () => {
     }
 };
 
-// Payout එක Auto-Settle කරන්න
+// Payout එක Auto-Settle කරන්න (Email Send එකත් එක්ක)
 const autoSettlePayout = async (payoutId, payoutData) => {
     try {
         console.log(`🔄 Auto-settling payout: ${payoutId}`);
@@ -94,6 +95,39 @@ const autoSettlePayout = async (payoutId, payoutData) => {
                 updatedAt: new Date().toISOString()
             });
             console.log(`✅ Tutor credits updated: ${currentCredits} -> ${Math.max(0, newCredits)}`);
+        }
+
+        // ============================================
+        // ✅ Send email notification to tutor & admin
+        // ============================================
+        try {
+            const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+            
+            const emailResult = await emailService.sendTutorPayoutSettlementEmail(
+                payoutData.tutorEmail,
+                payoutData.tutorName || 'Tutor',
+                {
+                    ...payoutData,
+                    id: payoutId,
+                    transactionId: transactionRef.id,
+                    tutorShare: payoutData.netPayout || 0,
+                    totalAmount: payoutData.totalAmount || 0,
+                    totalTokens: payoutData.totalTokens || 0,
+                    bankName: payoutData.bankName,
+                    bankAccount: payoutData.bankAccount,
+                    exchangeRate: exchangeRate
+                },
+                adminEmail
+            );
+            
+            if (emailResult.success) {
+                console.log(`   📧 Settlement email sent to ${payoutData.tutorEmail}`);
+            } else {
+                console.log(`   ⚠️ Failed to send email to ${payoutData.tutorEmail}: ${emailResult.error}`);
+            }
+        } catch (emailError) {
+            // Email failure should NOT stop the settlement process
+            console.error(`   ❌ Email sending error (non-critical):`, emailError.message);
         }
 
         return { success: true, transactionId: transactionRef.id };
@@ -155,8 +189,6 @@ const runMonthlySettlement = async () => {
 // ============================================
 // CRON JOB - හැම මාසේම 25 වෙනිදා 12:00 AM
 // ============================================
-
-// 0 0 25 * * = හැම මාසේම 25 වෙනිදා මධ්‍යම රාත්‍රී 12ට
 const scheduleMonthlySettlement = () => {
     cron.schedule('0 0 25 * *', async () => {
         console.log(`📅 Running scheduled monthly settlement on 25th`);

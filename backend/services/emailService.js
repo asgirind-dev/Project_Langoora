@@ -1,3 +1,4 @@
+// backend/services/emailService.js
 const nodemailer = require('nodemailer');
 const { db } = require('../config/firebase');
 const emailLogService = require('./emailLogService');
@@ -82,7 +83,6 @@ class EmailService {
           user: smtpUser,
           pass: smtpPass
         }
-        
       };
 
       this.transporter = nodemailer.createTransport(smtpConfig);
@@ -544,25 +544,8 @@ class EmailService {
     }
   }
 
-  /**
-   * Send Subscription Confirmation Email
-   */
-  async sendSubscriptionConfirmationEmail(studentEmail, studentName, planName, amount, credits) {
-    const logData = {
-      recipient: studentEmail,
-      type: 'subscription_purchase',
-      senderEmail: this.getSenderEmail(),
-      senderName: this.getSenderName(),
-      subject: `Subscription Confirmed - Welcome to ${planName}!`,
-      metadata: { studentName, planName, amount, credits }
-    };
-
-    try {
-      await this.ensureInitialized();
-      await this.loadConfig();
-
   // =========================================================================
-  // 📚 SEND CATEGORY CREATED EMAIL - NEW
+  // 📚 SEND CATEGORY CREATED EMAIL
   // =========================================================================
   async sendCategoryCreatedEmail(financeEmail, categoryName, language, categoryId, createdBy) {
     const logData = {
@@ -594,13 +577,6 @@ class EmailService {
         <html>
         <head>
           <meta charset="UTF-8">
-          <title>Subscription Purchase Confirmation</title>
-        </head>
-        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: sans-serif; color: #e0e0e0;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
-            <tr>
-              <td align="center">
-                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>New Exam Category Created</title>
         </head>
@@ -614,26 +590,6 @@ class EmailService {
 
                   <div style="padding: 0 4px;">
                     <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
-                      Thank you for your purchase, <span style="color: #38bdf8;">${studentName || 'Student'}</span>! 🎉
-                    </h1>
-                    
-                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px;">
-                      Your subscription plan has been activated successfully. Here are your transaction details:
-                    </p>
-
-                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px; margin: 20px 0;">
-                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Plan Name</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${planName}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Amount Paid</td>
-                          <td style="color: #34d399; font-size: 13px; text-align: right; font-weight: 600;">LKR ${amount}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Credits Added</td>
-                          <td style="color: #38bdf8; font-size: 13px; text-align: right; font-weight: 600;">+${credits} Credits</td>
                       📚 New Exam Category Created
                     </h1>
                     
@@ -659,8 +615,6 @@ class EmailService {
                       </table>
                     </div>
 
-                    <p style="font-size: 13px; color: #94a3b8; text-align: center;">
-                      You can now use your credits to unlock and take mock exam packs!
                     <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
                       <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
                         ⏳ <strong>Action Required:</strong> Please review this new category and configure credit values for its levels.
@@ -691,19 +645,12 @@ class EmailService {
 
       const mailOptions = {
         from: this.getSenderInfo(),
-        to: studentEmail,
-        subject: `Subscription Confirmed - Welcome to ${planName}!`,
         to: financeEmail,
         subject: `📚 New Exam Category Created: ${categoryName}`,
         html: htmlContent
       };
 
       const result = await this.transporter.sendMail(mailOptions);
-      logData.status = 'sent';
-      logData.messageId = result.messageId;
-      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
-      
-      console.log(`✅ Plan purchase email sent to ${studentEmail}`);
       
       logData.status = 'sent';
       logData.messageId = result.messageId;
@@ -723,7 +670,7 @@ class EmailService {
   }
 
   // =========================================================================
-  // 📚 SEND LEVEL CREATED EMAIL - NEW
+  // 📚 SEND LEVEL CREATED EMAIL
   // =========================================================================
   async sendLevelCreatedEmail(financeEmail, levelName, categoryName, categoryId, levelId, createdBy) {
     const logData = {
@@ -840,12 +787,218 @@ class EmailService {
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
-      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send plan purchase email:', error.message);
       await emailLogService.logEmail(logData);
       
       console.error('❌ Failed to send level created email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // =========================================================================
+  // 📚 SEND TUTOR PAYOUT SETTLEMENT EMAIL (Auto-Settle on 25th)
+  // =========================================================================
+  async sendTutorPayoutSettlementEmail(tutorEmail, tutorName, payoutData, adminEmail) {
+    const logData = {
+      recipient: tutorEmail,
+      type: 'payout_settlement',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: '🎉 Your Monthly Langoora Payout Has Been Processed',
+      metadata: { 
+        tutorId: payoutData.tutorId,
+        payoutId: payoutData.payoutId || payoutData.id,
+        transactionId: payoutData.transactionId,
+        amount: payoutData.tutorShare,
+        tokens: payoutData.totalTokens
+      }
+    };
+
+    try {
+      const rateCheck = await emailRateLimitService.canSend(tutorEmail);
+      if (!rateCheck.allowed) {
+        logData.status = 'failed';
+        logData.error = rateCheck.reason;
+        await emailLogService.logEmail(logData);
+        console.log(`❌ Rate limit exceeded for ${tutorEmail}: ${rateCheck.reason}`);
+        return { success: false, error: rateCheck.reason };
+      }
+
+      await this.ensureInitialized();
+      await this.loadConfig();
+
+      const settlementDate = new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      const settlementTime = new Date().toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      const grossAmount = payoutData.totalAmount || (payoutData.totalTokens * payoutData.exchangeRate) || 0;
+      const commissionAmount = payoutData.platformShare || (grossAmount * 0.2) || 0;
+      const netPayout = payoutData.tutorShare || payoutData.netPayout || (grossAmount * 0.8) || 0;
+      const transactionId = payoutData.transactionId || 'Pending Confirmation';
+      const bankName = payoutData.bankName || 'Your Registered Bank Account';
+
+      let maskedAccount = 'N/A';
+      if (payoutData.bankAccount) {
+        const acc = payoutData.bankAccount.replace(/\s/g, '');
+        if (acc.length > 4) {
+          maskedAccount = '****' + acc.slice(-4);
+        } else {
+          maskedAccount = '****' + acc;
+        }
+      }
+
+      const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance/tutor-payouts`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Langoora - Payout Processed</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 24px; font-weight: 700; color: #ffffff; margin: 0 0 4px 0;">
+                      Hello, ${tutorName} 
+                    </h1>
+                    <p style="color: #94a3b8; font-size: 14px; margin: 0 0 24px 0;">
+                      Your monthly earnings have been transferred to your bank account.
+                    </p>
+
+                    <div style="text-align: center; margin-bottom: 24px;">
+                      <div style="display: inline-block; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 30px; padding: 6px 18px;">
+                        <span style="color: #34d399; font-size: 13px; font-weight: 700;">✅ Settlement Successful</span>
+                      </div>
+                    </div>
+
+                    <div style="background: linear-gradient(145deg, #0f1629, #0a0e1a); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 16px; padding: 20px 24px; margin: 20px 0; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
+                      <h3 style="color: #38bdf8; margin: 0 0 16px 0; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">
+                        💰 Payout Summary
+                      </h3>
+                      
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="color: #94a3b8; font-size: 14px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            📦 Total Tokens Redeemed
+                          </td>
+                          <td style="color: #e0e0e0; font-size: 15px; text-align: right; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            ${payoutData.totalTokens || 0} Credits
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="color: #94a3b8; font-size: 14px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            💵 Gross Amount
+                          </td>
+                          <td style="color: #e0e0e0; font-size: 15px; text-align: right; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            LKR ${grossAmount.toLocaleString()}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="color: #94a3b8; font-size: 14px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            🏢 Platform Commission (20%)
+                          </td>
+                          <td style="color: #f87171; font-size: 15px; text-align: right; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            - LKR ${commissionAmount.toLocaleString()}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="color: #94a3b8; font-size: 14px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            🏦 Bank / Account
+                          </td>
+                          <td style="color: #e0e0e0; font-size: 14px; text-align: right; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            ${bankName} <span style="color: #64748b; font-weight: 400; font-size: 12px;">(${maskedAccount})</span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="color: #94a3b8; font-size: 13px; padding: 8px 0;">
+                            📅 Settlement Date
+                          </td>
+                          <td style="color: #64748b; font-size: 13px; text-align: right; font-weight: 400;">
+                            ${settlementDate} at ${settlementTime}
+                          </td>
+                        </tr>
+                      </table>
+
+                      <div style="margin-top: 18px; padding-top: 16px; border-top: 2px dashed rgba(52, 211, 153, 0.25); text-align: center; background: rgba(16, 185, 129, 0.04); border-radius: 12px; padding: 14px;">
+                        <span style="color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Net Payout (80%)</span>
+                        <p style="font-size: 28px; font-weight: 800; color: #34d399; margin: 4px 0 0 0; text-shadow: 0 0 20px rgba(52, 211, 153, 0.15);">
+                          LKR ${netPayout.toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px 16px; margin: 20px 0;">
+                      <p style="color: #64748b; font-size: 11px; margin: 0; text-align: center; letter-spacing: 0.3px;">
+                        🔗 <strong style="color: #94a3b8;">Transaction Reference:</strong> 
+                        <span style="font-family: monospace; color: #38bdf8; font-size: 12px;">${transactionId}</span>
+                      </p>
+                      <p style="color: #475569; font-size: 10px; margin: 4px 0 0 0; text-align: center;">
+                        Funds will reflect in your account within 1–3 business days.
+                      </p>
+                    </div>
+
+                    <div style="border-top: 1px dashed rgba(255,255,255,0.08); margin: 24px 0;"></div>
+
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${dashboardUrl}" target="_blank" style="display: inline-block; padding: 12px 32px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.3);">
+                        📊 View Your Dashboard
+                      </a>
+                    </div>
+
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
+                      <strong style="color: #94a3b8;">Need help?</strong> Contact our finance team at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
+                    </p>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const adminBcc = adminEmail || process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: tutorEmail,
+        bcc: adminBcc,
+        subject: '🎉 Your Monthly Langoora Payout Has Been Processed',
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Payout settlement email sent to tutor: ${tutorEmail} (BCC to admin: ${adminBcc})`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send payout settlement email:', error.message);
       return { success: false, error: error.message };
     }
   }
