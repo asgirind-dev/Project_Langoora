@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Phone, GraduationCap, MapPin, Save, Camera, Edit3, Building, CreditCard, Trash2, Plus, AlertTriangle, Eye, EyeOff, ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
+import { User, Mail, Phone, GraduationCap, MapPin, Save, Camera, Edit3, Building, CreditCard, Trash2, Plus, AlertTriangle, Eye, EyeOff, ShieldAlert, CheckCircle, XCircle, FileText, Upload, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
@@ -32,6 +32,11 @@ export default function TutorProfilePage() {
   const [newCard, setNewCard] = useState({ bankName: '', accountNo: '', accountHolder: '' });
   const [showAddCard, setShowAddCard] = useState(false);
   const [profilePic, setProfilePic] = useState(null);
+
+  // NEW STATES FOR QUALIFICATION CERTIFICATE
+  const [cvUrl, setCvUrl] = useState('');
+  const [showCertModal, setShowCertModal] = useState(false);
+  const [uploadingCert, setUploadingCert] = useState(false);
 
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
@@ -84,6 +89,13 @@ export default function TutorProfilePage() {
           setBankCards(cardsResult.data);
         }
 
+        // FETCH CERTIFICATE FROM tutor_applications
+        const qualRes = await fetch(`${API_BASE_URL}/${user.uid}/qualification`);
+        const qualResult = await qualRes.json();
+        if (qualResult.success && qualResult.data?.cv_url) {
+          setCvUrl(qualResult.data.cv_url);
+        }
+
       } catch (error) {
         console.error("Error fetching data from backend:", error);
         showToast("Failed to fetch profile details. Check connection.", "error");
@@ -123,6 +135,44 @@ export default function TutorProfilePage() {
       } catch (error) {
         console.error("Upload Error:", error);
         showToast("Connection timed out. Please try again.", "error");
+      }
+    };
+  };
+
+  // NEW FUNCTION: UPDATE QUALIFICATION CERTIFICATE PHOTO
+  const handleQualificationUpdate = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !user?.uid) return;
+
+    if (file.size > 3 * 1024 * 1024) {
+      showToast("Certificate file size should be less than 3MB.", "error");
+      return;
+    }
+
+    setUploadingCert(true);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+
+    reader.onloadend = async () => {
+      const base64String = reader.result;
+      try {
+        const response = await fetch(`${API_BASE_URL}/${user.uid}/qualification`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cv_url: base64String })
+        });
+        const result = await response.json();
+        if (result.success) {
+          setCvUrl(base64String);
+          showToast("Qualification certificate updated successfully!", "success");
+        } else {
+          showToast(result.error || "Failed to update qualification certificate.", "error");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("Network error. Failed to update certificate.", "error");
+      } finally {
+        setUploadingCert(false);
       }
     };
   };
@@ -172,11 +222,9 @@ export default function TutorProfilePage() {
     e.preventDefault();
     if (!newCard.bankName || !newCard.accountNo || !newCard.accountHolder || !user?.uid) return;
 
-    // Strict Digit Validation Logic
     const cleanNo = newCard.accountNo.replace(/\s+/g, '').replace(/-/g, '');
     const isOnlyDigits = /^\d+$/.test(cleanNo);
 
-    // FIXED: Validates Sri Lankan Standard Bank Account Digits (typically between 9 to 16 digits)
     if (!isOnlyDigits || cleanNo.length < 9 || cleanNo.length > 16) {
       showToast("Invalid Bank Account Number. Please enter a valid number containing 9 to 16 digits.", "error");
       return;
@@ -224,10 +272,9 @@ export default function TutorProfilePage() {
     } catch (error) {
       console.error("Error deleting card:", error);
       showToast("Failed to delete the bank account.", "error");
-    } window.confirm
-      setShowCardDeleteModal(false);
-      setCardToDelete(null);
-    
+    }
+    setShowCardDeleteModal(false);
+    setCardToDelete(null);
   };
 
   const handleConfirmDeleteAccount = async (e) => {
@@ -348,6 +395,15 @@ export default function TutorProfilePage() {
                   <Badge color="green">JLPT Expert</Badge>
                 </div>
               </div>
+
+              {/* REQUIREMENT 2: YELLOW BOX AREA -> View Qualification Tab/Button */}
+              <button
+                onClick={() => setShowCertModal(true)}
+                className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-medium text-xs rounded-xl transition-all flex items-center gap-2"
+              >
+                <FileText size={15} />
+                <span>View Qualification</span>
+              </button>
             </div>
           </div>
         </div>
@@ -428,6 +484,15 @@ export default function TutorProfilePage() {
                 <Input label="University / Institution" value={form.university} icon={Building} disabled={true} className="opacity-60 cursor-not-allowed" />
                 <p className="text-[11px] text-gray-500 mt-1 pl-1">Qualifications cannot be edited after registration.</p>
               </div>
+
+              {/* REQUIREMENT 3: GREEN BOX AREA -> Update Qualification Photo Button */}
+              <div className="pt-2">
+                <label className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold rounded-xl cursor-pointer transition-all">
+                  <Upload size={15} />
+                  <span>{uploadingCert ? "Uploading..." : "Update Qualification Certificate"}</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleQualificationUpdate} disabled={uploadingCert} />
+                </label>
+              </div>
             </div>
           </div>
 
@@ -437,7 +502,7 @@ export default function TutorProfilePage() {
           </div>
         </GlassCard>
 
-        {/* Bank Details Card (RENAMED TO BANK ACCOUNTS) */}
+        {/* Bank Details Card */}
         <GlassCard className="p-6 md:col-span-2">
           <div className="flex justify-between items-center mb-5">
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -470,7 +535,6 @@ export default function TutorProfilePage() {
                 />
                 
                 <div>
-                  {/* FIXED: Removed raw technical rule string from placeholder for clean professional display */}
                   <Input 
                     label="Bank Account Number" 
                     value={newCard.accountNo} 
@@ -482,7 +546,7 @@ export default function TutorProfilePage() {
                     placeholder="e.g., 100123456789"
                     maxLength={20} 
                     required 
-                />
+                  />
                 </div>
 
                 <Input 
@@ -556,6 +620,44 @@ export default function TutorProfilePage() {
           </div>
         </GlassCard>
       </div>
+
+      {/* REQUIREMENT 2 MODAL: VIEW QUALIFICATION POPUP */}
+      <AnimatePresence>
+        {showCertModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-2xl bg-[#0f1629] border border-amber-500/30 rounded-2xl p-6 shadow-2xl relative max-h-[90vh] flex flex-col"
+            >
+              <div className="flex justify-between items-center mb-4 pb-3 border-b border-white/10">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <FileText className="text-amber-400" size={20} /> Qualification Certificate
+                </h3>
+                <button 
+                  onClick={() => setShowCertModal(false)}
+                  className="p-1 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto flex items-center justify-center p-2 bg-black/40 rounded-xl min-h-[300px]">
+                {cvUrl ? (
+                  <img src={cvUrl} alt="Tutor Qualification Certificate" className="max-w-full max-h-[60vh] object-contain rounded-lg" />
+                ) : (
+                  <p className="text-gray-400 text-sm">No qualification certificate uploaded yet.</p>
+                )}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <Button variant="secondary" onClick={() => setShowCertModal(false)}>Close</Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* CUSTOM BANK ACCOUNT REMOVAL MODAL */}
       <AnimatePresence>

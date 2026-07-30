@@ -1,13 +1,46 @@
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { BookOpen, LogOut, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-export default function DashboardSidebar({ navItems, basePath }) {
+export default function DashboardSidebar({ navItems, basePath, user: propUser }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user: authUser, logout } = useAuth();
+
+  const currentUser = propUser || authUser;
+  
+  // LocalStorage එකෙන් හෝ User Object එකෙන් Image URL එක සෙවීම
+  const [profilePic, setProfilePic] = useState(() => {
+    return localStorage.getItem('user_profile_pic') || 
+           currentUser?.profilePicUrl || 
+           currentUser?.photoURL || 
+           currentUser?.avatar || '';
+  });
+
+  // Photo Update Event එකක් ආපු ගමන් Live Update වීම
+  useEffect(() => {
+    const handleProfileUpdate = () => {
+      const updatedPic = localStorage.getItem('user_profile_pic');
+      if (updatedPic) {
+        setProfilePic(updatedPic);
+      }
+    };
+
+    // Custom Event Listener එක සෙට් කිරීම
+    window.addEventListener('profilePicUpdated', handleProfileUpdate);
+    
+    // Auth User වෙනස් වුණොත් Sync කිරීම
+    const currentPic = currentUser?.profilePicUrl || currentUser?.photoURL || currentUser?.avatar;
+    if (currentPic) setProfilePic(currentPic);
+
+    return () => {
+      window.removeEventListener('profilePicUpdated', handleProfileUpdate);
+    };
+  }, [currentUser]);
 
   const handleLogout = () => {
+    localStorage.removeItem('user_profile_pic');
     logout();
     navigate('/');
   };
@@ -28,15 +61,31 @@ export default function DashboardSidebar({ navItems, basePath }) {
       </div>
 
       {/* User Session Profile */}
-      {user && (
+      {currentUser && (
         <div className="p-5 border-b border-slate-200 dark:border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-semibold text-sm shadow-md shadow-cyan-500/10">
-              {user.name?.charAt(0) || 'U'}
+            
+            {/* Profile Avatar Container */}
+            <div className="relative w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-semibold text-sm shadow-md shadow-cyan-500/10 flex-shrink-0 border border-slate-200 dark:border-white/10">
+              {profilePic ? (
+                <img
+                  src={profilePic}
+                  alt={currentUser.name || 'User'}
+                  className="w-full h-full object-cover"
+                  onError={() => setProfilePic('')} // Image එක broken නම් Fallback
+                />
+              ) : (
+                <span>{currentUser.name?.charAt(0)?.toUpperCase() || 'U'}</span>
+              )}
             </div>
+
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800 dark:text-white truncate">{user.name || 'User'}</p>
-              <p className="text-xs text-slate-500 dark:text-gray-400 truncate font-mono">{user.email || ''}</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-white truncate">
+                {currentUser.name || 'User'}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-gray-400 truncate font-mono">
+                {currentUser.email || ''}
+              </p>
             </div>
           </div>
         </div>
@@ -46,7 +95,6 @@ export default function DashboardSidebar({ navItems, basePath }) {
       <nav className="flex-1 p-4 overflow-y-auto">
         <ul className="space-y-1">
           {navItems.map((item, index) => {
-            // Use a unique key combination: path + index, or item.path + item.label
             const uniqueKey = item.path ? `${item.path}-${item.label}` : `${item.label}-${index}`;
             const fullPath = item.path === '' ? basePath : `${basePath}/${item.path}`;
             const isActive = item.path === '' 

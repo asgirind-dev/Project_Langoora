@@ -44,7 +44,6 @@ class TutorProfilePageController {
             return res.status(500).json({ success: false, error: error.message });
         }
     }
-    
 
     // 4. Get Bank Cards
     async getBankCards(req, res) {
@@ -65,7 +64,6 @@ class TutorProfilePageController {
             const newCard = await tutorService.addBankCard(uid, cardData);
             return res.status(201).json({ success: true, data: newCard });
         } catch (error) {
-            // FIXED: Catches service validation exceptions (like digit count errors) and passes a clean 400 Bad Request
             return res.status(400).json({ success: false, error: error.message });
         }
     }
@@ -75,6 +73,29 @@ class TutorProfilePageController {
         try {
             const { uid, cardId } = req.params;
             const result = await tutorService.deleteBankCard(uid, cardId);
+            return res.status(200).json(result);
+        } catch (error) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    }
+
+    // NEW 7. Get Qualification Document
+    async getTutorQualification(req, res) {
+        try {
+            const { uid } = req.params;
+            const data = await tutorService.getTutorQualification(uid);
+            return res.status(200).json({ success: true, data });
+        } catch (error) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    }
+
+    // NEW 8. Update Qualification Document
+    async updateTutorQualification(req, res) {
+        try {
+            const { uid } = req.params;
+            const { cv_url } = req.body;
+            const result = await tutorService.updateTutorQualification(uid, cv_url);
             return res.status(200).json(result);
         } catch (error) {
             return res.status(500).json({ success: false, error: error.message });

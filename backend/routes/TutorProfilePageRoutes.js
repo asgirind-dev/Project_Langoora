@@ -2,10 +2,13 @@ const express = require('express');
 const router = express.Router();
 const tutorController = require('../controllers/TutorProfilePageController');
 
-
 router.delete('/:uid/delete-account', (req, res, next) => {
     tutorController.deleteTutorAccount(req, res, next);
 });
+
+// NEW Qualification routes
+router.get('/:uid/qualification', (req, res, next) => tutorController.getTutorQualification(req, res, next));
+router.put('/:uid/qualification', (req, res, next) => tutorController.updateTutorQualification(req, res, next));
 
 // Profile routes
 router.get('/:uid', (req, res, next) => tutorController.getTutorProfile(req, res, next));
