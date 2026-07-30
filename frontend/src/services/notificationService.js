@@ -20,7 +20,7 @@ class NotificationService {
   async getNotifications(userId, limit = 50, page = 1) {
     try {
       const response = await axios.get(
-        `${API_URL}/notifications/${userId}?limit=${limit}&page=${page}`,
+        `${API_URL}/notifications/user/${userId}?limit=${limit}&page=${page}`,
         getAuthConfig()
       );
       return response.data?.data || [];
@@ -37,10 +37,11 @@ class NotificationService {
   async getLatestNotifications(userId, limit = 5) {
     try {
       const response = await axios.get(
-        `${API_URL}/notifications/${userId}/latest?limit=${limit}`,
+        `${API_URL}/notifications/user/${userId}/latest?limit=${limit}`,
         getAuthConfig()
       );
-      return response.data?.data || [];
+      // ✅ Fix: Support both 'data' and 'notifications' response formats
+      return response.data?.data || response.data?.notifications || [];
     } catch (error) {
       console.error('Error fetching latest notifications:', error);
       return [];
@@ -53,7 +54,7 @@ class NotificationService {
   async getUnreadCount(userId) {
     try {
       const response = await axios.get(
-        `${API_URL}/notifications/${userId}/count`,
+        `${API_URL}/notifications/user/${userId}/count`,
         getAuthConfig()
       );
       return response.data?.count || 0;
@@ -69,7 +70,7 @@ class NotificationService {
   async getUnreadNotifications(userId, limit = 20) {
     try {
       const response = await axios.get(
-        `${API_URL}/notifications/${userId}/unread?limit=${limit}`,
+        `${API_URL}/notifications/user/${userId}/unread?limit=${limit}`,
         getAuthConfig()
       );
       return response.data?.data || [];
@@ -96,7 +97,7 @@ class NotificationService {
   async markAllAsRead(userId) {
     try {
       const response = await axios.put(
-        `${API_URL}/notifications/${userId}/read-all`,
+        `${API_URL}/notifications/user/${userId}/read-all`,
         {},
         getAuthConfig()
       );
@@ -126,7 +127,7 @@ class NotificationService {
   async deleteReadNotifications(userId) {
     try {
       const response = await axios.delete(
-        `${API_URL}/notifications/${userId}/read`,
+        `${API_URL}/notifications/user/${userId}/read`,
         getAuthConfig()
       );
       return response.data;
@@ -142,7 +143,7 @@ class NotificationService {
   async cleanupOldNotifications(userId, daysOld = 30) {
     try {
       const response = await axios.delete(
-        `${API_URL}/notifications/${userId}/cleanup?daysOld=${daysOld}`,
+        `${API_URL}/notifications/user/${userId}/cleanup?daysOld=${daysOld}`,
         getAuthConfig()
       );
       return response.data;

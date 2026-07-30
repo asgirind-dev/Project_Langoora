@@ -13,27 +13,31 @@ const getAuthConfig = () => {
   };
 };
 
-// =========================================================================
-// 📚 Category APIs
-// =========================================================================
-
+// ================================================================
+// ✅ NEW: Fetch ALL language schema (including archived)
+// ================================================================
 /**
- * 📚 Fetch ALL exam categories including archived (for sync)
- * ✅ NEW: Gets all categories with status 'active', 'inactive', and 'archived'
+ * ✅ Fetch ALL exam categories including archived
+ * GET /api/languages/schema/all
+ * Used by LanguageConfigPage to show all categories
  */
 export const fetchAllLanguageSchema = async () => {
   try {
     const response = await axios.get(`${API_URL}/schema/all`, getAuthConfig());
     return response.data;
   } catch (error) {
-    console.error('Fetch all schema error:', error);
-    throw error.response?.data || new Error('Failed to fetch full language schema.');
+    console.error('Fetch all language schema error:', error);
+    throw error.response?.data || new Error('Failed to fetch all language schema.');
   }
 };
 
+// ================================================================
+// ✅ EXISTING FUNCTIONS
+// ================================================================
+
 /**
- * 📚 Fetch exam categories (original - all categories including archived)
- * @deprecated Use fetchAllLanguageSchema for complete data
+ * 📚 Fetch full language cluster schema (all categories with levels)
+ * GET /api/languages/schema
  */
 export const fetchLanguageSchema = async () => {
   try {
@@ -46,21 +50,8 @@ export const fetchLanguageSchema = async () => {
 };
 
 /**
- * 📚 Fetch archived categories only
- * ✅ NEW: Returns all categories with status 'archived'
- */
-export const fetchArchivedCategories = async () => {
-  try {
-    const response = await axios.get(`${API_URL}/archived`, getAuthConfig());
-    return response.data;
-  } catch (error) {
-    console.error('Fetch archived categories error:', error);
-    throw error.response?.data || new Error('Failed to fetch archived categories.');
-  }
-};
-
-/**
  * 📚 Create new language category
+ * POST /api/languages/categories
  */
 export const createLanguageCategory = async (categoryData) => {
   try {
@@ -73,112 +64,8 @@ export const createLanguageCategory = async (categoryData) => {
 };
 
 /**
- * 📚 Update category
- */
-export const updateCategory = async (categoryId, categoryData) => {
-  try {
-    const response = await axios.put(
-      `${API_URL}/categories/${categoryId}`,
-      categoryData,
-      getAuthConfig()
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Update category error:', error);
-    throw error.response?.data || new Error('Failed to update category.');
-  }
-};
-
-/**
- * 📚 Update category status (active/inactive/archived)
- */
-export const updateCategoryStatus = async (categoryId, newStatus) => {
-  try {
-    const response = await axios.put(
-      `${API_URL}/categories/${categoryId}/status`,
-      { status: newStatus },
-      getAuthConfig()
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Update category status error:', error);
-    throw error.response?.data || new Error('Failed to update category status.');
-  }
-};
-
-/**
- * 📚 Archive category (soft delete)
- */
-export const deleteCategory = async (categoryId) => {
-  try {
-    const response = await axios.delete(
-      `${API_URL}/categories/${categoryId}`,
-      getAuthConfig()
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Delete category error:', error);
-    throw error.response?.data || new Error('Failed to archive category.');
-  }
-};
-
-/**
- * 📚 Restore category from archived
- * ✅ NEW: Restores an archived category to 'inactive' status
- */
-export const restoreCategory = async (categoryId) => {
-  try {
-    const response = await axios.put(
-      `${API_URL}/categories/${categoryId}/restore`,
-      {},
-      getAuthConfig()
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Restore category error:', error);
-    throw error.response?.data || new Error('Failed to restore category.');
-  }
-};
-
-/**
- * 📚 Permanently delete category (hard delete)
- * ✅ NEW: Completely removes category and all its levels from database
- */
-export const hardDeleteCategory = async (categoryId) => {
-  try {
-    const response = await axios.delete(
-      `${API_URL}/categories/${categoryId}/hard`,
-      getAuthConfig()
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Hard delete category error:', error);
-    throw error.response?.data || new Error('Failed to permanently delete category.');
-  }
-};
-
-/**
- * 📚 Get single category by ID
- */
-export const getCategoryById = async (categoryId) => {
-  try {
-    const response = await axios.get(
-      `${API_URL}/categories/${categoryId}`,
-      getAuthConfig()
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Get category error:', error);
-    throw error.response?.data || new Error('Failed to fetch category.');
-  }
-};
-
-// =========================================================================
-// 📚 Level APIs
-// =========================================================================
-
-/**
- * 📚 Create level in category
+ * 📚 Create new level inside a category
+ * POST /api/languages/categories/:categoryId/levels
  */
 export const createCategoryLevel = async (categoryId, levelData) => {
   try {
@@ -195,24 +82,71 @@ export const createCategoryLevel = async (categoryId, levelData) => {
 };
 
 /**
- * 📚 Update level
+ * 📚 Update category status
+ * PUT /api/languages/categories/:categoryId
  */
-export const updateLevel = async (categoryId, levelId, levelData) => {
+export const updateCategoryStatus = async (categoryId, newStatus) => {
   try {
     const response = await axios.put(
-      `${API_URL}/categories/${categoryId}/levels/${levelId}`,
-      levelData,
+      `${API_URL}/categories/${categoryId}`,
+      { status: newStatus },
       getAuthConfig()
     );
     return response.data;
   } catch (error) {
-    console.error('Update level error:', error);
-    throw error.response?.data || new Error('Failed to update level.');
+    console.error('Update category status error:', error);
+    throw error.response?.data || new Error('Failed to update category status.');
   }
 };
 
 /**
- * 📚 Update level with scoring configuration
+ * 📚 Delete/Archive category
+ * DELETE /api/languages/categories/:categoryId
+ */
+export const deleteCategory = async (categoryId) => {
+  try {
+    const response = await axios.delete(
+      `${API_URL}/categories/${categoryId}`,
+      getAuthConfig()
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Delete category error:', error);
+    throw error.response?.data || new Error('Failed to archive category.');
+  }
+};
+
+/**
+ * 🌐 Fetch active languages for registration (public endpoint – no auth required)
+ * GET /api/languages/active-languages
+ */
+export const fetchActiveLanguages = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/active-languages`);
+    return response.data;
+  } catch (error) {
+    console.error('Fetch active languages error:', error);
+    throw error.response?.data || new Error('Failed to fetch active languages.');
+  }
+};
+
+/**
+ * 🌐 Fetch active unnested schema categories with priced level layers
+ * GET /api/languages/active-schema
+ */
+export const fetchActiveExamSchema = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/active-schema`, getAuthConfig());
+    return response.data;
+  } catch (error) {
+    console.error('Fetch active schema error:', error);
+    throw error.response?.data || new Error('Failed to fetch system active schema matrix.');
+  }
+};
+
+/**
+ * ✅ NEW: Update level with scoring configuration
+ * PUT /api/languages/categories/:categoryId/levels/:levelId
  */
 export const updateLevelScoring = async (categoryId, levelId, scoringData) => {
   try {
@@ -228,166 +162,126 @@ export const updateLevelScoring = async (categoryId, levelId, scoringData) => {
   }
 };
 
+// ================================================================
+// ✅ NEW FUNCTIONS
+// ================================================================
+
 /**
- * 📚 Get level by ID
+ * ✅ Get category by ID
+ * GET /api/languages/categories/:categoryId
  */
-export const getLevelById = async (categoryId, levelId) => {
+export const fetchCategoryById = async (categoryId) => {
   try {
-    const response = await axios.get(
-      `${API_URL}/categories/${categoryId}/levels/${levelId}`,
-      getAuthConfig()
-    );
+    const response = await axios.get(`${API_URL}/categories/${categoryId}`, getAuthConfig());
     return response.data;
   } catch (error) {
-    console.error('Get level error:', error);
-    throw error.response?.data || new Error('Failed to fetch level.');
+    console.error('Failed to fetch category:', error);
+    throw error.response?.data || new Error('Failed to fetch category.');
   }
 };
 
 /**
- * 📚 Update level status (active/inactive)
+ * ✅ Update category
+ * PUT /api/languages/categories/:categoryId (full update)
  */
-export const updateLevelStatus = async (categoryId, levelId, status) => {
+export const updateCategory = async (categoryId, categoryData) => {
   try {
     const response = await axios.put(
-      `${API_URL}/categories/${categoryId}/levels/${levelId}/status`,
-      { status },
+      `${API_URL}/categories/${categoryId}`,
+      categoryData,
       getAuthConfig()
     );
     return response.data;
   } catch (error) {
-    console.error('Update level status error:', error);
-    throw error.response?.data || new Error('Failed to update level status.');
+    console.error('Failed to update category:', error);
+    throw error.response?.data || new Error('Failed to update category.');
   }
 };
 
-// =========================================================================
-// 📚 Public APIs (No Auth Required)
-// =========================================================================
-
 /**
- * 🌐 Fetch active languages for registration (public endpoint – no auth required)
- * Returns an array of unique language names from active exam categories.
- * Used by the tutor registration form to populate the language dropdown.
+ * ✅ Update level
+ * PUT /api/languages/categories/:categoryId/levels/:levelId
  */
-export const fetchActiveLanguages = async () => {
+export const updateLevel = async (categoryId, levelId, levelData) => {
   try {
-    // This endpoint is public, so we don't need auth headers
-    const response = await axios.get(`${API_URL}/active-languages`);
+    const response = await axios.put(
+      `${API_URL}/categories/${categoryId}/levels/${levelId}`,
+      levelData,
+      getAuthConfig()
+    );
     return response.data;
   } catch (error) {
-    console.error('Fetch active languages error:', error);
-    throw error.response?.data || new Error('Failed to fetch active languages.');
+    console.error('Failed to update level:', error);
+    throw error.response?.data || new Error('Failed to update level.');
   }
 };
 
 /**
- * 🌐 Fetch active unnested schema categories with priced level layers
- * Accessible by Tutors, Finance, and Students
+ * ✅ Restore category from archived
+ * PUT /api/languages/categories/:categoryId/restore
  */
-export const fetchActiveExamSchema = async () => {
+export const restoreCategory = async (categoryId) => {
   try {
-    const response = await axios.get(`${API_URL}/active-schema`, getAuthConfig());
+    const response = await axios.put(
+      `${API_URL}/categories/${categoryId}/restore`,
+      {},
+      getAuthConfig()
+    );
     return response.data;
   } catch (error) {
-    console.error('Fetch active schema error:', error);
-    throw error.response?.data || new Error('Failed to fetch system active schema matrix.');
+    console.error('Failed to restore category:', error);
+    throw error.response?.data || new Error('Failed to restore category.');
   }
-};
-
-// =========================================================================
-// 📚 Utility / Helper Functions
-// =========================================================================
-
-/**
- * 📊 Get category stats from schema
- */
-export const getCategoryStats = (schema) => {
-  if (!schema || !Array.isArray(schema)) {
-    return { total: 0, active: 0, inactive: 0, archived: 0 };
-  }
-  
-  const stats = {
-    total: schema.length,
-    active: 0,
-    inactive: 0,
-    archived: 0,
-    other: 0
-  };
-  
-  schema.forEach(cat => {
-    const status = cat.status || 'inactive';
-    if (status === 'active') stats.active++;
-    else if (status === 'inactive') stats.inactive++;
-    else if (status === 'archived') stats.archived++;
-    else stats.other++;
-  });
-  
-  return stats;
 };
 
 /**
- * 📊 Get level stats from schema
+ * ✅ Get archived categories
+ * GET /api/languages/archived
  */
-export const getLevelStats = (schema) => {
-  if (!schema || !Array.isArray(schema)) {
-    return { total: 0, active: 0, inactive: 0, pendingCredits: 0, setCredits: 0 };
+export const fetchArchivedCategories = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/archived`, getAuthConfig());
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch archived categories:', error);
+    throw error.response?.data || new Error('Failed to fetch archived categories.');
   }
-  
-  let total = 0;
-  let active = 0;
-  let inactive = 0;
-  let pendingCredits = 0;
-  let setCredits = 0;
-  
-  schema.forEach(cat => {
-    if (cat.levels && Array.isArray(cat.levels)) {
-      cat.levels.forEach(level => {
-        total++;
-        if (level.status === 'active') active++;
-        else if (level.status === 'inactive') inactive++;
-        
-        if (level.isCreditSet && level.credit_cost > 0) {
-          setCredits++;
-        } else {
-          pendingCredits++;
-        }
-      });
-    }
-  });
-  
-  return { total, active, inactive, pendingCredits, setCredits };
 };
 
-// =========================================================================
-// 📚 Default Export
-// =========================================================================
+/**
+ * ✅ Hard delete category (permanent)
+ * DELETE /api/languages/categories/:categoryId/hard
+ */
+export const hardDeleteCategory = async (categoryId) => {
+  try {
+    const response = await axios.delete(
+      `${API_URL}/categories/${categoryId}/hard`,
+      getAuthConfig()
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Failed to hard delete category:', error);
+    throw error.response?.data || new Error('Failed to permanently delete category.');
+  }
+};
 
+// ================================================================
+// ✅ DEFAULT EXPORT
+// ================================================================
 export default {
-  // Category APIs
   fetchAllLanguageSchema,
   fetchLanguageSchema,
+  fetchActiveExamSchema,
+  fetchActiveLanguages,
+  fetchCategoryById,
   fetchArchivedCategories,
   createLanguageCategory,
+  createCategoryLevel,
   updateCategory,
   updateCategoryStatus,
+  updateLevel,
+  updateLevelScoring,
   deleteCategory,
   restoreCategory,
   hardDeleteCategory,
-  getCategoryById,
-  
-  // Level APIs
-  createCategoryLevel,
-  updateLevel,
-  updateLevelScoring,
-  getLevelById,
-  updateLevelStatus,
-  
-  // Public APIs
-  fetchActiveLanguages,
-  fetchActiveExamSchema,
-  
-  // Utilities
-  getCategoryStats,
-  getLevelStats
 };

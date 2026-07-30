@@ -1,176 +1,200 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Shield, Key, Lock, Server, RefreshCw, AlertTriangle, CheckCircle, Users, Eye } from 'lucide-react';
-import GlassCard from '../../components/ui/GlassCard';
+// frontend/src/pages/admin/SystemSettings.jsx
+import { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Save, Shield, Layout, Sliders, Activity, CheckCircle, XCircle, X, AlertCircle
+} from 'lucide-react';
 import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
+import HomepageCMS from '../../components/admin/homepageCMS';
+import GovernanceSecurity from '../../components/admin/governanceSecurity';
+import GlobalConfigurations from '../../components/admin/globalConfigurations';
+import EmailAnalytics from '../../components/admin/emailAnalytics';
+import { saveHeroBanners } from '../../services/cmsService';
+import studentApi from '../../services/examExecutionService';
+import { saveGlobalConfig } from '../../services/globalConfigService';
+import Portal from '../../components/ui/Portal';
+import AdminNotifications from '../../components/admin/AdminNotifications';
 
-export default function SystemSecurity() {
-  // Security Configurations Toggles
-  const [twoFactorRequired, setTwoFactorRequired] = useState(true);
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [passwordComplexity, setPasswordComplexity] = useState('high');
+export default function SystemSettings() {
+  const [activeTab, setActiveTab] = useState('cms');
+  const [isSaving, setIsSaving] = useState(false);
   
-  // Realistic Security Audit Logs (Great for Viva presentation!)
-  const securityLogs = [
-    { event: 'Admin Login Successful', user: 'admin@novacore.com', time: 'Just now', type: 'success' },
-    { event: 'Staff Provision Authorization', user: 'System Trigger', time: '20 mins ago', type: 'info' },
-    { event: 'Failed Password Attempt', user: 'tutor.test@lnbti.com', time: '1 hour ago', type: 'warning' },
-    { event: 'JWT Security Token Refreshed', user: 'student.node@lnbti.com', time: '2 hours ago', type: 'success' },
+  // ✅ Toast state - Same as UserManagementPage
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  // Refs to access child component methods
+  const cmsRef = useRef();
+  const securityRef = useRef();
+  const globalRef = useRef();
+
+  const tabs = [
+    { id: 'cms', label: 'Homepage CMS', icon: Layout, component: HomepageCMS, ref: cmsRef },
+    { id: 'security', label: 'Governance & Security', icon: Shield, component: GovernanceSecurity, ref: securityRef },
+    { id: 'global', label: 'Global Configurations', icon: Sliders, component: GlobalConfigurations, ref: globalRef },
+    { id: 'email-analytics', label: 'Email Analytics', icon: Activity, component: EmailAnalytics },
   ];
 
-  // System Core Metrics
-  const securityMetrics = [
-    { label: 'Authentication Provider', status: 'Firebase Auth', sub: 'Secure identity nodes', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-    { label: 'Central Registry', status: 'Firestore DB', sub: 'Encrypted at rest', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-    { label: 'Authorization Gateway', status: 'JWT Enabled', sub: '1-Day session tokens', color: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
-    { label: 'Input Protection', status: 'Backend Validated', sub: 'Double-layer registry locks', color: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
-  ];
+  // ✅ Toast notification function - Same as UserManagementPage
+  const showNotification = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setToast({ show: false, message: '', type: 'success' });
+    
+    try {
+      let success = true;
+      let message = '';
+      
+      // Save based on current active tab
+      switch (activeTab) {
+        case 'cms':
+          // Get banners from the child component
+          const banners = cmsRef.current?.getBanners();
+          if (banners && banners.length > 0) {
+            await saveHeroBanners(banners);
+            message = 'Hero banners saved successfully!';
+          } else {
+            throw new Error('No banners to save');
+          }
+          break;
+          
+        case 'security':
+          // Get security config from child component
+          const securityConfig = securityRef.current?.getSecurityConfig();
+          if (securityConfig) {
+            const response = await studentApi.post('/system-settings/security', securityConfig);
+            if (response.data.success) {
+              message = 'Security policies saved successfully!';
+            } else {
+              throw new Error(response.data.message || 'Failed to save security settings');
+            }
+          } else {
+            throw new Error('No security configuration to save');
+          }
+          break;
+          
+        case 'global':
+          // Get global config from child component
+          const globalConfig = globalRef.current?.getGlobalConfig();
+          if (globalConfig) {
+            const response = await saveGlobalConfig(globalConfig);
+            if (response && response.success === true) {
+              message = response.message || 'Global configurations saved successfully!';
+            } else {
+              throw new Error(response?.message || 'Failed to save global settings');
+            }
+          } else {
+            throw new Error('No global configuration to save');
+          }
+          break;
+          
+        default:
+          console.warn('No save handler for tab:', activeTab);
+          success = false;
+          message = 'No save handler for this tab';
+      }
+      
+      if (success) {
+        showNotification(message, 'success');
+      }
+    } catch (error) {
+      console.error('Error saving:', error);
+      showNotification(error.message || 'Failed to save settings', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Get the component for the active tab
+  const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component;
+  const activeRef = tabs.find(tab => tab.id === activeTab)?.ref;
 
   return (
-    <div className="space-y-6 p-2">
-      {/* --- UNIFORM DASHBOARD HEADER --- */}
+    <div className="space-y-8 text-left relative">
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast.show && (
+          <Portal>
+            <motion.div
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl max-w-sm ${
+                toast.type === 'success'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-emerald-950/20'
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-rose-950/20'
+              }`}
+            >
+              <div className={`p-1.5 rounded-xl border ${
+                toast.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/20'
+                  : 'bg-rose-500/10 border-rose-500/20'
+              }`}>
+                {toast.type === 'success'
+                  ? <CheckCircle size={18} className="text-emerald-400" />
+                  : <AlertCircle size={18} className="text-rose-400" />
+                }
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider opacity-60">System Settings</p>
+                <p className="text-sm font-medium mt-0.5 leading-tight">{toast.message}</p>
+              </div>
+              <button 
+                onClick={() => setToast(p => ({ ...p, show: false }))} 
+                className="text-gray-400 hover:text-white p-1 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          </Portal>
+        )}
+      </AnimatePresence>
+
+      {/* Header with Bell */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-3xl font-bold text-white mb-1 flex items-center gap-2">
-          <Shield className="text-blue-500" size={28} /> System Security
-        </h1>
-        <p className="text-gray-400 mt-1">Monitor authentication infrastructure, handle global configurations, and review access logs</p>
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-white mb-1">System Settings</h1>
+            <p className="text-gray-400">Manage platform assets and overlay configurations</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* ✅ Notification Bell - Same level as Save button */}
+            <AdminNotifications />
+            <Button 
+              variant="primary" 
+              onClick={handleSave} 
+              disabled={isSaving}
+              className="min-w-[160px]"
+            >
+              <Save size={16} /> {isSaving ? 'Saving...' : 'Save Configuration'}
+            </Button>
+          </div>
+        </div>
       </motion.div>
 
-      {/* --- SECURITY METRICS GRID --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {securityMetrics.map((metric, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-            <GlassCard className="p-4 flex items-center justify-between bg-white dark:bg-slate-900/40 border border-slate-100 dark:border-white/5 rounded-2xl shadow-sm">
-              <div>
-                <div className="text-xs text-slate-400 font-medium mb-1">{metric.label}</div>
-                <div className="text-lg font-extrabold text-white tracking-tight">{metric.status}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{metric.sub}</div>
-              </div>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide border uppercase ${metric.color}`}>
-                Active
-              </span>
-            </GlassCard>
-          </motion.div>
+      {/* Tabs */}
+      <div className="flex border-b border-white/10 gap-2 overflow-x-auto">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              activeTab === tab.id ? 'border-blue-500 text-blue-400 bg-white/3' : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <tab.icon size={16} /> {tab.label}
+          </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* --- LEFT COLUMN: CORE POLICY CONTROLS --- */}
-        <div className="lg:col-span-2 space-y-6">
-          <GlassCard className="p-5 bg-white dark:bg-slate-950/20 border border-slate-200 dark:border-white/5 rounded-2xl shadow-xl">
-            <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 pb-3">
-              <Key size={16} className="text-blue-500" /> Authentication & Access Policies
-            </h2>
-            
-            <div className="space-y-5 divide-y divide-slate-100 dark:divide-white/5">
-              {/* Policy 1: Enforce 2FA */}
-              <div className="flex items-center justify-between pt-1">
-                <div>
-                  <h3 className="text-sm font-semibold text-white">Enforce Two-Factor Authentication (2FA)</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Require multi-factor validation credentials for administrative staff access gateways.</p>
-                </div>
-                <button 
-                  onClick={() => setTwoFactorRequired(!twoFactorRequired)}
-                  className={`w-11 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none ${twoFactorRequired ? 'bg-blue-600' : 'bg-slate-200 dark:bg-white/10'}`}
-                >
-                  <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${twoFactorRequired ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
-              </div>
-
-              {/* Policy 2: Global Maintenance Screen */}
-              <div className="flex items-center justify-between pt-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-amber-500 flex items-center gap-1.5">
-                    <AlertTriangle size={14} /> Global Maintenance Mode
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Lock public route access levels and display a structural maintenance screen to incoming students.</p>
-                </div>
-                <button 
-                  onClick={() => setMaintenanceMode(!maintenanceMode)}
-                  className={`w-11 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none ${maintenanceMode ? 'bg-amber-500' : 'bg-slate-200 dark:bg-white/10'}`}
-                >
-                  <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${maintenanceMode ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
-              </div>
-
-              {/* Policy 3: Password Complexity Choice */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-4 gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold text-white">Registration Password Policy Complexity</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Enforce structural registration rules via backend token policy layer configurations.</p>
-                </div>
-                <select 
-                  value={passwordComplexity} 
-                  onChange={(e) => setPasswordComplexity(e.target.value)}
-                  className="bg-slate-50 dark:bg-slate-950 text-xs border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="standard">Standard (Min 6 Characters)</option>
-                  <option value="high">Enterprise (8-12 Chars + Dynamic Mix)</option>
-                  <option value="maximum">Maximum Lockdown (Alpha-Numeric-Special)</option>
-                </select>
-              </div>
-            </div>
-          </GlassCard>
-
-          {/* --- ENVIRONMENT PARAMETERS MODULE --- */}
-          <GlassCard className="p-5 bg-white dark:bg-slate-950/20 border border-slate-200 dark:border-white/5 rounded-2xl shadow-xl">
-            <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 pb-3">
-              <Server size={16} className="text-emerald-500" /> Platform Deployment Context
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-slate-400 font-medium">Node Environment</span>
-                  <Badge className="bg-emerald-500/10 text-emerald-500 border-none font-semibold text-[10px]">Local Dev Mode</Badge>
-                </div>
-                <p className="text-sm font-mono text-white">localhost:5000 (Express Core)</p>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-slate-400 font-medium">Identity Middleware</span>
-                  <span className="text-[10px] font-mono text-slate-500 font-bold">Bearer Token Framework</span>
-                </div>
-                <p className="text-sm font-mono text-blue-400">authMiddleware.protect</p>
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <Button variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs font-semibold py-2.5 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
-                <RefreshCw size={13} /> Clear Platform Memory Caches
-              </Button>
-            </div>
-          </GlassCard>
-        </div>
-
-        {/* --- RIGHT COLUMN: ACTIVE SECURITY AUDIT LOGS --- */}
-        <div className="space-y-6">
-          <GlassCard className="p-5 bg-white dark:bg-slate-950/20 border border-slate-200 dark:border-white/5 rounded-2xl shadow-xl">
-            <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 pb-3">
-              <CheckCircle size={16} className="text-indigo-500" /> Recent Security Logs
-            </h2>
-            <div className="space-y-3">
-              {securityLogs.map((log, index) => (
-                <div 
-                  key={index} 
-                  className={`text-xs p-3 rounded-xl border ${
-                    log.type === 'warning' ? 'bg-rose-500/5 border-rose-500/10 text-rose-400' :
-                    log.type === 'info' ? 'bg-blue-500/5 border-blue-500/10 text-blue-400' :
-                    'bg-emerald-500/5 border-emerald-500/10 text-emerald-400'
-                  }`}
-                >
-                  <div className="font-bold flex items-center justify-between">
-                    <span>{log.event}</span>
-                    <span className="text-[10px] text-slate-500 font-normal">{log.time}</span>
-                  </div>
-                  <div className="text-slate-400 mt-1 font-mono text-[11px] truncate">{log.user}</div>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
-        </div>
-      </div>
+      {/* Content */}
+      <motion.div key={activeTab} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        {ActiveComponent && <ActiveComponent ref={activeRef} />}
+      </motion.div>
     </div>
   );
 }

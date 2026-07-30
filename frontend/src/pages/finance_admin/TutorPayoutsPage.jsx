@@ -1,56 +1,33 @@
 // frontend/src/pages/finance_admin/TutorPayoutsPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Landmark, Clock, CheckCircle, Percent, 
   RefreshCw, DollarSign, Users,
-  Search, Shield, Mail, 
-  Send, Coins, Trash2, Star,
-  Plus, X
+  Search, Shield, 
+  Coins, Trash2, Star
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import { getRates } from '../../services/globalConfigService';
-import { createPayout, getActiveTutors } from '../../services/payoutService';
 
-// ============================================
-// 🚀 FORCE BACKEND URL (Direct Hardcode Fix)
-// ============================================
 const API_URL = 'http://localhost:5000';
-// ============================================
-
 const EXCHANGE_RATE = 20.00;
 const PLATFORM_COMMISSION = 0.20;
 
 export default function TutorPayoutsPage() {
+  // ========== STATES ==========
   const [creditRate, setCreditRate] = useState(EXCHANGE_RATE);
   const [platformCommission, setPlatformCommission] = useState(PLATFORM_COMMISSION);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [tutors, setTutors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [processingId, setProcessingId] = useState(null);
-  const [transactions, setTransactions] = useState({ totalCredits: 0, totalAmount: 0, count: 0 });
   const [declinedCount, setDeclinedCount] = useState(0);
-  
-  // Add Payout Modal States
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [newPayout, setNewPayout] = useState({
-    tutorId: '',
-    tutorName: '',
-    totalTokens: '',
-    netPayout: '',
-    bankName: '',
-    accountNo: '',
-    tutorEmail: '',
-    tutorPhone: '',
-    university: '',
-    qualifications: ''
-  });
 
-  // ⭐ Fetch system settings
+  // ========== FETCH SETTINGS ==========
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -69,243 +46,57 @@ export default function TutorPayoutsPage() {
     fetchSettings();
   }, []);
 
-  // ⭐ Fetch tutors with REAL data AND status from payouts
-  const fetchTutors = async () => {
+  // ========== FETCH TUTORS (Auto-Sync ඇතුළත්) ==========
+  const fetchTutors = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch both tutors and payouts in parallel
-      const [tutorsRes, payoutsRes] = await Promise.all([
-        axios.get(`${API_URL}/api/finance/active-tutors`),
-        axios.get(`${API_URL}/api/finance/get-all`)
-      ]);
+      const response = await axios.get(`${API_URL}/api/payouts/active-tutors`);
       
-      if (tutorsRes.data?.success) {
-        const allPayouts = payoutsRes.data?.payouts || [];
-        const stats = payoutsRes.data?.stats || {};
-        
-        const tutorsWithStatus = (tutorsRes.data.tutors || []).map(tutor => {
-          const hasSettledPayout = allPayouts.some(p => 
-            p.tutorId === tutor.id && 
-            (p.status === 'Settled' || p.status === 'settled')
-          );
-          
-          const hasPendingPayout = allPayouts.some(p => 
-            p.tutorId === tutor.id && 
-            (p.status === 'Pending' || p.status === 'pending')
-          );
-          
-          return {
-            ...tutor,
-            status: hasSettledPayout ? 'Settled' : 
-                    hasPendingPayout ? 'Pending' : 
-                    tutor.status || 'Pending'
-          };
-        });
-        
-        // ✅ Only tutors with at least 1 paper are shown
-        const tutorsWithPapers = tutorsWithStatus.filter(t => (t.paperCount || 0) > 0);
-        
+      console.log('📡 API Response:', response.data);
+      
+      if (response.data && response.data.success) {
+        const tutorsData = response.data.tutors || [];
+        const tutorsWithPapers = tutorsData.filter(t => (t.paperCount || 0) > 0);
         setTutors(tutorsWithPapers);
-        console.log('✅ Tutors with REAL data and status (with papers):', tutorsWithPapers);
+        console.log('✅ Final tutors set:', tutorsWithPapers);
         
-        setTransactions({
-          totalCredits: stats.totalTokens || 0,
-          totalAmount: stats.totalAmount || 0,
-          count: payoutsRes.data.settledPayouts?.length || 0
-        });
-        
+        const declined = tutorsData.filter(t => t.status === 'Declined');
+        setDeclinedCount(declined.length);
       } else {
         setError('Failed to fetch tutors');
         setTutors([]);
       }
-
-      const txRes = await axios.get(`${API_URL}/api/finance/total-credits`);
-      if (txRes.data?.success) {
-        setTransactions({
-          totalCredits: txRes.data.totalCredits || 0,
-          totalAmount: txRes.data.totalAmount || 0,
-          count: txRes.data.count || 0
-        });
-      }
-
-    } catch (error) {
-      console.error('Error fetching tutors:', error);
-      setError(error.message || 'Network error');
+    } catch (err) {
+      console.error('❌ Error fetching tutors:', err);
+      setError(err.message || 'Network error');
       setTutors([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
+  // 👇 UI Refresh වෙන හැම වෙලාවකම fetchTutors call වෙනවා
   useEffect(() => {
     fetchTutors();
-  }, []);
+  }, [fetchTutors]);
 
-  // ⭐ Fetch transactions
-  const fetchTransactions = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/finance/total-credits`);
-      
-      if (response.data && response.data.success) {
-        setTransactions({
-          totalCredits: response.data.totalCredits || 0,
-          totalAmount: response.data.totalAmount || 0,
-          count: response.data.count || 0
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching transactions:', error);
-    }
-  };
-
-  // ⭐ Get declined count
-  useEffect(() => {
-    const fetchDeclinedCount = async () => {
-      try {
-        const response = await axios.get(`${API_URL}/api/finance/declined`);
-        if (response.data && response.data.success) {
-          setDeclinedCount(response.data.count || 0);
-        }
-      } catch (error) {
-        console.error('Error fetching declined count:', error);
-      }
-    };
-    fetchDeclinedCount();
-  }, []);
-
-  // ⭐ Process payout (Settle/Decline)
-  const handleProcessPayout = async (tutorId, action) => {
-    try {
-      setProcessingId(tutorId);
-      const newStatus = action === 'approve' ? 'Settled' : 'Declined';
-
-      const tutor = tutors.find(t => t.id === tutorId);
-      if (!tutor) {
-        throw new Error('Tutor not found');
-      }
-      
-      const payoutData = {
-        tutorId: tutorId,
-        tokens: tutor.totalTokens || 0,
-        creditValue: creditRate
-      };
-
-      const createResponse = await axios.post(`${API_URL}/api/finance/request`, payoutData);
-      
-      if (createResponse.data.success) {
-        const payoutId = createResponse.data.payoutId;
-        
-        if (payoutId) {
-          const updateResponse = await axios.patch(`${API_URL}/api/finance/update-status/${payoutId}`, {
-            status: newStatus
-          });
-
-          if (updateResponse.data.success) {
-            if (newStatus === 'Settled') {
-              setTutors(prevTutors => 
-                prevTutors.map(t => 
-                  t.id === tutorId ? { ...t, status: 'Settled' } : t
-                )
-              );
-              await fetchTransactions();
-              console.log('✅ Payout settled successfully!');
-            } else {
-              setTutors(prevTutors => prevTutors.filter(t => t.id !== tutorId));
-              console.log('❌ Payout declined');
-            }
-          }
-        }
-      }
-
-    } catch (error) {
-      console.error('Error processing payout:', error);
-      alert('Error processing payout: ' + error.message);
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  // ⭐ Delete declined payout
-  const handleDeleteDeclined = async (id) => {
-    if (!confirm('Delete this declined payout?')) return;
-    try {
-      setProcessingId(id);
-      await axios.delete(`${API_URL}/api/finance/${id}`);
-      setTutors(tutors.filter(t => t.id !== id));
-    } catch (error) {
-      console.error('Error deleting:', error);
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  // ⭐ Clear all declined
+  // ========== CLEAR ALL DECLINED ==========
   const clearAllDeclined = async () => {
     if (!confirm(`Delete all ${declinedCount} declined payouts?`)) return;
     try {
-      const response = await axios.get(`${API_URL}/api/finance/declined`);
-      if (response.data && response.data.success) {
-        const declinedIds = response.data.payouts.map(p => p.id);
-        for (const id of declinedIds) {
-          await axios.delete(`${API_URL}/api/finance/${id}`);
-        }
-        setDeclinedCount(0);
-        alert(`Deleted ${declinedIds.length} declined payouts`);
-      }
+      await axios.delete(`${API_URL}/api/payouts/declined/all`);
+      setDeclinedCount(0);
+      await fetchTutors(); // refresh data
+      alert('✅ All declined payouts deleted.');
     } catch (error) {
       console.error('Error deleting declined:', error);
+      alert('Failed to delete declined payouts.');
     }
   };
 
-  // ⭐ Add new payout using payoutService
-  const handleAddPayout = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    
-    try {
-      const result = await createPayout({
-        tutorId: newPayout.tutorId,
-        tutorName: newPayout.tutorName,
-        totalTokens: parseInt(newPayout.totalTokens) || 0,
-        netPayout: parseFloat(newPayout.netPayout) || 0,
-        bankName: newPayout.bankName || 'Not Specified',
-        accountNo: newPayout.accountNo || 'N/A',
-        tutorEmail: newPayout.tutorEmail || '',
-        tutorPhone: newPayout.tutorPhone || '',
-        university: newPayout.university || '',
-        qualifications: newPayout.qualifications || ''
-      });
-
-      if (result && result.success) {
-        alert('✅ Payout added successfully!');
-        setShowAddModal(false);
-        setNewPayout({
-          tutorId: '',
-          tutorName: '',
-          totalTokens: '',
-          netPayout: '',
-          bankName: '',
-          accountNo: '',
-          tutorEmail: '',
-          tutorPhone: '',
-          university: '',
-          qualifications: ''
-        });
-        fetchTutors();
-      } else {
-        alert('❌ Failed to add payout');
-      }
-    } catch (error) {
-      console.error('Error adding payout:', error);
-      alert('❌ Failed to add payout: ' + (error.response?.data?.error || error.message));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ⭐ Filter logic
+  // ========== FILTERS ==========
   const filteredTutors = tutors.filter(t => {
     if (t.status === 'Declined') return false;
     const matchFilter = filter === 'all' || t.status.toLowerCase() === filter.toLowerCase();
@@ -315,27 +106,23 @@ export default function TutorPayoutsPage() {
     return matchFilter && matchSearch;
   });
 
-  // ⭐ Calculate totals from FILTERED tutors ONLY
-  const totalCreditsUsed = filteredTutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
-  const totalGrossFiltered = filteredTutors.reduce((sum, t) => sum + (t.grossAmount || 0), 0);
-  const totalPayoutFiltered = filteredTutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
-  const pendingCount = filteredTutors.filter(t => t.status === 'Pending').length;
-  const settledCount = filteredTutors.filter(t => t.status === 'Settled').length;
+  // ========== STATS (ALL tutors, not filtered) ==========
+  const totalCreditsUsed = tutors.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+  const totalGross = tutors.reduce((sum, t) => sum + (t.grossAmount || 0), 0);
+  const totalPayout = tutors.reduce((sum, t) => sum + (t.netPayout || 0), 0);
+  const pendingCount = tutors.filter(t => t.status === 'Pending').length;
+  const settledCount = tutors.filter(t => t.status === 'Settled').length;
 
-  console.log('📊 UI Stats:', { pendingCount, settledCount, totalCreditsUsed, totalGrossFiltered, totalPayoutFiltered });
-
-  // ⭐ Status config
+  // ========== STATUS CONFIG ==========
   const getStatusConfig = (status) => {
     const configs = {
       'Pending': { 
-        color: '#f59e0b', 
         bg: 'bg-amber-500/10', 
         border: 'border-amber-500/20',
         text: 'text-amber-400',
         icon: Clock,
       },
       'Settled': { 
-        color: '#10b981', 
         bg: 'bg-emerald-500/10', 
         border: 'border-emerald-500/20',
         text: 'text-emerald-400',
@@ -345,7 +132,7 @@ export default function TutorPayoutsPage() {
     return configs[status] || configs['Pending'];
   };
 
-  // ⭐ Loading
+  // ========== LOADING ==========
   if (loading || settingsLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[500px] space-y-4">
@@ -355,9 +142,24 @@ export default function TutorPayoutsPage() {
     );
   }
 
-  // ⭐ Render
+  // ========== ERROR ==========
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[500px] space-y-4">
+        <div className="text-red-400 text-lg">⚠️ {error}</div>
+        <button
+          onClick={fetchTutors}
+          className="px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-all"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // ========== RENDER ==========
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 bg-[#050d1a] min-h-screen">
       {/* HEADER */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -391,15 +193,7 @@ export default function TutorPayoutsPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowAddModal(true)}
-              className="px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-emerald-500/30 transition-all duration-300"
-            >
-              <Plus size={16} />
-              Add Payout
-            </motion.button>
+            {/* ✅ Add Payout Button ඉවත් කරන ලදී */}
             
             {declinedCount > 0 && (
               <motion.button
@@ -416,12 +210,12 @@ export default function TutorPayoutsPage() {
         </div>
       </motion.div>
 
-      {/* ⭐ STATS ROW - Using FILTERED tutors data ONLY */}
+      {/* STATS ROW */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { 
             label: 'Platform Fee (20%)', 
-            value: `${(totalGrossFiltered * 0.2).toLocaleString() || 0}`,  
+            value: `${(totalGross * 0.2).toLocaleString() || 0}`,  
             icon: Percent, 
             color: 'text-rose-400' 
           },
@@ -489,7 +283,7 @@ export default function TutorPayoutsPage() {
                 </div>
                 <div>
                   <p className="text-[10px] text-gray-400 font-medium uppercase">Total Payout</p>
-                  <p className="text-base font-bold text-white">LKR {totalPayoutFiltered.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                  <p className="text-base font-bold text-white">LKR {totalPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
                 </div>
               </div>
             </div>
@@ -531,14 +325,13 @@ export default function TutorPayoutsPage() {
         </div>
       </div>
 
-      {/* TUTOR CARDS */}
+      {/* TUTOR CARDS - WITHOUT ACTION BUTTONS */}
       <AnimatePresence>
         {filteredTutors.length > 0 ? (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {filteredTutors.map((tutor, index) => {
               const statusConfig = getStatusConfig(tutor.status);
               const StatusIcon = statusConfig.icon;
-              const isProcessing = processingId === tutor.id;
 
               const totalTokens = tutor.totalTokens || 0;
               const paperCount = tutor.paperCount || 0;
@@ -576,14 +369,14 @@ export default function TutorPayoutsPage() {
                       </div>
                     </div>
 
-                    {/* REAL DATA DISPLAY */}
+                    {/* Data Display */}
                     <div className="grid grid-cols-3 gap-2 my-4 p-3 bg-black/30 rounded-xl border border-white/5">
                       <div className="text-center">
                         <p className="text-[10px] text-gray-400 uppercase font-bold">Total Credits</p>
-                        <p className="text-lg font-bold text-white">{payout.totalTokens} Credits</p>
-                        <p className="text-[10px] text-gray-500">
-                          {payout.paperCount} papers • {payout.studentCount} students
-                        </p>
+                        <p className="text-lg font-bold text-white">{totalTokens} Credits</p>
+                        {/* <p className="text-[10px] text-gray-500">
+                          {paperCount} papers • {studentCount} students
+                        </p> */}
                         {paperCount > 0 && (
                           <p className="text-[10px] text-emerald-400/60">
                             {paperCount} × {tokensPerPaper} = {totalTokens}
@@ -594,7 +387,7 @@ export default function TutorPayoutsPage() {
                       <div className="text-center border-x border-white/10">
                         <p className="text-[10px] text-rose-400 uppercase font-bold">System Commission (20%)</p>
                         <p className="text-lg font-bold text-rose-400">
-                          - LKR {payout.commissionAmount?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                           LKR {commissionAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                         <p className="text-[8px] text-gray-500">
                           {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × {(platformCommission * 100).toFixed(0)}%
@@ -604,7 +397,7 @@ export default function TutorPayoutsPage() {
                       <div className="text-center">
                         <p className="text-[10px] text-emerald-400 uppercase font-bold">Net Tutor Payout (80%)</p>
                         <p className="text-xl font-bold text-emerald-400">
-                          LKR {payout.netPayout?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          LKR {netPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                         <p className="text-[8px] text-gray-500">
                           {grossAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} × 80%
@@ -613,7 +406,7 @@ export default function TutorPayoutsPage() {
                     </div>
 
                     {/* Bank Info */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-white/[0.02] rounded-lg border border-white/5 mb-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-white/[0.02] rounded-lg border border-white/5">
                       <div className="flex items-center gap-2.5">
                         <div className="p-1.5 bg-blue-500/10 rounded-lg">
                           <Landmark size={14} className="text-blue-400" />
@@ -634,37 +427,16 @@ export default function TutorPayoutsPage() {
                       )}
                     </div>
 
-                    {/* Action Buttons */}
-                    {tutor.status === 'Pending' && (
-                      <div className="mt-4 flex items-center gap-2 justify-end">
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => handleProcessPayout(tutor.id, 'decline')}
-                          disabled={isProcessing}
-                          className="px-4 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:text-red-300 rounded-lg text-xs font-medium flex items-center gap-2 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                        >
-                          {isProcessing ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                          Decline
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => handleProcessPayout(tutor.id, 'approve')}
-                          disabled={isProcessing}
-                          className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 rounded-lg text-xs font-medium flex items-center gap-2 hover:bg-emerald-500/20 transition-all duration-300 disabled:opacity-50"
-                        >
-                          {isProcessing ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                          Settle
-                        </motion.button>
-                      </div>
-                    )}
-
-                    {/* Completed Message */}
+                    {/* ✅ Status Messages - NO ACTION BUTTONS */}
                     {tutor.status === 'Settled' && (
                       <div className="mt-4 flex items-center gap-2 justify-end text-xs font-mono font-bold text-gray-500">
                         <CheckCircle size={14} className="text-emerald-400" />
                         Completed • Transaction Added to Card
+                      </div>
+                    )}
+                    {tutor.status === 'Pending' && (
+                      <div className="mt-4 text-right text-xs font-mono text-amber-400/60">
+                        ⏳ Pending settlement (auto-settles on 25th)
                       </div>
                     )}
                   </GlassCard>
@@ -682,138 +454,6 @@ export default function TutorPayoutsPage() {
               <p className="text-sm text-gray-400">Only tutors who have received exam purchases will appear here.</p>
             </div>
           </GlassCard>
-        )}
-      </AnimatePresence>
-
-      {/* ⭐ ADD PAYOUT MODAL */}
-      <AnimatePresence>
-        {showAddModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
-            onClick={() => setShowAddModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-[#0a1628] border border-white/10 rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Plus size={20} className="text-emerald-400" />
-                  Add New Payout
-                </h2>
-                <button
-                  onClick={() => setShowAddModal(false)}
-                  className="p-1 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <X size={20} className="text-gray-400" />
-                </button>
-              </div>
-              
-              <form onSubmit={handleAddPayout} className="space-y-4">
-                <div>
-                  <label className="text-xs text-gray-400 font-medium block mb-1">Tutor ID *</label>
-                  <input
-                    type="text"
-                    value={newPayout.tutorId}
-                    onChange={(e) => setNewPayout({...newPayout, tutorId: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
-                    placeholder="Enter tutor ID"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-400 font-medium block mb-1">Tutor Name *</label>
-                  <input
-                    type="text"
-                    value={newPayout.tutorName}
-                    onChange={(e) => setNewPayout({...newPayout, tutorName: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
-                    placeholder="Enter tutor name"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-400 font-medium block mb-1">Total Tokens *</label>
-                  <input
-                    type="number"
-                    value={newPayout.totalTokens}
-                    onChange={(e) => setNewPayout({...newPayout, totalTokens: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
-                    placeholder="Enter total tokens"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-400 font-medium block mb-1">Net Payout (LKR) *</label>
-                  <input
-                    type="number"
-                    value={newPayout.netPayout}
-                    onChange={(e) => setNewPayout({...newPayout, netPayout: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
-                    placeholder="Enter net payout"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-400 font-medium block mb-1">Bank Name</label>
-                  <input
-                    type="text"
-                    value={newPayout.bankName}
-                    onChange={(e) => setNewPayout({...newPayout, bankName: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
-                    placeholder="Enter bank name"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-400 font-medium block mb-1">Account Number</label>
-                  <input
-                    type="text"
-                    value={newPayout.accountNo}
-                    onChange={(e) => setNewPayout({...newPayout, accountNo: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-lg text-white focus:border-emerald-500/50 focus:outline-none"
-                    placeholder="Enter account number"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3 pt-2">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 text-gray-400 rounded-lg text-sm font-medium hover:bg-white/10 transition-all duration-300"
-                    disabled={submitting}
-                  >
-                    Cancel
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="submit"
-                    disabled={submitting}
-                    className="flex-1 px-4 py-2.5 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/30 transition-all duration-300 disabled:opacity-50"
-                  >
-                    {submitting ? (
-                      <RefreshCw size={16} className="animate-spin mx-auto" />
-                    ) : (
-                      'Add Payout'
-                    )}
-                  </motion.button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>

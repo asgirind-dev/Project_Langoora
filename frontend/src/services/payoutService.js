@@ -21,6 +21,7 @@ export const createPayout = async (payoutData) => {
       console.log("✅ Saved Payout ID:", response.data.payoutId);
       return response.data;
     }
+    return { success: false, error: 'Failed to create payout' };
   } catch (error) {
     console.error("❌ Error creating payout:", error);
     throw error;
@@ -41,12 +42,19 @@ export const getAllPayouts = async () => {
 };
 
 // ============================================
-// Get Active Tutors
+// ✅ Get Active Tutors (FIXED - returns array)
 // ============================================
 export const getActiveTutors = async () => {
   try {
     const response = await axios.get(`${API_URL}/api/payouts/active-tutors`);
-    return response.data;
+    
+    console.log('📡 API Response:', response.data);
+    
+    // ✅ හරියට tutors array එක extract කරන්න
+    if (response.data && response.data.success) {
+      return response.data.tutors || []; // 👈 මෙතනදි tutors array එක return කරන්න
+    }
+    return [];
   } catch (error) {
     console.error('❌ Error fetching tutors:', error);
     throw error;

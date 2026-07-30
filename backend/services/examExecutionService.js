@@ -237,7 +237,8 @@ const startExam = async (examId, studentId) => {
     passed: false,
     title: examData.title || 'Language Examination',
     duration_minutes: Number(examData.duration_minutes || 60),
-    level_id: examData.level_id || 'N5',
+    // ✅ FIX: level_id should be null if not provided, not default 'N5'
+    level_id: examData.level_id || null,
     category_id: examData.category_id || 'jlpt',
     tutor_id: examData.tutor_id || null,
     tutor_name: examData.tutor_name || 'Expert Tutor',
@@ -494,28 +495,66 @@ function calculateResult(passingType, passingConfig, totalScore, sectionScores) 
   }
 }
 
+
+// examExecutionService.js
+
 /**
  * 🎯 JLPT Result Calculation (TOTAL_AND_SECTION)
  * 
  * Official JLPT Rules:
  * - Total score must be >= overallPassScore
  * - Each section must be >= its minimumScore
- * - TWO sections only: "Language Knowledge + Reading" and "Listening"
- * - Section scores are calculated as percentages (0-100)
+ * - 4 sections: Vocabulary, Grammar, Reading, Listening
+ * - Language Knowledge = Vocabulary + Grammar (combined)
  * 
  * @param {object} config - { overallPassScore, sections: [{ name, minimumScore }] }
  * @param {number} totalScore - Overall percentage (0-100)
- * @param {object} sectionScores - { "Language Knowledge + Reading": 45, "Listening": 50 }
+ * @param {object} sectionScores - { "Vocabulary": 45, "Grammar": 50, "Reading": 40, "Listening": 30 }
  * @returns {object} { passed, reason, totalPassed, allSectionsPassed, sectionResults, ... }
  */
 function calculateJLPTResult(config, totalScore, sectionScores) {
   const overallPass = config?.overallPassScore || 80;
-  const sections = config?.sections || [
-    { name: 'Language Knowledge + Reading', minimumScore: 38 },
-    { name: 'Listening', minimumScore: 19 }
-  ];
-  
+
+  // ✅ FIX (bogus FAIL bug): official JLPT sections — and the ONLY keys that
+  // ever actually appear in `sectionScores` (see submitExam) — are
+  // Vocabulary, Grammar, Reading, Listening.
+  //
+  // Some exams still have an OLDER 2-entry passing_config saved in Firestore
+  // from before the exam was split into 4 sections, e.g.:
+  //   [{ name: 'Language Knowledge + Reading', minimumScore: 38 },
+  //    { name: 'Listening', minimumScore: 19 }]
+  // Previously this function trusted `config.sections` verbatim and looked
+  // up `sectionScores['Language Knowledge + Reading']` — a key that never
+  // exists — which silently evaluated to 0% and produced a false FAIL, even
+  // when every real section had been passed. To make this robust no matter
+  // what is stored in the exam's config, we always evaluate the 4 real
+  // section names, and only borrow a per-section minimumScore from config
+  // when config actually defines it under one of those real names.
+  const defaultMinimums = {
+    Vocabulary: 38,
+    Grammar: 38,
+    Reading: 38,
+    Listening: 19,
+  };
+  const REAL_SECTION_NAMES = Object.keys(defaultMinimums);
+
+  const configMinimums = {};
+  if (Array.isArray(config?.sections)) {
+    config.sections.forEach((s) => {
+      if (s?.name && REAL_SECTION_NAMES.includes(s.name) && s.minimumScore !== undefined) {
+        configMinimums[s.name] = s.minimumScore;
+      }
+    });
+  }
+
+  const sections = REAL_SECTION_NAMES.map((name) => ({
+    name,
+    minimumScore: configMinimums[name] !== undefined ? configMinimums[name] : defaultMinimums[name],
+  }));
+
   console.log(`📊 JLPT: Overall Pass = ${overallPass}%`);
+  console.log(`📊 Section Scores received:`, sectionScores);
+  console.log(`📊 JLPT: Evaluating against sections:`, sections);
   
   // Check total score
   const totalPassed = totalScore >= overallPass;
@@ -531,7 +570,10 @@ function calculateJLPTResult(config, totalScore, sectionScores) {
   sections.forEach(section => {
     const sectionName = section.name;
     const minScore = section.minimumScore || 0;
+
+    // ✅ Get the actual score achieved for this real section
     const achievedScore = sectionScores[sectionName] !== undefined ? sectionScores[sectionName] : 0;
+    
     const passed = achievedScore >= minScore;
     
     console.log(`📊 ${sectionName}: ${achievedScore}% (Required: ${minScore}%) ${passed ? '✅ PASSED' : '❌ FAILED'}`);
@@ -550,6 +592,13 @@ function calculateJLPTResult(config, totalScore, sectionScores) {
       failedSectionRequired = minScore;
     }
   });
+
+  // ✅ FIX: compute the combined "Language Knowledge" (Vocabulary + Grammar)
+  // score for DISPLAY purposes. Pass/fail is still decided section-by-section
+  // above (matching official JLPT rules), so this is informational only.
+  const vocabScore = sectionScores['Vocabulary'] || 0;
+  const grammarScore = sectionScores['Grammar'] || 0;
+  const languageKnowledgeScore = Math.round((vocabScore + grammarScore) / 2);
   
   const passed = totalPassed && allSectionsPassed;
   
@@ -573,6 +622,7 @@ function calculateJLPTResult(config, totalScore, sectionScores) {
     allSectionsPassed,
     overallPass,
     sectionResults,
+    languageKnowledgeScore,
     totalScore,
     passingType: 'TOTAL_AND_SECTION'
   };
@@ -781,25 +831,38 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
     formattedSectionScores[section] = Math.round((sectionScores[section] / sectionTotals[section]) * 100);
   });
 
-  // ─── Get Passing Configuration ──────────────────────────────────────
+  // ─── ✅ FIXED: Get Passing Configuration with Normalized IDs ──────
   let passingType = 'TOTAL_AND_SECTION';
   let passingConfig = { overallPassScore: 65, sections: [] };
   let passingSource = 'default';
+
+  console.log(`📊 DEBUG: examId = ${attemptData.examId}`);
+  console.log(`📊 DEBUG: raw category_id = ${attemptData.category_id}`);
+  console.log(`📊 DEBUG: raw level_id = ${attemptData.level_id}`);
 
   try {
     const examDoc = await db.collection('exams').doc(attemptData.examId).get();
     if (examDoc.exists) {
       const examData = examDoc.data();
-      const categoryId = examData.category_id;
-      const levelId = examData.level_id;
+      
+      // ✅ FIXED: Normalize category_id to lowercase
+      const rawCategoryId = examData.category_id || '';
+      const categoryId = rawCategoryId.toLowerCase().replace(/[\s_]/g, '-').trim();
+      
+      // ✅ FIXED: Normalize level_id to lowercase
+      const rawLevelId = examData.level_id || '';
+      const levelId = rawLevelId.toLowerCase().replace(/[\s_]/g, '-').trim();
 
-      // ✅ Try to get passing config from level first, then category
+      console.log(`📊 DEBUG: Normalized category_id = ${categoryId}`);
+      console.log(`📊 DEBUG: Normalized level_id = ${levelId}`);
+
       if (categoryId) {
         const categoryRef = db.collection('exam_categories').doc(categoryId);
         const categoryDoc = await categoryRef.get();
         
         if (categoryDoc.exists) {
           const categoryData = categoryDoc.data();
+          console.log(`📊 DEBUG: Category data found for ${categoryId}`);
           
           // Level-level config takes priority
           if (levelId) {
@@ -811,6 +874,10 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
             const levelDoc = await levelRef.get();
             if (levelDoc.exists) {
               const levelData = levelDoc.data();
+              console.log(`📊 DEBUG: Level data found for ${levelId}`);
+              console.log(`📊 DEBUG: Level passing_type = ${levelData.passing_type}`);
+              console.log(`📊 DEBUG: Level passing_config = ${JSON.stringify(levelData.passing_config)}`);
+              
               if (levelData.passing_type && levelData.passing_config) {
                 passingType = levelData.passing_type;
                 passingConfig = levelData.passing_config;
@@ -822,11 +889,14 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
                 passingSource = 'category';
                 console.log(`✅ Using category passing configuration: ${passingType}`);
               }
-            } else if (categoryData.passing_type && categoryData.passing_config) {
-              passingType = categoryData.passing_type;
-              passingConfig = categoryData.passing_config;
-              passingSource = 'category';
-              console.log(`✅ Using category passing configuration: ${passingType}`);
+            } else {
+              console.log(`⚠️ Level ${levelId} not found in Firestore`);
+              if (categoryData.passing_type && categoryData.passing_config) {
+                passingType = categoryData.passing_type;
+                passingConfig = categoryData.passing_config;
+                passingSource = 'category';
+                console.log(`✅ Using category passing configuration: ${passingType}`);
+              }
             }
           } else if (categoryData.passing_type && categoryData.passing_config) {
             passingType = categoryData.passing_type;
@@ -834,12 +904,18 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
             passingSource = 'category';
             console.log(`✅ Using category passing configuration: ${passingType}`);
           }
+        } else {
+          console.log(`⚠️ Category ${categoryId} not found in Firestore`);
         }
       }
     }
   } catch (err) {
     console.warn('⚠️ Could not fetch passing configuration, using default:', err.message);
   }
+
+  console.log(`📊 FINAL passingType: ${passingType}`);
+  console.log(`📊 FINAL passingConfig: ${JSON.stringify(passingConfig, null, 2)}`);
+  console.log(`📊 FINAL passingSource: ${passingSource}`);
 
   // ─── Calculate Result using Result Engine ──────────────────────────
   const result = calculateResult(
@@ -893,6 +969,7 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
     achievedLevel: result.level,
     failReason: result.reason,
     sectionResults: result.sectionResults || [],
+    languageKnowledgeScore: result.languageKnowledgeScore, // ✅ FIX: Vocabulary + Grammar combined score
     attempts: (attemptData.attempts || 0) + 1,
   };
 
@@ -913,7 +990,8 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
     exam_id: attemptData.examId,
     title: attemptData.title || 'Language Examination',
     category_id: attemptData.category_id || 'jlpt',
-    level_id: attemptData.level_id || 'N5',
+    // ✅ FIX: Use null instead of 'N5' for empty level_id
+    level_id: attemptData.level_id || null,
     tutor_id: attemptData.tutor_id || null,
     tutor_name: attemptData.tutor_name || 'Expert Tutor',
     score: totalCorrect,
@@ -931,6 +1009,7 @@ const submitExam = async (attemptId, answers, flagged, autoSubmitted, studentId)
     cutOffScore: result.cutOffScore,
     achievedLevel: result.level,
     failReason: result.reason,
+    languageKnowledgeScore: result.languageKnowledgeScore, // ✅ FIX: Vocabulary + Grammar combined score
     time_taken_seconds: timeTakenSeconds,
     student_answers: studentAnswers,
     submitted_at: endTime.toISOString(),

@@ -1,13 +1,15 @@
 // frontend/src/components/admin/homepageCMS.jsx
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   RefreshCw, Plus, Trash2, Image, Upload, Type, Eye, 
-  Languages, Edit3 
+  Languages, Edit3, CheckCircle, AlertCircle, X
 } from 'lucide-react';
 import GlassCard from '../ui/GlassCard';
 import Button from '../ui/Button';
 import { fetchHeroBanners, saveHeroBanners } from '../../services/cmsService';
 import imageCompression from 'browser-image-compression';
+import Portal from '../ui/Portal';
 
 const badgeOptions = ['', '🔥 New', '🚀 Target', '💎 Premium', '⚡ Hot', '📢 Notice'];
 
@@ -22,7 +24,15 @@ const HomepageCMS = forwardRef((props, ref) => {
   const [replaceFileName, setReplaceFileName] = useState('');
   const [selectedBannerId, setSelectedBannerId] = useState(null);
 
-  // Expose methods to parent component
+  // ✅ Toast state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  // ✅ Toast function
+  const showNotification = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
+
   useImperativeHandle(ref, () => ({
     getBanners: () => heroBanners,
     setBanners: (banners) => setHeroBanners(banners),
@@ -30,8 +40,10 @@ const HomepageCMS = forwardRef((props, ref) => {
     saveBanners: async () => {
       try {
         await saveHeroBanners(heroBanners);
+        showNotification('✅ Banners saved successfully!', 'success');
         return { success: true, message: 'Banners saved successfully' };
       } catch (error) {
+        showNotification('❌ ' + (error.message || 'Failed to save banners'), 'error');
         return { success: false, message: error.message };
       }
     }
@@ -51,6 +63,7 @@ const HomepageCMS = forwardRef((props, ref) => {
       }
     } catch (error) {
       console.error(error);
+      showNotification('❌ Failed to load banners', 'error');
     }
     setIsLoading(false);
   };
@@ -70,6 +83,7 @@ const HomepageCMS = forwardRef((props, ref) => {
     } catch (error) {
       console.error(error);
       setFileName('');
+      showNotification('❌ Failed to compress image', 'error');
     } finally {
       setIsCompressing(false);
     }
@@ -88,10 +102,11 @@ const HomepageCMS = forwardRef((props, ref) => {
       reader.readAsDataURL(compressedBlob);
       reader.onload = () => {
         setHeroBanners(prev => prev.map(b => b.id === selectedBannerId ? { ...b, url: reader.result } : b));
+        showNotification('✅ Banner image updated successfully!', 'success');
       };
     } catch (error) {
       console.error(error);
-      alert('An error occurred while replacing the banner image layer. Please try again.');
+      showNotification('❌ Failed to replace banner image', 'error');
       setReplaceFileName('');
     } finally {
       setIsReplacing(false);
@@ -99,7 +114,10 @@ const HomepageCMS = forwardRef((props, ref) => {
   };
 
   const handleQueueBanner = () => {
-    if (!base64Image) return alert('Please select an image file before staging the asset node.');
+    if (!base64Image) {
+      showNotification('⚠️ Please select an image file first.', 'error');
+      return;
+    }
     const newId = Date.now();
     const newAssetNode = {
       id: newId,
@@ -118,14 +136,19 @@ const HomepageCMS = forwardRef((props, ref) => {
     setSelectedBannerId(newId);
     setBase64Image('');
     setFileName('');
+    showNotification('✅ Banner added successfully!', 'success');
   };
 
   const handleRemoveBanner = (id, e) => {
     e.stopPropagation();
-    if (heroBanners.length <= 1) return alert('At least one hero banner is required.');
+    if (heroBanners.length <= 1) {
+      showNotification('⚠️ At least one hero banner is required.', 'error');
+      return;
+    }
     const filtered = heroBanners.filter(banner => banner.id !== id);
     setHeroBanners(filtered);
     if (selectedBannerId === id) setSelectedBannerId(filtered[0].id);
+    showNotification('🗑️ Banner removed successfully.', 'success');
   };
 
   const updateActiveFields = (field, val) => {
@@ -135,7 +158,47 @@ const HomepageCMS = forwardRef((props, ref) => {
   const activeBanner = heroBanners.find(b => b.id === selectedBannerId) || null;
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 relative">
+      {/* ✅ Toast Notification - Top Right */}
+      <AnimatePresence>
+        {toast.show && (
+          <Portal>
+            <motion.div
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl max-w-sm ${
+                toast.type === 'success'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-emerald-950/20'
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-rose-950/20'
+              }`}
+            >
+              <div className={`p-1.5 rounded-xl border ${
+                toast.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/20'
+                  : 'bg-rose-500/10 border-rose-500/20'
+              }`}>
+                {toast.type === 'success'
+                  ? <CheckCircle size={18} className="text-emerald-400" />
+                  : <AlertCircle size={18} className="text-rose-400" />
+                }
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider opacity-60">Homepage CMS</p>
+                <p className="text-sm font-medium mt-0.5 leading-tight">{toast.message}</p>
+              </div>
+              <button 
+                onClick={() => setToast(p => ({ ...p, show: false }))} 
+                className="text-gray-400 hover:text-white p-1 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          </Portal>
+        )}
+      </AnimatePresence>
+
       <div className="xl:col-span-5 space-y-6">
         <GlassCard className="p-5 space-y-4">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider text-gray-400">1. Staged Core Asset Queue</h3>

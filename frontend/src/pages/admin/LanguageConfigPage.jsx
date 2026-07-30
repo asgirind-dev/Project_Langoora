@@ -1,3 +1,4 @@
+// frontend/src/pages/admin/LanguageConfigPage.jsx
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -22,6 +23,7 @@ import {
 import GlassCard from '/src/components/ui/GlassCard';
 import Button from '/src/components/ui/Button';
 import Portal from '/src/components/ui/Portal';
+import AdminNotifications from '../../components/admin/AdminNotifications';
 import axios from 'axios';
 
 // ------------------------------------------------------------------------------
@@ -739,7 +741,7 @@ export default function LanguageConfigPage() {
         )}
       </AnimatePresence>
 
-      {/* Header */}
+      {/* ✅ Header with Bell */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -752,6 +754,8 @@ export default function LanguageConfigPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+          {/* ✅ Notification Bell - Same level as Sync/Deploy buttons */}
+          <AdminNotifications />
           <Button
             variant="secondary"
             size="sm"

@@ -5,13 +5,15 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { 
   CheckCircle, XCircle, Trophy, Target, RotateCcw, BookOpen, ArrowRight, 
   Loader2, Star, ThumbsUp, Send, Clock, AlertCircle, Info,
-  Layers, AlertTriangle, Medal, Award, TrendingUp, BarChart3
+  Layers, AlertTriangle, Medal, Award, TrendingUp, BarChart3,
+  Smile, Frown, Meh, Sparkles, Zap, FileCheck, GraduationCap, Headphones
 } from 'lucide-react';
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import CircularProgress from '../../components/ui/CircularProgress';
 import studentApi from '../../services/examExecutionService';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 export default function ExamResultsPage() {
   const { id: attemptId } = useParams();
@@ -34,6 +36,21 @@ export default function ExamResultsPage() {
     wantsFollowUp: false,
     wouldRecommend: null,
   });
+
+  // FIX: prevent the browser's back button from returning to ExamTakePage
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+
+    const handlePopState = () => {
+      navigate('/student/my-exams', { replace: true });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +111,7 @@ export default function ExamResultsPage() {
     }
   };
 
-  // ----- Loading State -----
+  // Loading State
   if (loading) {
     return (
       <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-3 text-white">
@@ -104,7 +121,7 @@ export default function ExamResultsPage() {
     );
   }
 
-  // ----- Error State -----
+  // Error State
   if (error || !result) {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -118,7 +135,7 @@ export default function ExamResultsPage() {
     );
   }
 
-  // ----- Not Submitted State -----
+  // Not Submitted State
   if (result.status !== 'completed') {
     return (
       <div className="min-h-screen bg-[#030810] flex items-center justify-center px-4">
@@ -132,7 +149,6 @@ export default function ExamResultsPage() {
     );
   }
 
-  // ----- Extract Data -----
   const {
     examId,
     examTitle,
@@ -154,9 +170,32 @@ export default function ExamResultsPage() {
     tutor_id,
     tutor_name,
     passingConfig = {},
+    category_id,
+    level_id,
   } = result;
 
-  // Format time
+  // ✅ FIX (EPS-TOPIK display bug): Detect exam type more accurately
+  const normalizedCategory = category_id?.toUpperCase() || '';
+
+  // Check exact category matches first
+  const isJLPT = normalizedCategory === 'JLPT' || 
+                 normalizedCategory === 'JAPANESE' ||
+                 (normalizedCategory.includes('JLPT') && !normalizedCategory.includes('EPS'));
+
+  const isEPSTOPIK = normalizedCategory === 'EPS-TOPIK' || 
+                     normalizedCategory === 'EPS TOPIK' ||
+                     normalizedCategory.includes('EPS') ||
+                     passingType === 'CUT_OFF_SCORE';
+
+  // ✅ FIX: TOPIK should NOT match EPS-TOPIK
+  const isTOPIK = (normalizedCategory === 'TOPIK' || 
+                  (normalizedCategory.includes('TOPIK') && !normalizedCategory.includes('EPS'))) ||
+                  passingType === 'LEVEL_RANGE';
+
+  // Only fallback to passingType if category is not identified
+  const isJLPTByType = passingType === 'TOTAL_AND_SECTION' && !isEPSTOPIK && !isTOPIK;
+  const finalIsJLPT = isJLPT || isJLPTByType;
+
   const formatTime = (seconds) => {
     if (!seconds) return 'N/A';
     const mins = Math.floor(seconds / 60);
@@ -164,31 +203,30 @@ export default function ExamResultsPage() {
     return `${mins}m ${secs}s`;
   };
 
-  // Get passing type label
-  const getPassingTypeLabel = (type) => {
+  // ✅ FIX: Get passing type label based on category AND type
+  const getPassingTypeLabel = (type, categoryId) => {
+    const normalizedCat = categoryId?.toUpperCase() || '';
+    
+    // Check by category first
+    if (normalizedCat === 'JLPT' || normalizedCat === 'JAPANESE' || normalizedCat.includes('JLPT')) {
+      return 'JLPT (Total + Section)';
+    }
+    if (normalizedCat === 'EPS-TOPIK' || normalizedCat === 'EPS TOPIK' || normalizedCat.includes('EPS')) {
+      return 'EPS-TOPIK (Cut-off)';
+    }
+    if (normalizedCat === 'TOPIK' || (normalizedCat.includes('TOPIK') && !normalizedCat.includes('EPS'))) {
+      return 'TOPIK (Level Range)';
+    }
+    
+    // Fallback to passingType
     switch(type) {
       case 'TOTAL_AND_SECTION': return 'JLPT (Total + Section)';
       case 'CUT_OFF_SCORE': return 'EPS-TOPIK (Cut-off)';
-      case 'LEVEL_RANGE': return 'TOPIK I (Level Range)';
+      case 'LEVEL_RANGE': return 'TOPIK (Level Range)';
       default: return 'Standard';
     }
   };
 
-  // Get passing type description
-  const getPassingTypeDescription = (type) => {
-    switch(type) {
-      case 'TOTAL_AND_SECTION': 
-        return 'You must pass both the overall score AND each section minimum.';
-      case 'CUT_OFF_SCORE': 
-        return 'Your total score must meet or exceed the current recruitment cut-off.';
-      case 'LEVEL_RANGE': 
-        return 'Your score determines your achieved level.';
-      default: 
-        return 'Standard passing criteria applied.';
-    }
-  };
-
-  // Get passing source label
   const getPassingSourceLabel = (source) => {
     switch(source) {
       case 'level': return 'Level-specific configuration';
@@ -197,41 +235,112 @@ export default function ExamResultsPage() {
     }
   };
 
-  // Render JLPT section details
+  // ✅ FIX: Only render JLPT details if it's actually JLPT
   const renderJLPTDetails = () => {
+    // Don't show JLPT details for EPS-TOPIK or TOPIK
+    if (isEPSTOPIK || isTOPIK) return null;
     if (passingType !== 'TOTAL_AND_SECTION') return null;
     
+    const sections = passingConfig?.sections || [
+      { name: 'Vocabulary', minimumScore: 38 },
+      { name: 'Grammar', minimumScore: 38 },
+      { name: 'Reading', minimumScore: 38 },
+      { name: 'Listening', minimumScore: 19 }
+    ];
+    
+    const sectionScoreMap = {};
+    sectionScores.forEach(s => {
+      sectionScoreMap[s.section] = s.pct || 0;
+    });
+
+    const vocabScore = sectionScoreMap['Vocabulary'] || 0;
+    const grammarScore = sectionScoreMap['Grammar'] || 0;
+    const readingScore = sectionScoreMap['Reading'] || 0;
+    const listeningScore = sectionScoreMap['Listening'] || 0;
+    
+    const languageKnowledgeScore = vocabScore > 0 && grammarScore > 0 
+      ? Math.round((vocabScore + grammarScore) / 2)
+      : (vocabScore || grammarScore);
+
     return (
       <div className="mt-4 border-t border-white/5 pt-4">
         <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
           <BarChart3 size={16} className="text-blue-400" />
-          Section Requirements
+          JLPT Section Requirements (4 Sections)
         </h4>
+        
+        {/* Language Knowledge Combined Section */}
+        <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 mb-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-300">Language Knowledge (Vocabulary + Grammar)</span>
+            <span className={`text-sm font-bold ${languageKnowledgeScore >= 38 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {languageKnowledgeScore}%
+            </span>
+          </div>
+          <div className="flex items-center gap-4 mt-1 text-xs text-gray-400">
+            <span>Vocabulary: {vocabScore}%</span>
+            <span>Grammar: {grammarScore}%</span>
+            <span className={languageKnowledgeScore >= 38 ? 'text-emerald-400' : 'text-red-400'}>
+              {languageKnowledgeScore >= 38 ? 'Passed' : 'Failed'}
+            </span>
+          </div>
+        </div>
+
         <div className="space-y-2">
-          {sectionResults && sectionResults.length > 0 ? (
-            sectionResults.map((section, idx) => (
-              <div key={idx} className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
-                <span className="text-sm text-gray-300">{section.name}</span>
-                <div className="flex items-center gap-3">
-                  <span className={`text-sm font-medium ${section.passed ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {section.achieved}%
-                  </span>
-                  <span className="text-xs text-gray-500">Required: {section.required}%</span>
-                  {section.passed ? (
-                    <CheckCircle size={16} className="text-emerald-400" />
-                  ) : (
-                    <XCircle size={16} className="text-red-400" />
-                  )}
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-xs text-gray-500">No section details available</p>
-          )}
+          {/* Reading Section */}
+          <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+            <span className="text-sm text-gray-300 flex items-center gap-2">
+              <BookOpen size={14} className="text-green-400" />
+              Reading
+            </span>
+            <div className="flex items-center gap-3">
+              <span className={`text-sm font-medium ${readingScore >= 38 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {readingScore}%
+              </span>
+              <span className="text-xs text-gray-500">Required: 38%</span>
+              {readingScore >= 38 ? (
+                <CheckCircle size={16} className="text-emerald-400" />
+              ) : (
+                <XCircle size={16} className="text-red-400" />
+              )}
+            </div>
+          </div>
+
+          {/* Listening Section */}
+          <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+            <span className="text-sm text-gray-300 flex items-center gap-2">
+              <Headphones size={14} className="text-purple-400" />
+              Listening
+            </span>
+            <div className="flex items-center gap-3">
+              <span className={`text-sm font-medium ${listeningScore >= 19 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {listeningScore}%
+              </span>
+              <span className="text-xs text-gray-500">Required: 19%</span>
+              {listeningScore >= 19 ? (
+                <CheckCircle size={16} className="text-emerald-400" />
+              ) : (
+                <XCircle size={16} className="text-red-400" />
+              )}
+            </div>
+          </div>
+          
+          {/* Overall Pass Score */}
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-emerald-500/20">
             <span className="text-sm text-gray-300">Overall Passing Score</span>
-            <span className={`text-sm font-medium ${result.totalPassed !== false ? 'text-emerald-400' : 'text-red-400'}`}>
-              {overallPass || 'N/A'}%
+            <span className={`text-sm font-medium ${overallPass !== undefined && overallPass !== false ? 'text-emerald-400' : 'text-red-400'}`}>
+              {passingConfig?.overallPassScore || 80}%
+            </span>
+          </div>
+          
+          {/* Result summary for JLPT */}
+          <div className="flex items-center gap-2 bg-blue-500/10 p-3 rounded-xl border border-blue-500/20 mt-2">
+            <Info size={16} className="text-blue-400 flex-shrink-0" />
+            <span className="text-xs text-gray-300">
+              {passed 
+                ? `All requirements met! Overall score (${percentage}%) meets ${passingConfig?.overallPassScore || 80}% requirement and all sections passed.`
+                : `${failReason || 'Requirements not met. Check section scores above.'}`
+              }
             </span>
           </div>
         </div>
@@ -239,20 +348,22 @@ export default function ExamResultsPage() {
     );
   };
 
-  // Render EPS-TOPIK details
+  // ✅ FIX: Show EPS-TOPIK details for BOTH passingType AND category match
   const renderEPSDetails = () => {
-    if (passingType !== 'CUT_OFF_SCORE') return null;
+    if (passingType !== 'CUT_OFF_SCORE' && !isEPSTOPIK) return null;
+    
+    const cutOff = passingConfig?.cutOffScore || cutOffScore || 65;
     
     return (
       <div className="mt-4 border-t border-white/5 pt-4">
         <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
           <Target size={16} className="text-amber-400" />
-          Cut-off Information
+          EPS-TOPIK Cut-off Information
         </h4>
         <div className="space-y-2">
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
-            <span className="text-sm text-gray-300">Current Cut-off Score</span>
-            <span className="text-sm font-medium text-amber-400">{cutOffScore || 'N/A'}%</span>
+            <span className="text-sm text-gray-300">Current Recruitment Cut-off Score</span>
+            <span className="text-sm font-medium text-amber-400">{cutOff}%</span>
           </div>
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
             <span className="text-sm text-gray-300">Your Score</span>
@@ -260,11 +371,22 @@ export default function ExamResultsPage() {
               {percentage}%
             </span>
           </div>
+          
           {!passed && (
             <div className="flex items-center gap-2 bg-red-500/10 p-3 rounded-xl border border-red-500/20">
-              <AlertTriangle size={16} className="text-red-400" />
+              <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />
               <span className="text-xs text-red-300">
-                Current recruitment cut-off score not reached. Please check the official announcement for the latest cut-off.
+                Your score ({percentage}%) is below the current cut-off ({cutOff}%). 
+                Please check the official EPS-TOPIK announcement for the latest cut-off.
+              </span>
+            </div>
+          )}
+          
+          {passed && (
+            <div className="flex items-center gap-2 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
+              <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
+              <span className="text-xs text-emerald-300">
+                Congratulations! Your score ({percentage}%) meets the cut-off ({cutOff}%).
               </span>
             </div>
           )}
@@ -273,39 +395,89 @@ export default function ExamResultsPage() {
     );
   };
 
-  // Render TOPIK details
+  // ✅ FIX: Only render TOPIK details if it's actually TOPIK (not EPS-TOPIK)
   const renderTOPIKDetails = () => {
-    if (passingType !== 'LEVEL_RANGE') return null;
+    if (passingType !== 'LEVEL_RANGE' && !isTOPIK) return null;
+    
+    const ranges = passingConfig?.ranges || [
+      { min: 0, max: 79, level: 'No Level', passed: false },
+      { min: 80, max: 139, level: 'TOPIK Level 1', passed: true },
+      { min: 140, max: 200, level: 'TOPIK Level 2', passed: true }
+    ];
+    
+    let matchedLevel = achievedLevel || 'No Level';
+    let matchedPassed = passed || false;
+    
+    for (const range of ranges) {
+      if (percentage >= range.min && percentage <= range.max) {
+        matchedLevel = range.level;
+        matchedPassed = range.passed || false;
+        break;
+      }
+    }
     
     return (
       <div className="mt-4 border-t border-white/5 pt-4">
         <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
           <Layers size={16} className="text-purple-400" />
-          Level Information
+          TOPIK Level Information
         </h4>
         <div className="space-y-2">
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
             <span className="text-sm text-gray-300">Achieved Level</span>
-            <span className={`text-sm font-bold ${achievedLevel && achievedLevel !== 'No Level' ? 'text-purple-400' : 'text-gray-400'}`}>
-              {achievedLevel || 'No Level'}
+            <span className={`text-sm font-bold ${matchedLevel !== 'No Level' ? 'text-purple-400' : 'text-gray-400'}`}>
+              {matchedLevel}
             </span>
           </div>
           <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
             <span className="text-sm text-gray-300">Your Score</span>
-            <span className={`text-sm font-medium ${passed ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span className={`text-sm font-medium ${matchedPassed ? 'text-emerald-400' : 'text-red-400'}`}>
               {percentage}%
             </span>
           </div>
+          
           <div className="bg-white/5 p-3 rounded-xl">
-            <p className="text-xs text-gray-400 mb-2">Level Ranges:</p>
+            <p className="text-xs text-gray-400 mb-2">Level Ranges (Total Score 0-200):</p>
             <div className="flex gap-2 flex-wrap">
-              {(passingConfig?.ranges || []).map((range, idx) => (
-                <span key={idx} className={`text-xs px-2 py-1 rounded ${range.passed ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-gray-500/10 text-gray-400 border border-gray-500/20'}`}>
-                  {range.min}-{range.max}: {range.level} {range.passed ? '✅' : '❌'}
-                </span>
-              ))}
+              {ranges.map((range, idx) => {
+                const isAchieved = percentage >= range.min && percentage <= range.max;
+                return (
+                  <span 
+                    key={idx} 
+                    className={`text-xs px-2 py-1 rounded border transition-all ${
+                      isAchieved 
+                        ? 'bg-purple-500/20 text-purple-400 border-purple-500/30 font-semibold' 
+                        : range.passed 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                          : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+                    }`}
+                  >
+                    {range.min}-{range.max}: {range.level} 
+                    {isAchieved && ' (Current)'}
+                    {range.passed && !isAchieved && ' (Passing)'}
+                  </span>
+                );
+              })}
             </div>
           </div>
+          
+          {!matchedPassed && matchedLevel === 'No Level' && (
+            <div className="flex items-center gap-2 bg-red-500/10 p-3 rounded-xl border border-red-500/20">
+              <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />
+              <span className="text-xs text-red-300">
+                Score ({percentage}%) is below the minimum for TOPIK Level 1 (80%). Keep practicing!
+              </span>
+            </div>
+          )}
+          
+          {matchedPassed && matchedLevel !== 'No Level' && (
+            <div className="flex items-center gap-2 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
+              <Medal size={16} className="text-emerald-400 flex-shrink-0" />
+              <span className="text-xs text-emerald-300">
+                Congratulations! You achieved {matchedLevel}!
+              </span>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -358,8 +530,18 @@ export default function ExamResultsPage() {
             {passed ? <Trophy size={36} className="text-emerald-400" /> : <Target size={36} className="text-red-400" />}
           </div>
           
-          <h1 className="text-4xl font-bold mb-2">
-            {passed ? '🎉 Congratulations!' : '💪 Keep Practicing!'}
+          <h1 className="text-4xl font-bold mb-2 flex items-center justify-center gap-2">
+            {passed ? (
+              <>
+                <Trophy size={32} className="text-emerald-400" />
+                <span>Congratulations!</span>
+              </>
+            ) : (
+              <>
+                <Zap size={32} className="text-amber-400" />
+                <span>Keep Practicing!</span>
+              </>
+            )}
           </h1>
           
           <p className="text-gray-300 mb-4">
@@ -368,8 +550,38 @@ export default function ExamResultsPage() {
               : `You did not pass ${examTitle || 'the exam'} this time`}
           </p>
 
+          {/* ✅ FIX: Exam Type Badge - More accurate display */}
+          <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
+            {finalIsJLPT && (
+              <Badge color="blue" className="text-xs px-3 py-1 flex items-center gap-1">
+                <GraduationCap size={12} /> JLPT
+              </Badge>
+            )}
+            {isEPSTOPIK && (
+              <Badge color="amber" className="text-xs px-3 py-1 flex items-center gap-1">
+                <Award size={12} /> EPS-TOPIK
+              </Badge>
+            )}
+            {isTOPIK && (
+              <Badge color="purple" className="text-xs px-3 py-1 flex items-center gap-1">
+                <Layers size={12} /> TOPIK
+              </Badge>
+            )}
+            {!finalIsJLPT && !isEPSTOPIK && !isTOPIK && (
+              <Badge color="gray" className="text-xs px-3 py-1 flex items-center gap-1">
+                <FileCheck size={12} /> {passingType || 'Standard'}
+              </Badge>
+            )}
+            {/* ✅ FIX: Only show level if it has a value and not EPS-TOPIK */}
+            {level_id && level_id.trim() !== '' && !isEPSTOPIK && (
+              <Badge color="gray" className="text-xs px-3 py-1">
+                Level: {level_id.toUpperCase()}
+              </Badge>
+            )}
+          </div>
+
           {/* TOPIK Level Display */}
-          {passingType === 'LEVEL_RANGE' && passed && achievedLevel && achievedLevel !== 'No Level' && (
+          {isTOPIK && passed && achievedLevel && achievedLevel !== 'No Level' && (
             <div className="flex items-center justify-center gap-2 mb-3">
               <Medal size={20} className="text-purple-400" />
               <span className="text-lg font-bold text-purple-400">Achieved: {achievedLevel}</span>
@@ -392,12 +604,12 @@ export default function ExamResultsPage() {
             
             <Badge color="gray" className="text-xs px-3 py-2 flex items-center gap-1.5">
               <Info size={14} />
-              <span>{getPassingTypeLabel(passingType)}</span>
+              <span>{getPassingTypeLabel(passingType, category_id)}</span>
             </Badge>
             
             <Badge color="gray" className="text-xs px-3 py-2 flex items-center gap-1.5">
-              <Layers size={14} />
-              <span>{getPassingSourceLabel(passingSource)}</span>
+              <FileCheck size={14} />
+              <span>Source: {getPassingSourceLabel(passingSource)}</span>
             </Badge>
             
             {autoSubmitted && (
@@ -414,17 +626,8 @@ export default function ExamResultsPage() {
             Score: {score}/{totalQuestions} correct ({totalQuestions - score} incorrect)
           </div>
 
-          {/* Passing Type Description */}
-          <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/10">
-            <p className="text-xs text-gray-400 flex items-start gap-2">
-              <Info size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
-              <span>
-                <strong>Passing Type:</strong> {getPassingTypeLabel(passingType)}
-                <br />
-                <span className="text-gray-500">{getPassingTypeDescription(passingType)}</span>
-              </span>
-            </p>
-          </div>
+          {/* ❌ REMOVED: Passing Type Description Section - Completely removed */}
+          {/* No longer showing "Passing Type: EPS-TOPIK (Cut-off)" description */}
 
           {/* Passing Type Specific Details */}
           {renderJLPTDetails()}
@@ -447,13 +650,13 @@ export default function ExamResultsPage() {
                   <span className={`text-sm font-bold ${passed ? 'text-emerald-400' : 'text-red-400'}`}>
                     {passed ? 'Pass' : 'Fail'}
                   </span>
-                  {passingType === 'LEVEL_RANGE' && achievedLevel && achievedLevel !== 'No Level' && (
+                  {isTOPIK && achievedLevel && achievedLevel !== 'No Level' && (
                     <span className="text-[10px] text-purple-400 mt-0.5">
                       {achievedLevel}
                     </span>
                   )}
                   <span className="text-[9px] text-gray-500 mt-0.5">
-                    {getPassingTypeLabel(passingType)}
+                    {getPassingTypeLabel(passingType, category_id)}
                   </span>
                 </div>
               }
@@ -530,7 +733,10 @@ export default function ExamResultsPage() {
               <div key={i} className={`p-4 rounded-xl border ${q.wrong ? 'border-red-500/30 bg-red-500/5' : 'border-emerald-500/30 bg-emerald-500/5'}`}>
                 <div className="flex items-start gap-3 mb-3">
                   {q.wrong ? <XCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5" /> : <CheckCircle size={18} className="text-emerald-400 flex-shrink-0 mt-0.5" />}
-                  <p className="text-sm font-medium">{q.q}</p>
+                  <div 
+                    className="text-sm font-medium [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(q.q) }}
+                  />
                 </div>
                 <div className="ml-7 space-y-1 text-sm">
                   {!q.isAnswered && (
@@ -540,7 +746,10 @@ export default function ExamResultsPage() {
                     <p className="text-red-300">Your answer: <span className="font-semibold">{q.userAns}</span></p>
                   )}
                   <p className="text-emerald-300">Correct answer: <span className="font-semibold">{q.correct}</span></p>
-                  <p className="text-gray-400 mt-2 text-xs leading-relaxed">{q.explanation}</p>
+                  <div 
+                    className="text-gray-400 mt-2 text-xs leading-relaxed [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(q.explanation) }}
+                  />
                 </div>
               </div>
             ))}
@@ -749,7 +958,10 @@ export default function ExamResultsPage() {
           <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle size={24} className="text-emerald-400" />
           </div>
-          <h3 className="text-lg font-semibold mb-2">Thank You for Your Feedback!</h3>
+          <h3 className="text-lg font-semibold mb-2 flex items-center justify-center gap-2">
+            <Smile size={24} className="text-emerald-400" />
+            Thank You for Your Feedback!
+          </h3>
           <p className="text-gray-400 text-sm">Your feedback helps us create better learning experiences.</p>
           <p className="text-xs text-gray-500 mt-2">Your responses have been recorded anonymously for quality improvement.</p>
         </GlassCard>

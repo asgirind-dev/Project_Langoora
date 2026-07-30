@@ -1,4 +1,5 @@
 // frontend/src/context/AuthContext.jsx
+
 import { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword,
@@ -34,7 +35,12 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
   const [privileges, setPrivileges] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // ✅ 'initializing' gates the very first render (session recovery on page load only).
+  //    'loading' is a per-action flag (login/logout in progress) — it must NEVER
+  //    unmount the app, or a failed login wipes out the child component's local
+  //    error state before the user ever sees it.
+  const [initializing, setInitializing] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isMaintenance, setIsMaintenance] = useState(false);
   
   // ✅ Add maintenance details state
@@ -136,65 +142,114 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ==========================================
-  // 2. UNIFIED PUBLIC LOGIN GATEWAY - ✅ FIXED
-  // ==========================================
-  const login = async (email, password) => {
-    try {
-      setLoading(true);
-      
-      // ✅ Check maintenance before login attempt
-      const maintenanceStatus = await maintenanceService.checkMaintenanceStatus();
-      if (maintenanceStatus) {
-        throw new Error('Platform is currently under maintenance. Please try again later.');
-      }
-      
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const idToken = await userCredential.user.getIdToken(true);
-
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Authentication processing phase failed');
-      }
-
-      if (data.status === 'profile_incomplete' || data.user?.status === 'profile_incomplete') {
-        return data.user || data;
-      }
-
-      const authenticatedUser = extractUserData(data);
-
-      if (!authenticatedUser) {
-        throw new Error('Invalid user profile configuration returned from backend gateway.');
-      }
-
-      // ✅ Store token and user data
-      localStorage.setItem('token', idToken);
-      localStorage.setItem('userRole', authenticatedUser.role);
-      localStorage.setItem('user', JSON.stringify(authenticatedUser));
-      localStorage.setItem('lastActivity', Date.now().toString());
-
-      // ✅ Set axios default header
-      axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
-
-      setUser(authenticatedUser);
-      setRole(authenticatedUser.role);
-      setPrivileges(authenticatedUser.privileges || []);
-
-      return authenticatedUser;
-    } catch (error) {
-      console.error('Identity Validation Session Failure:', error);
-      throw error;
-    } finally {
-      setLoading(false);
+// ==========================================
+// 2. UNIFIED PUBLIC LOGIN GATEWAY 
+// ==========================================
+const login = async (email, password) => {
+  try {
+    setLoading(true); // safe now — no longer gates app render
+    
+    // ✅ Check maintenance before login attempt
+    const maintenanceStatus = await maintenanceService.checkMaintenanceStatus();
+    if (maintenanceStatus) {
+      throw new Error('Platform is currently under maintenance. Please try again later.');
     }
-  };
+    
+    // ✅ Validate inputs before Firebase call
+    if (!email || !password) {
+      throw new Error('Email and password are required.');
+    }
+    
+    console.log('🔑 Attempting login for:', email);
+    
+    // ✅ Try to sign in with Firebase
+    let userCredential;
+    try {
+      userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('✅ Firebase signIn successful');
+    } catch (firebaseError) {
+      console.error('🔥 Firebase Auth Error Code:', firebaseError.code);
+      console.error('🔥 Firebase Auth Error Message:', firebaseError.message);
+      
+      // ✅ Map Firebase error codes to user-friendly messages
+      const errorMessages = {
+        'auth/user-not-found': 'No account found with this email address. Please check your email or register.',
+        'auth/wrong-password': 'Incorrect password. Please try again or click "Forgot password" to reset.',
+        'auth/too-many-requests': 'Too many failed login attempts. Please try again later.',
+        'auth/invalid-email': 'Invalid email format. Please enter a valid email address.',
+        'auth/user-disabled': 'Your account has been disabled. Please contact support.',
+        'auth/network-request-failed': 'Network error. Please check your internet connection and try again.',
+        'auth/invalid-credential': 'Invalid email or password. Please check your credentials and try again.',
+        'auth/invalid-login-credentials': 'Invalid email or password. Please check your credentials and try again.'
+      };
+      
+      const userMessage = errorMessages[firebaseError.code] || firebaseError.message || 'Authentication failed. Please try again.';
+      console.error('🔥 User-friendly message:', userMessage);
+      throw new Error(userMessage);
+    }
+
+    const idToken = await userCredential.user.getIdToken(true);
+    console.log('✅ ID Token obtained');
+
+    // ✅ Call backend to get user profile
+    const response = await fetch('http://localhost:5000/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Backend login error:', response.status, data);
+      
+      // ✅ Handle backend specific errors
+      if (response.status === 403) {
+        throw new Error('Access Denied: Staff accounts must use the Staff Login portal.');
+      } else if (response.status === 404) {
+        throw new Error('User profile not found. Please complete your registration.');
+      } else if (response.status === 401) {
+        throw new Error('Invalid email or password. Please try again.');
+      } else {
+        throw new Error(data.message || 'Authentication failed. Please try again.');
+      }
+    }
+
+    console.log('✅ Backend login successful');
+
+    if (data.status === 'profile_incomplete' || data.user?.status === 'profile_incomplete') {
+      return data.user || data;
+    }
+
+    const authenticatedUser = extractUserData(data);
+
+    if (!authenticatedUser) {
+      throw new Error('Invalid user profile configuration returned from backend.');
+    }
+
+    // ✅ Store token and user data
+    localStorage.setItem('token', idToken);
+    localStorage.setItem('userRole', authenticatedUser.role);
+    localStorage.setItem('user', JSON.stringify(authenticatedUser));
+    localStorage.setItem('lastActivity', Date.now().toString());
+
+    // ✅ Set axios default header
+    axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
+
+    setUser(authenticatedUser);
+    setRole(authenticatedUser.role);
+    setPrivileges(authenticatedUser.privileges || []);
+
+    console.log('✅ Login successful:', authenticatedUser.email);
+    return authenticatedUser;
+  } catch (error) {
+    console.error('❌ Login error in AuthContext:', error.message);
+    // ✅ Ensure error is properly thrown to LoginPage
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ==========================================
   // 3. SECURE SYSTEM STAFF ENTRY GATEWAY - ✅ FIXED
@@ -221,7 +276,18 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Staff portal authentication failed.');
+        console.error('❌ Staff login error:', response.status, data);
+        
+        // ✅ Better error messages for staff login
+        if (response.status === 404) {
+          throw new Error('Staff account not found. Please check your email.');
+        } else if (response.status === 403) {
+          throw new Error('Access Denied: You do not have staff privileges.');
+        } else if (response.status === 401) {
+          throw new Error('Incorrect password. Please try again.');
+        } else {
+          throw new Error(data.message || 'Staff portal authentication failed.');
+        }
       }
 
       const authenticatedStaff = extractUserData(data);
@@ -239,9 +305,10 @@ export const AuthProvider = ({ children }) => {
       setRole(authenticatedStaff.role);
       setPrivileges(authenticatedStaff.privileges || []);
 
+      console.log('✅ Staff login successful:', authenticatedStaff.email);
       return authenticatedStaff;
     } catch (error) {
-      console.error('Staff Gateway Sign-in Operation Aborted:', error);
+      console.error('❌ Staff login error:', error.message);
       throw error;
     } finally {
       setLoading(false);
@@ -273,6 +340,7 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (!response.ok) {
+        console.error('❌ Google login error:', response.status, data);
         throw new Error(data.message || 'Google Auth verification failed on backend');
       }
 
@@ -299,9 +367,10 @@ export const AuthProvider = ({ children }) => {
       setRole(authenticatedUser.role);
       setPrivileges(authenticatedUser.privileges || []);
 
+      console.log('✅ Google login successful:', authenticatedUser.email);
       return authenticatedUser;
     } catch (error) {
-      console.error('Google Authentication Workflow Failure:', error);
+      console.error('❌ Google login error:', error.message);
       throw error;
     } finally {
       setLoading(false);
@@ -364,7 +433,7 @@ export const AuthProvider = ({ children }) => {
 
       // Stop background sync for ALL staff/admin roles
       if (STAFF_ROLES.includes(storedRole)) {
-        setLoading(false);
+        setInitializing(false);
         return;
       }
 
@@ -409,7 +478,7 @@ export const AuthProvider = ({ children }) => {
           setPrivileges([]);
         }
       }
-      setLoading(false);
+      setInitializing(false);
     });
 
     return () => unsubscribe();
@@ -470,6 +539,8 @@ export const AuthProvider = ({ children }) => {
         user,
         role,
         privileges,
+        loading,        // per-action (login/logout in progress) — safe to use for button spinners
+        initializing,   // true only during the initial page-load session check
         isMaintenance,
         maintenanceDetails,
         getMaintenanceDetails,
@@ -487,7 +558,7 @@ export const AuthProvider = ({ children }) => {
         logout
       }}
     >
-      {!loading && children}
+      {!initializing && children}
     </AuthContext.Provider>
   );
 };

@@ -11,6 +11,7 @@ import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import axios from 'axios';
+import AdminNotifications from '../../components/admin/AdminNotifications';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -225,7 +226,7 @@ export default function AuditLogsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header with Bell */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -235,6 +236,8 @@ export default function AuditLogsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* ✅ Notification Bell - Same level as Refresh/Filter buttons */}
+            <AdminNotifications />
             <Button 
               variant="secondary" 
               size="sm"
@@ -300,7 +303,7 @@ export default function AuditLogsPage() {
                   />
                 </div>
 
-                {/* ✅ Type Filter - Dark Theme Dropdown */}
+                {/* Type Filter - Dark Theme Dropdown */}
                 <select
                   value={typeFilter}
                   onChange={e => setTypeFilter(e.target.value)}
@@ -319,7 +322,7 @@ export default function AuditLogsPage() {
                   ))}
                 </select>
 
-                {/* ✅ Action Filter - Dark Theme Dropdown */}
+                {/* Action Filter - Dark Theme Dropdown */}
                 <select
                   value={actionFilter}
                   onChange={e => setActionFilter(e.target.value)}
@@ -343,7 +346,7 @@ export default function AuditLogsPage() {
                   })}
                 </select>
 
-                {/* ✅ Date Range - Dark Theme */}
+                {/* Date Range - Dark Theme */}
                 <div className="flex items-center gap-2">
                   <input
                     type="date"

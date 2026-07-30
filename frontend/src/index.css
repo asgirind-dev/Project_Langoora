@@ -47,6 +47,7 @@
     background: rgba(255, 255, 255, 0.2);
   }
 }
+
 @media print {
   .no-print {
     display: none !important;
@@ -63,4 +64,239 @@
     top: 0;
     width: 100%;
   }
+}
+
+/* ============================================================
+   ✅ EXAM RICH TEXT STYLES - Bold, Italic, Underline, Furigana
+   ============================================================ */
+
+/* ✅ Furigana (Ruby) Styling */
+ruby {
+  display: inline;
+  ruby-align: center;
+}
+
+ruby > rt {
+  font-size: 0.6em;
+  color: #60a5fa; /* blue-400 */
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  ruby-position: above;
+}
+
+/* ✅ Dark mode furigana */
+html.dark ruby > rt {
+  color: #60a5fa;
+}
+
+/* ✅ Light mode furigana */
+html:not(.dark) ruby > rt {
+  color: #3b82f6;
+}
+
+/* ✅ Exam text line-clamp with HTML support */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ✅ Rich text field styling for display */
+.exam-text p {
+  margin-bottom: 0.5rem;
+  background: transparent !important;
+}
+
+.exam-text p:last-child {
+  margin-bottom: 0;
+}
+
+.exam-text strong, 
+.exam-text b {
+  font-weight: 700;
+}
+
+.exam-text em, 
+.exam-text i {
+  font-style: italic;
+}
+
+.exam-text u {
+  text-decoration: underline;
+}
+
+.exam-text s {
+  text-decoration: line-through;
+}
+
+/* ✅ Ensure inline display for paragraphs in exam titles */
+.exam-title p {
+  display: inline;
+  margin: 0;
+  background: transparent !important;
+}
+
+/* ✅ Exam question text styles */
+.exam-question p {
+  margin-bottom: 0.5rem;
+  background: transparent !important;
+}
+
+.exam-question p:last-child {
+  margin-bottom: 0;
+}
+
+.exam-question strong,
+.exam-question b {
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.exam-question em,
+.exam-question i {
+  font-style: italic;
+  color: #94a3b8;
+}
+
+.exam-question u {
+  text-decoration: underline;
+  text-decoration-color: #60a5fa;
+}
+
+/* ✅ Exam options text styles */
+.exam-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.exam-option p {
+  margin: 0;
+  background: transparent !important;
+}
+
+.exam-option strong,
+.exam-option b {
+  font-weight: 600;
+}
+
+/* ✅ Explanation text styles */
+.exam-explanation p {
+  margin-bottom: 0.25rem;
+  background: transparent !important;
+}
+
+.exam-explanation p:last-child {
+  margin-bottom: 0;
+}
+
+.exam-explanation strong,
+.exam-explanation b {
+  font-weight: 600;
+  color: #60a5fa;
+}
+
+.exam-explanation em,
+.exam-explanation i {
+  font-style: italic;
+  color: #94a3b8;
+}
+
+/* ✅ Dark mode specific overrides */
+html.dark .exam-question strong,
+html.dark .exam-question b {
+  color: #f1f5f9;
+}
+
+html.dark .exam-question em,
+html.dark .exam-question i {
+  color: #94a3b8;
+}
+
+html.dark .exam-explanation strong,
+html.dark .exam-explanation b {
+  color: #60a5fa;
+}
+
+/* ✅ Light mode specific overrides */
+html:not(.dark) .exam-question strong,
+html:not(.dark) .exam-question b {
+  color: #0f172a;
+}
+
+html:not(.dark) .exam-question em,
+html:not(.dark) .exam-question i {
+  color: #475569;
+}
+
+html:not(.dark) .exam-explanation strong,
+html:not(.dark) .exam-explanation b {
+  color: #2563eb;
+}
+
+/* ✅ Prevent background from showing in inline paragraphs */
+[class*="exam-"] p {
+  background: transparent !important;
+}
+
+/* ✅ Ensure proper spacing for lists in rich text */
+.exam-text ul,
+.exam-text ol,
+.exam-question ul,
+.exam-question ol {
+  padding-left: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.exam-text ul li,
+.exam-text ol li,
+.exam-question ul li,
+.exam-question ol li {
+  margin-bottom: 0.25rem;
+}
+
+/* ✅ Blockquote styling */
+.exam-text blockquote,
+.exam-question blockquote {
+  border-left: 3px solid #60a5fa;
+  padding-left: 1rem;
+  margin: 0.5rem 0;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ✅ Code / pre styling */
+.exam-text code,
+.exam-question code {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.85em;
+}
+
+.exam-text pre,
+.exam-question pre {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+/* ✅ Image in rich text */
+.exam-text img,
+.exam-question img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
 }

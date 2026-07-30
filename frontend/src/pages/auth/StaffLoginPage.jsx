@@ -46,13 +46,14 @@ const handleStaffRedirection = (role) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation(); // extra safety against any parent form/handlers
     setErrors({});
 
     const formValidationErrors = validateForm();
     if (Object.keys(formValidationErrors).length > 0) {
-      setErrors({ 
-        ...formValidationErrors, 
-        globalAlert: 'Please resolve the security credentials validation errors highlighted below.' 
+      setErrors({
+        ...formValidationErrors,
+        globalAlert: 'Please resolve the security credentials validation errors highlighted below.'
       });
       return;
     }
@@ -61,12 +62,24 @@ const handleStaffRedirection = (role) => {
 
     try {
       const staffUser = await loginStaff(form.email, form.password);
-      if (staffUser && staffUser.role) {
-        handleStaffRedirection(staffUser.role);
+
+      // Handle case where login fails "silently" (no throw, but no valid user)
+      if (!staffUser || !staffUser.role) {
+        setErrors({ server: 'Invalid email or password. Please try again.' });
+        return;
       }
+
+      handleStaffRedirection(staffUser.role);
     } catch (err) {
       console.error('Identity gateway validation exception:', err);
-      const serverMessage = err.message || 'Authentication failed. Unauthorized terminal access attempt.';
+
+      // Try to extract a meaningful message from whatever shape the error is
+      const serverMessage =
+        err?.response?.data?.message ||   // axios-style error
+        err?.message ||                    // standard Error
+        (typeof err === 'string' ? err : null) ||
+        'Invalid email or password. Please try again.';
+
       setErrors({ server: serverMessage });
     } finally {
       setLoading(false);

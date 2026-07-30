@@ -1,3 +1,4 @@
+// backend/services/emailService.js
 const nodemailer = require('nodemailer');
 const { db } = require('../config/firebase');
 const emailLogService = require('./emailLogService');
@@ -167,8 +168,8 @@ class EmailService {
       type: 'tutor_approval',
       senderEmail: this.getSenderEmail(),
       senderName: this.getSenderName(),
-      subject: 'Welcome to Langoora – Your Tutor Account is Now Active',
-      metadata: { tutorId, tutorName }
+      subject: '🎓 Tutor Application Approved - Langoora',
+      metadata: { tutorName, tutorId }
     };
 
     try {
@@ -177,14 +178,10 @@ class EmailService {
         logData.status = 'failed';
         logData.error = rateCheck.reason;
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${tutorEmail}: ${rateCheck.reason}`);
         return { success: false, error: rateCheck.reason };
       }
 
       await this.ensureInitialized();
-      await this.loadConfig();
-
-      const loginLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/login`;
 
       const htmlContent = `
         <!DOCTYPE html>
@@ -192,7 +189,7 @@ class EmailService {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Welcome to Langoora - Tutor Account Approved</title>
+          <title>Tutor Application Approved - Langoora</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
@@ -203,73 +200,29 @@ class EmailService {
                   ${this.getHeaderHtml()}
 
                   <div style="padding: 0 4px;">
-                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0; line-height: 1.4;">
-                      Welcome aboard, <span style="color: #38bdf8;">${tutorName}</span>!
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      Congratulations, <span style="color: #38bdf8;">${tutorName}</span>! 🎉
                     </h1>
                     
-                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
-                      We are pleased to inform you that your tutor application has been <strong style="color: #ffffff;">approved</strong>. 
-                      Your qualifications have been verified, and you are now officially part of the Langoora tutor community.
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 16px 0;">
+                      Your application to become a <strong style="color: #38bdf8;">Langoora Tutor</strong> has been <strong style="color: #34d399;">approved</strong>!
                     </p>
 
-                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 18px 20px; margin: 20px 0; text-align: center;">
-                      <h3 style="color: #34d399; margin: 0 0 4px 0; font-size: 16px; font-weight: 700;">Account Activated</h3>
-                      <p style="color: #6ee7b7; margin: 0; font-size: 13px;">Your tutor dashboard is now accessible.</p>
+                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #34d399; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ✅ Your tutor account is now active. You can start creating and managing your courses.
+                      </p>
                     </div>
-
-                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
-
-                    <div style="margin: 20px 0;">
-                      <h4 style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8; margin: 0 0 16px 0; text-align: center;">
-                        What You Can Do Now
-                      </h4>
-                      
-                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                          <td width="50%" style="padding: 0 6px 12px 0;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">01</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Create Exam Packs</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Design & publish mock exams</div>
-                            </div>
-                          </td>
-                          <td width="50%" style="padding: 0 0 12px 6px;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">02</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Earn Revenue</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Monetize your expertise</div>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td width="50%" style="padding: 0 6px 0 0;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">03</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">Track Performance</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Monitor exam analytics</div>
-                            </div>
-                          </td>
-                          <td width="50%" style="padding: 0 0 0 6px;">
-                            <div style="background: #0f1629; padding: 14px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
-                              <div style="width: 26px; height: 26px; margin: 0 auto 6px auto; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; color: #38bdf8; font-size: 12px; font-weight: 700; line-height: 26px;">04</div>
-                              <div style="font-size: 12px; color: #ffffff; font-weight: 600;">View Reviews</div>
-                              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">See student feedback</div>
-                            </div>
-                          </td>
-                        </tr>
-                      </table>
-                    </div>
-
-                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
 
                     <div style="text-align: center; margin: 24px 0 16px 0;">
-                      <a href="${loginLink}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
-                        Sign In to Your Account →
+                      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/tutor/dashboard" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center;">
+                        🚀 Go to Tutor Dashboard
                       </a>
                     </div>
 
-                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
-                      <strong style="color: #94a3b8;">Next Steps:</strong> Once signed in, start by creating your first exam pack and setting your pricing. Students are waiting to learn from your expertise.
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0;">
+                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
                     </p>
                   </div>
 
@@ -286,7 +239,7 @@ class EmailService {
       const mailOptions = {
         from: this.getSenderInfo(),
         to: tutorEmail,
-        subject: 'Welcome to Langoora – Your Tutor Account is Now Active',
+        subject: '🎓 Tutor Application Approved - Langoora',
         html: htmlContent
       };
 
@@ -296,15 +249,14 @@ class EmailService {
       logData.messageId = result.messageId;
       await emailLogService.logEmail(logData);
       
-      console.log(`✅ Approval email sent to ${tutorEmail}`);
+      console.log(`✅ Tutor approval email sent to ${tutorEmail}`);
       return { success: true, messageId: result.messageId };
 
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
       await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send approval email:', error.message);
+      console.error('❌ Failed to send tutor approval email:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -318,7 +270,7 @@ class EmailService {
       type: 'tutor_rejection',
       senderEmail: this.getSenderEmail(),
       senderName: this.getSenderName(),
-      subject: 'Langoora – Update on Your Tutor Application',
+      subject: '📋 Tutor Application Update - Langoora',
       metadata: { tutorName, rejectionReason }
     };
 
@@ -328,18 +280,12 @@ class EmailService {
         logData.status = 'failed';
         logData.error = rateCheck.reason;
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${tutorEmail}: ${rateCheck.reason}`);
         return { success: false, error: rateCheck.reason };
       }
 
       await this.ensureInitialized();
-      await this.loadConfig();
 
-      const supportEmail = process.env.SUPPORT_EMAIL || 'support@langoora.com';
-      const signupLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/register?role=tutor`;
-
-      const defaultReason = 'Your application did not meet our qualification requirements at this time.';
-      const reason = rejectionReason || defaultReason;
+      const reasonText = rejectionReason || 'Your application did not meet our current requirements.';
 
       const htmlContent = `
         <!DOCTYPE html>
@@ -347,7 +293,7 @@ class EmailService {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Langoora - Tutor Application Update</title>
+          <title>Tutor Application Update - Langoora</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
@@ -359,48 +305,36 @@ class EmailService {
 
                   <div style="padding: 0 4px;">
                     <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
-                      Hello <span style="color: #f87171;">${tutorName}</span>,
+                      Application Update, <span style="color: #f87171;">${tutorName}</span>
                     </h1>
                     
-                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
-                      We have carefully reviewed your tutor application. After thorough evaluation of your 
-                      submitted qualifications and credentials, we regret to inform you that your application 
-                      has been <strong style="color: #f87171;">declined</strong> at this time.
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 16px 0;">
+                      Thank you for your interest in becoming a <strong style="color: #38bdf8;">Langoora Tutor</strong>.
                     </p>
 
-                    <div style="background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.25); border-radius: 12px; padding: 20px; margin: 20px 0;">
-                      <h3 style="color: #f87171; margin: 0 0 8px 0; font-size: 15px; font-weight: 700; text-align: center;">Application Status: Declined</h3>
-                      <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: block; margin-bottom: 6px;">Reason for Decision</span>
-                      <p style="background: #18090a; padding: 12px 14px; border-radius: 8px; color: #fca5a5; font-size: 13px; border-left: 3px solid #f87171; line-height: 1.6; margin: 0;">
-                        "${reason}"
+                    <div style="background: rgba(248, 113, 113, 0.08); border: 1px solid rgba(248, 113, 113, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #f87171; font-size: 13px; margin: 0; line-height: 1.6;">
+                        <strong>Reason:</strong> ${reasonText}
                       </p>
                     </div>
 
-                    <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px;">
-                      We encourage you to review our tutor requirements and consider reapplying in the future with additional qualifications or updated credentials.
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 13px; margin: 16px 0;">
+                      You can reapply at any time with updated qualifications or additional information.
                     </p>
 
-                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
-
-                    <div style="background: #0f1629; padding: 16px; border-radius: 10px; margin: 20px 0; border-left: 3px solid #38bdf8;">
-                      <h4 style="color: #38bdf8; margin: 0 0 4px 0; font-size: 13px; font-weight: 700;">Need Clarification?</h4>
-                      <p style="color: #94a3b8; font-size: 13px; margin: 0; line-height: 1.6;">
-                        If you believe this decision was made in error or need further clarification, please contact our support team at 
-                        <a href="mailto:${supportEmail}" style="color: #38bdf8; text-decoration: none;">${supportEmail}</a>.
-                      </p>
-                    </div>
-
-                    <div style="margin: 24px 0;">
-                      <a href="${signupLink}" target="_blank" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; background: #3b82f6; color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; margin-bottom: 10px;">
-                        Reapply as Tutor
-                      </a>
-                      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" target="_blank" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; background: transparent; color: #94a3b8 !important; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 14px; text-align: center; border: 1px solid #334155;">
-                        Return to Langoora
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/tutor/apply" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: white/10; color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.15);">
+                        📝 Reapply as Tutor
                       </a>
                     </div>
+
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0;">
+                      <strong style="color: #94a3b8;">Questions?</strong> Contact support at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
+                    </p>
                   </div>
 
-                  ${this.getFooterHtml(supportEmail)}
+                  ${this.getFooterHtml()}
 
                 </div>
               </td>
@@ -413,7 +347,7 @@ class EmailService {
       const mailOptions = {
         from: this.getSenderInfo(),
         to: tutorEmail,
-        subject: 'Langoora – Update on Your Tutor Application',
+        subject: '📋 Tutor Application Update - Langoora',
         html: htmlContent
       };
 
@@ -423,21 +357,20 @@ class EmailService {
       logData.messageId = result.messageId;
       await emailLogService.logEmail(logData);
       
-      console.log(`✅ Rejection email sent to ${tutorEmail}`);
+      console.log(`✅ Tutor rejection email sent to ${tutorEmail}`);
       return { success: true, messageId: result.messageId };
 
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
       await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send rejection email:', error.message);
+      console.error('❌ Failed to send tutor rejection email:', error.message);
       return { success: false, error: error.message };
     }
   }
 
   // =========================================================================
-  // 📚 SEND TEST EMAIL
+  // 📚 SEND TEST EMAIL - ✅ NOW FULLY IMPLEMENTED
   // =========================================================================
   async sendTestEmail(to, senderEmail, senderName) {
     const logData = {
@@ -445,24 +378,28 @@ class EmailService {
       type: 'test',
       senderEmail: senderEmail || this.getSenderEmail(),
       senderName: senderName || this.getSenderName(),
-      subject: 'Langoora – Email Configuration Test'
+      subject: '📧 Test Email from Langoora',
+      metadata: { senderEmail, senderName }
     };
 
     try {
+      // Rate limit check
       const rateCheck = await emailRateLimitService.canSend(to);
       if (!rateCheck.allowed) {
         logData.status = 'failed';
         logData.error = rateCheck.reason;
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for test email: ${rateCheck.reason}`);
+        console.log(`❌ Rate limit exceeded for ${to}: ${rateCheck.reason}`);
         return { success: false, error: rateCheck.reason };
       }
 
+      // Ensure email service is initialized
       await this.ensureInitialized();
       await this.loadConfig();
 
-      const fromName = senderName || this.getSenderName();
+      // Get sender info from system settings or use provided values
       const fromEmail = senderEmail || this.getSenderEmail();
+      const fromName = senderName || this.getSenderName();
 
       const htmlContent = `
         <!DOCTYPE html>
@@ -470,41 +407,47 @@ class EmailService {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Langoora - Email Test</title>
+          <title>Test Email - Langoora</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
             <tr>
               <td align="center">
-                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
                   
                   ${this.getHeaderHtml()}
 
-                  <div style="text-align: center; padding: 0 4px;">
-                    <div style="width: 52px; height: 52px; margin: 0 auto 16px auto; line-height: 52px; background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 14px; color: #34d399; font-size: 20px; font-weight: 700;">✓</div>
-                    <h2 style="color: #34d399; font-size: 20px; margin: 0 0 8px 0; font-weight: 700;">Email Configuration Test</h2>
-                    <p style="color: #94a3b8; font-size: 14px; margin: 0 0 20px 0;">If you are reading this email, your email settings are configured correctly!</p>
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      ✅ Test Email from <span style="color: #38bdf8;">Langoora</span>
+                    </h1>
                     
-                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px; margin: 20px 0; text-align: left;">
-                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sender Name</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${fromName}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sender Email</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${fromEmail}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Sent To</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${to}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Time</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' })}</td>
-                        </tr>
-                      </table>
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      This is a <strong>test email</strong> sent from your Langoora platform configuration.
+                      <br><br>
+                      <span style="color: #38bdf8;">📧 Sender: ${fromName} &lt;${fromEmail}&gt;</span>
+                    </p>
+
+                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #34d399; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ✅ Your email configuration is working correctly!
+                      </p>
                     </div>
+
+                    <div style="background: #0f1629; padding: 16px; border-radius: 10px; margin: 20px 0; border-left: 3px solid #fbbf24;">
+                      <h4 style="color: #fbbf24; margin: 0 0 4px 0; font-size: 13px; font-weight: 700;">📋 Email Configuration Details</h4>
+                      <p style="color: #94a3b8; font-size: 12px; margin: 4px 0; line-height: 1.6;">
+                        <strong>SMTP Host:</strong> ${process.env.SMTP_HOST || 'smtp.gmail.com'}<br>
+                        <strong>SMTP Port:</strong> ${process.env.SMTP_PORT || '587'}<br>
+                        <strong>From:</strong> ${fromName} &lt;${fromEmail}&gt;<br>
+                        <strong>To:</strong> ${to}
+                      </p>
+                    </div>
+
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
+                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
+                    </p>
                   </div>
 
                   ${this.getFooterHtml()}
@@ -520,7 +463,7 @@ class EmailService {
       const mailOptions = {
         from: `${fromName} <${fromEmail}>`,
         to: to,
-        subject: 'Langoora – Email Configuration Test',
+        subject: '📧 Test Email from Langoora',
         html: htmlContent
       };
 
@@ -530,7 +473,7 @@ class EmailService {
       logData.messageId = result.messageId;
       await emailLogService.logEmail(logData);
       
-      console.log(`✅ Test email sent to ${to}`);
+      console.log(`✅ Test email sent to ${to} from ${fromEmail}`);
       return { success: true, messageId: result.messageId };
 
     } catch (error) {
@@ -549,16 +492,23 @@ class EmailService {
   async sendSubscriptionConfirmationEmail(studentEmail, studentName, planName, amount, credits) {
     const logData = {
       recipient: studentEmail,
-      type: 'subscription_purchase',
+      type: 'subscription',
       senderEmail: this.getSenderEmail(),
       senderName: this.getSenderName(),
-      subject: `Subscription Confirmed - Welcome to ${planName}!`,
+      subject: '✅ Subscription Confirmed - Langoora',
       metadata: { studentName, planName, amount, credits }
     };
 
     try {
+      const rateCheck = await emailRateLimitService.canSend(studentEmail);
+      if (!rateCheck.allowed) {
+        logData.status = 'failed';
+        logData.error = rateCheck.reason;
+        await emailLogService.logEmail(logData);
+        return { success: false, error: rateCheck.reason };
+      }
+
       await this.ensureInitialized();
-      await this.loadConfig();
 
       const htmlContent = `
         <!DOCTYPE html>
@@ -566,7 +516,7 @@ class EmailService {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Subscription Purchase Confirmation</title>
+          <title>Subscription Confirmed - Langoora</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
@@ -578,36 +528,29 @@ class EmailService {
 
                   <div style="padding: 0 4px;">
                     <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
-                      Thank you for your purchase, <span style="color: #38bdf8;">${studentName || 'Student'}</span>! 🎉
+                      Subscription Confirmed! 🎉
                     </h1>
                     
-                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px;">
-                      Your subscription plan has been activated successfully. Here are your transaction details:
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 16px 0;">
+                      Thank you <strong style="color: #38bdf8;">${studentName}</strong> for subscribing to <strong>${planName}</strong>!
                     </p>
 
-                    <div style="background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px; margin: 20px 0;">
-                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Plan Name</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${planName}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Amount Paid</td>
-                          <td style="color: #34d399; font-size: 13px; text-align: right; font-weight: 600;">LKR ${amount}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 6px 0;">Credits Added</td>
-                          <td style="color: #38bdf8; font-size: 13px; text-align: right; font-weight: 600;">+${credits} Credits</td>
-                        </tr>
-                      </table>
+                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #34d399; font-size: 13px; margin: 0; line-height: 1.8;">
+                        ✅ Plan: <strong>${planName}</strong><br>
+                        ✅ Amount Paid: <strong>LKR ${amount}</strong><br>
+                        ✅ Credits Added: <strong>${credits} Credits</strong>
+                      </p>
                     </div>
 
-                    <p style="font-size: 13px; color: #94a3b8; text-align: center;">
-                      You can now use your credits to unlock and take mock exam packs!
-                    </p>
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/student/dashboard" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center;">
+                        📚 Go to Dashboard
+                      </a>
+                    </div>
 
-                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
-                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0;">
+                      <strong style="color: #94a3b8;">Questions?</strong> Contact support at 
                       <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
                     </p>
                   </div>
@@ -625,24 +568,24 @@ class EmailService {
       const mailOptions = {
         from: this.getSenderInfo(),
         to: studentEmail,
-        subject: `Subscription Confirmed - Welcome to ${planName}!`,
+        subject: '✅ Subscription Confirmed - Langoora',
         html: htmlContent
       };
 
       const result = await this.transporter.sendMail(mailOptions);
+      
       logData.status = 'sent';
       logData.messageId = result.messageId;
-      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
+      await emailLogService.logEmail(logData);
       
-      console.log(`✅ Plan purchase email sent to ${studentEmail}`);
+      console.log(`✅ Subscription confirmation email sent to ${studentEmail}`);
       return { success: true, messageId: result.messageId };
 
     } catch (error) {
       logData.status = 'failed';
       logData.error = error.message;
-      if (emailLogService?.logEmail) await emailLogService.logEmail(logData);
-      
-      console.error('❌ Failed to send plan purchase email:', error.message);
+      await emailLogService.logEmail(logData);
+      console.error('❌ Failed to send subscription confirmation email:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -656,7 +599,7 @@ class EmailService {
       type: 'category_created',
       senderEmail: this.getSenderEmail(),
       senderName: this.getSenderName(),
-      subject: `📚 New Exam Category Created: ${categoryName}`,
+      subject: '📚 New Category Created - Langoora',
       metadata: { categoryName, language, categoryId, createdBy }
     };
 
@@ -666,14 +609,10 @@ class EmailService {
         logData.status = 'failed';
         logData.error = rateCheck.reason;
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
         return { success: false, error: rateCheck.reason };
       }
 
       await this.ensureInitialized();
-      await this.loadConfig();
-
-      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
 
       const htmlContent = `
         <!DOCTYPE html>
@@ -681,7 +620,7 @@ class EmailService {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>New Exam Category Created</title>
+          <title>New Category Created - Langoora</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
@@ -693,45 +632,24 @@ class EmailService {
 
                   <div style="padding: 0 4px;">
                     <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
-                      📚 New Exam Category Created
+                      New Category Created 📚
                     </h1>
                     
-                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
-                      A new exam category has been created by <strong style="color: #ffffff;">${createdBy}</strong>.
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 16px 0;">
+                      A new category has been created in the system.
                     </p>
 
-                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 20px; margin: 20px 0;">
-                      <h3 style="color: #38bdf8; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">Category Details</h3>
-                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category Name</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${categoryName}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Language</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${language}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category ID</td>
-                          <td style="color: #38bdf8; font-size: 12px; text-align: right; font-family: monospace;">${categoryId}</td>
-                        </tr>
-                      </table>
-                    </div>
-
-                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
-                      <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
-                        ⏳ <strong>Action Required:</strong> Please review this new category and configure credit values for its levels.
+                    <div style="background: #0f1629; padding: 16px; border-radius: 10px; margin: 20px 0; border-left: 3px solid #38bdf8;">
+                      <p style="color: #94a3b8; font-size: 13px; margin: 4px 0; line-height: 1.8;">
+                        <strong>Category:</strong> ${categoryName}<br>
+                        <strong>Language:</strong> ${language}<br>
+                        <strong>Category ID:</strong> ${categoryId}<br>
+                        <strong>Created By:</strong> ${createdBy}
                       </p>
                     </div>
 
-                    <div style="text-align: center; margin: 24px 0 16px 0;">
-                      <a href="${financeUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
-                        Configure Credit Values →
-                      </a>
-                    </div>
-
-                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
-                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0;">
+                      <strong style="color: #94a3b8;">Questions?</strong> Contact support at 
                       <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
                     </p>
                   </div>
@@ -749,7 +667,7 @@ class EmailService {
       const mailOptions = {
         from: this.getSenderInfo(),
         to: financeEmail,
-        subject: `📚 New Exam Category Created: ${categoryName}`,
+        subject: '📚 New Category Created - Langoora',
         html: htmlContent
       };
 
@@ -766,7 +684,6 @@ class EmailService {
       logData.status = 'failed';
       logData.error = error.message;
       await emailLogService.logEmail(logData);
-      
       console.error('❌ Failed to send category created email:', error.message);
       return { success: false, error: error.message };
     }
@@ -781,7 +698,7 @@ class EmailService {
       type: 'level_created',
       senderEmail: this.getSenderEmail(),
       senderName: this.getSenderName(),
-      subject: `📝 New Level Created: ${levelName}`,
+      subject: '📊 New Level Created - Langoora',
       metadata: { levelName, categoryName, categoryId, levelId, createdBy }
     };
 
@@ -791,14 +708,10 @@ class EmailService {
         logData.status = 'failed';
         logData.error = rateCheck.reason;
         await emailLogService.logEmail(logData);
-        console.log(`❌ Rate limit exceeded for ${financeEmail}: ${rateCheck.reason}`);
         return { success: false, error: rateCheck.reason };
       }
 
       await this.ensureInitialized();
-      await this.loadConfig();
-
-      const financeUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/finance-admin/exam-credits`;
 
       const htmlContent = `
         <!DOCTYPE html>
@@ -806,7 +719,7 @@ class EmailService {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>New Level Created</title>
+          <title>New Level Created - Langoora</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
@@ -818,45 +731,25 @@ class EmailService {
 
                   <div style="padding: 0 4px;">
                     <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
-                      📝 New Exam Level Created
+                      New Level Created 📊
                     </h1>
                     
-                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
-                      A new level has been added to <strong style="color: #ffffff;">${categoryName}</strong> by <strong style="color: #ffffff;">${createdBy}</strong>.
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 16px 0;">
+                      A new level has been added to an existing category.
                     </p>
 
-                    <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 20px; margin: 20px 0;">
-                      <h3 style="color: #38bdf8; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">Level Details</h3>
-                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Level Name</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${levelName}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Category</td>
-                          <td style="color: #ffffff; font-size: 13px; text-align: right; font-weight: 600;">${categoryName}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 13px; padding: 4px 0;">Level ID</td>
-                          <td style="color: #38bdf8; font-size: 12px; text-align: right; font-family: monospace;">${levelId}</td>
-                        </tr>
-                      </table>
-                    </div>
-
-                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
-                      <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
-                        ⏳ <strong>Action Required:</strong> Credit valuation is pending for this level. Please set the credit value.
+                    <div style="background: #0f1629; padding: 16px; border-radius: 10px; margin: 20px 0; border-left: 3px solid #fbbf24;">
+                      <p style="color: #94a3b8; font-size: 13px; margin: 4px 0; line-height: 1.8;">
+                        <strong>Level:</strong> ${levelName}<br>
+                        <strong>Category:</strong> ${categoryName}<br>
+                        <strong>Category ID:</strong> ${categoryId}<br>
+                        <strong>Level ID:</strong> ${levelId}<br>
+                        <strong>Created By:</strong> ${createdBy}
                       </p>
                     </div>
 
-                    <div style="text-align: center; margin: 24px 0 16px 0;">
-                      <a href="${financeUrl}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
-                        Set Credit Value →
-                      </a>
-                    </div>
-
-                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
-                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0;">
+                      <strong style="color: #94a3b8;">Questions?</strong> Contact support at 
                       <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
                     </p>
                   </div>
@@ -874,7 +767,7 @@ class EmailService {
       const mailOptions = {
         from: this.getSenderInfo(),
         to: financeEmail,
-        subject: `📝 New Level Created: ${levelName}`,
+        subject: '📊 New Level Created - Langoora',
         html: htmlContent
       };
 
@@ -891,8 +784,131 @@ class EmailService {
       logData.status = 'failed';
       logData.error = error.message;
       await emailLogService.logEmail(logData);
-      
       console.error('❌ Failed to send level created email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ================================================================
+  // 📧 SEND PASSWORD RESET EMAIL
+  // ================================================================
+  async sendPasswordResetEmail({ to, name, resetLink, frontendUrl }) {
+    const logData = {
+      recipient: to,
+      type: 'password_reset',
+      senderEmail: this.getSenderEmail(),
+      senderName: this.getSenderName(),
+      subject: '🔐 Reset Your Password - Langoora',
+      metadata: { name }
+    };
+
+    try {
+      // Rate limit check
+      const rateCheck = await emailRateLimitService.canSend(to);
+      if (!rateCheck.allowed) {
+        logData.status = 'failed';
+        logData.error = rateCheck.reason;
+        await emailLogService.logEmail(logData);
+        console.log(`❌ Rate limit exceeded for ${to}: ${rateCheck.reason}`);
+        return { success: false, error: rateCheck.reason };
+      }
+
+      // Ensure email service is initialized
+      await this.ensureInitialized();
+      await this.loadConfig();
+
+      const baseUrl = frontendUrl || process.env.FRONTEND_URL || 'http://localhost:5173';
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Reset Your Password - Langoora</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #060d1f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e0e0e0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #060d1f; padding: 30px 10px;">
+            <tr>
+              <td align="center">
+                <div style="max-width: 580px; margin: 0 auto; padding: 36px 28px; background: #0a0e1a; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  
+                  ${this.getHeaderHtml()}
+
+                  <div style="padding: 0 4px;">
+                    <h1 style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0;">
+                      Reset Your Password, <span style="color: #38bdf8;">${name || 'User'}</span>
+                    </h1>
+                    
+                    <p style="color: #94a3b8; line-height: 1.7; font-size: 14px; margin: 0 0 20px 0;">
+                      We received a request to reset the password for your Langoora account. 
+                      Click the button below to create a new password.
+                    </p>
+
+                    <div style="background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
+                      <p style="color: #fbbf24; font-size: 13px; margin: 0; line-height: 1.6;">
+                        ⏳ This password reset link will expire in <strong>1 hour</strong>.
+                      </p>
+                    </div>
+
+                    <div style="text-align: center; margin: 24px 0 16px 0;">
+                      <a href="${resetLink}" target="_blank" style="display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 28px; background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: #ffffff !important; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);">
+                        🔐 Reset Password
+                      </a>
+                    </div>
+
+                    <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 24px 0;"></div>
+
+                    <div style="background: #0f1629; padding: 16px; border-radius: 10px; margin: 20px 0; border-left: 3px solid #38bdf8;">
+                      <h4 style="color: #38bdf8; margin: 0 0 4px 0; font-size: 13px; font-weight: 700;">Didn't request this?</h4>
+                      <p style="color: #94a3b8; font-size: 13px; margin: 0; line-height: 1.6;">
+                        If you didn't request a password reset, please ignore this email. 
+                        Your password will remain unchanged.
+                      </p>
+                    </div>
+
+                    <p style="font-size: 12px; color: #64748b; text-align: center; margin: 16px 0 0 0; line-height: 1.5;">
+                      <strong style="color: #94a3b8;">Need help?</strong> Contact support at 
+                      <a href="mailto:support@langoora.com" style="color: #38bdf8; text-decoration: none;">support@langoora.com</a>
+                    </p>
+
+                    <p style="font-size: 11px; color: #475569; text-align: center; margin: 12px 0 0 0;">
+                      For security reasons, do not share this link with anyone.
+                    </p>
+                  </div>
+
+                  ${this.getFooterHtml()}
+
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailOptions = {
+        from: this.getSenderInfo(),
+        to: to,
+        subject: '🔐 Reset Your Password - Langoora',
+        html: htmlContent
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      logData.status = 'sent';
+      logData.messageId = result.messageId;
+      await emailLogService.logEmail(logData);
+      
+      console.log(`✅ Password reset email sent to ${to}`);
+      return { success: true, messageId: result.messageId };
+
+    } catch (error) {
+      logData.status = 'failed';
+      logData.error = error.message;
+      await emailLogService.logEmail(logData);
+      
+      console.error('❌ Failed to send password reset email:', error.message);
       return { success: false, error: error.message };
     }
   }

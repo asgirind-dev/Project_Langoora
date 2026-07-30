@@ -10,6 +10,7 @@ import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import axios from 'axios';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 const BRAND = {
   primary: '#6366F1',
@@ -20,7 +21,7 @@ const BRAND = {
   danger: '#EF4444',
 };
 
-// ✅ HELPER FUNCTION: HTML Entities Clean කිරීමට
+// ✅ HELPER FUNCTION: HTML Entities Clean කිරීමට (still needed for planner title)
 const cleanTitle = (title) => {
   if (!title) return '';
   return String(title)
@@ -409,10 +410,10 @@ export default function MyExamsPage() {
                           </div>
                         </div>
 
-                        {/* ✅ Title rendered as HTML - FIXED with inline style to prevent background */}
+                        {/* ✅ Title rendered with DOMPurify sanitization */}
                         <div 
                           className="font-bold text-white text-sm leading-snug tracking-tight group-hover:text-blue-400 transition-colors break-words [&_p]:inline [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300"
-                          dangerouslySetInnerHTML={{ __html: exam.title || '' }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(exam.title || '') }}
                         />
 
                         {/* Score Display */}
@@ -424,11 +425,11 @@ export default function MyExamsPage() {
                           />
                         )}
 
-                        {/* ✅ Description rendered as HTML - FIXED with inline style to prevent background */}
+                        {/* ✅ Description rendered with DOMPurify sanitization */}
                         {exam.description && (
                           <div 
                             className={`text-xs text-gray-400 ${viewMode === 'list' ? '' : 'line-clamp-2'} leading-relaxed [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[9px] [&_rt]:text-blue-300`}
-                            dangerouslySetInnerHTML={{ __html: exam.description }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(exam.description) }}
                           />
                         )}
 

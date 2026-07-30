@@ -7,7 +7,7 @@ import {
   CheckCircle, Send, LayoutGrid, X,
   Volume2, Coffee, Lock, Loader2, AlertCircle,
   BookOpen, PenSquare, Headphones, Sparkles, Info,
-  ChevronUp, ChevronDown, ShieldAlert, PartyPopper, Mic, SkipForward
+  ChevronUp, ChevronDown, ShieldAlert, PartyPopper, Mic, SkipForward, Layers
 } from 'lucide-react';
 
 import Modal from '../../components/ui/Modal';
@@ -15,8 +15,16 @@ import Button from '../../components/ui/Button';
 import GlassCard from '../../components/ui/GlassCard';
 import Badge from '../../components/ui/Badge';
 import studentApi from '../../services/examExecutionService';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
+import { 
+  saveExamToLocalStorage, 
+  getExamFromLocalStorage, 
+  clearExamFromLocalStorage 
+} from '../../utils/examStorage';
 
 const BREAK_DURATION = 25;
+const SAVE_INTERVAL = 30000; // 30 seconds
+const API_URL = 'http://localhost:5000/api';
 
 function fmtClock(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -35,13 +43,15 @@ const BRAND = {
 };
 
 const SECTION_ICON = {
-  Vocabulary: BookOpen,
+  Vocabulary: Layers,
   Grammar: PenSquare,
+  Reading: BookOpen,
   Listening: Headphones,
 };
 
 const BREAK_TIPS = [
   "Re-read the question stem before jumping into the options — half of JLPT mistakes come from misreading, not misunderstanding.",
+  "For Reading passages, read the questions first, then scan the text. This saves time.",
   "For 聴解 (Listening), the first sentence usually sets the scene. Catch it and the rest gets easier.",
   "Stuck between two options? Eliminate the one that contradicts the passage's tone, not just its facts.",
   "Take three slow breaths. A calm mind reads kanji faster than a rushed one.",
@@ -148,34 +158,19 @@ function SectionProgressBar({ parts, partIndex, qIndex }) {
   );
 }
 
-// ✅ IMPROVED: Helper function to clean HTML and extract text content
-// Handles malformed HTML like: <p data-pm-slice="11 []">もんだい 1 </p>
+// ✅ Clean HTML content using DOMPurify
 function cleanHtmlContent(html) {
   if (!html) return '';
-  
-  // Step 1: Check if it's a simple paragraph with data attributes
-  // Pattern: <p ...>content</p> where content has no HTML tags
-  const paragraphMatch = html.match(/^<p[^>]*>(.*?)<\/p>$/s);
-  if (paragraphMatch) {
-    const innerContent = paragraphMatch[1];
-    // If inner content has no HTML tags, return it as plain text
-    if (!/<[^>]+>/.test(innerContent)) {
-      return innerContent.trim();
-    }
-    // If inner content has HTML tags, return the cleaned inner content
-    return innerContent.trim();
-  }
-  
-  // Step 2: Remove data-pm-slice and other data attributes from tags
-  let cleaned = html.replace(/data-pm-slice="[^"]*"/g, '');
-  // Remove other data attributes
-  cleaned = cleaned.replace(/\s+data-[a-zA-Z-]+="[^"]*"/g, '');
-  // Remove empty attributes
-  cleaned = cleaned.replace(/\s+[a-zA-Z-]+="[^"]*"\s*/g, ' ');
-  // Remove extra spaces
-  cleaned = cleaned.replace(/\s+/g, ' ');
-  // Trim
-  return cleaned.trim();
+  return sanitizeHtml(html);
+}
+
+// ✅ Simple debounce function
+function debounce(fn, delay) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
 }
 
 export default function ExamTakePage() {
@@ -184,6 +179,7 @@ export default function ExamTakePage() {
   const navigate = useNavigate();
 
   const [phase, setPhase] = useState('loading');
+  const [isResuming, setIsResuming] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [examMeta, setExamMeta] = useState(null);
   const [parts, setParts] = useState([]);
@@ -210,12 +206,16 @@ export default function ExamTakePage() {
   const [maxViolations, setMaxViolations] = useState(3);
   const [antiCheatEnabled, setAntiCheatEnabled] = useState(true);
 
+  // ✅ Resume system refs
   const phaseRef = useRef(phase);
   const attemptIdRef = useRef(attemptId);
   const answersRef = useRef(answers);
   const partsRef = useRef(parts);
   const partIndexRef = useRef(partIndex);
   const qIndexRef = useRef(qIndex);
+  const partTimeLeftRef = useRef(partTimeLeft);
+  const hasChangesRef = useRef(false);
+  const lastBackendSaveRef = useRef(0);
 
   const audioRef = useRef(null);
   const audioCleanupRef = useRef(null);
@@ -225,13 +225,16 @@ export default function ExamTakePage() {
   const audioPlayedRef = useRef(false);
   const isMountedRef = useRef(true);
 
+  // ✅ Sync refs with state
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { attemptIdRef.current = attemptId; }, [attemptId]);
   useEffect(() => { answersRef.current = answers; }, [answers]);
   useEffect(() => { partsRef.current = parts; }, [parts]);
   useEffect(() => { partIndexRef.current = partIndex; }, [partIndex]);
   useEffect(() => { qIndexRef.current = qIndex; }, [qIndex]);
+  useEffect(() => { partTimeLeftRef.current = partTimeLeft; }, [partTimeLeft]);
 
+  // ✅ Fetch security policies
   useEffect(() => {
     const fetchSecurityPolicies = async () => {
       if (phase !== 'intro') return;
@@ -251,42 +254,100 @@ export default function ExamTakePage() {
     fetchSecurityPolicies();
   }, [phase]);
 
+  // ✅ FIXED: withUid - Add index to make keys unique
   const withUid = (sectionName, arr) =>
     arr.map((it, idx) => ({
       ...it,
-      _uid: it.id !== undefined && it.id !== null ? `${sectionName}-${it.id}` : `${sectionName}-${idx}`,
+      _uid: it.id !== undefined && it.id !== null 
+        ? `${sectionName}-${it.id}-${idx}`  // ✅ Added -${idx} for uniqueness
+        : `${sectionName}-${idx}`,
     }));
 
   const itemKey = (item) => (item ? `${item.questionDocId}::${item.id}` : null);
 
+  // ✅ buildParts with 4 sections - FULLY FIXED with proper section time loading
   const buildParts = useCallback((meta, itemsBySection) => {
+    // ✅ DEBUG: Log all sections from metadata
+    console.log('📊 meta.sections:', JSON.stringify(meta.sections, null, 2));
+    
+    // ✅ Section time values (minutes walin) load karanna
     const sectionTime = {};
-    (meta.sections || []).forEach((s) => { sectionTime[s.name] = s.time; });
+    if (meta.sections && Array.isArray(meta.sections)) {
+      meta.sections.forEach((s) => { 
+        if (s.name && s.time !== undefined) {
+          sectionTime[s.name] = s.time; // minutes
+          console.log(`✅ Section time loaded: ${s.name} = ${s.time} minutes`);
+        }
+      });
+    }
+    
+    // ✅ DEBUG: Log section times
+    console.log('📊 sectionTime map:', sectionTime);
+    
     const listeningAudio = (meta.sections || []).find((s) => s.name === 'Listening')?.audio_url || null;
 
     const parts = [];
-    const sectionOrder = ['Vocabulary', 'Grammar', 'Listening'];
+    const sectionOrder = ['Vocabulary', 'Grammar', 'Reading', 'Listening'];
 
     sectionOrder.forEach((sectionName) => {
       const rawItems = itemsBySection[sectionName] || [];
+      console.log(`📊 ${sectionName}: rawItems=${rawItems.length}, time from sectionTime=${sectionTime[sectionName]}`);
+      
       if (rawItems.length > 0) {
         const isListening = sectionName === 'Listening';
+        const isReading = sectionName === 'Reading';
         const items = withUid(sectionName, rawItems);
+        
+        // ✅ Section time eka load karanna (minutes walin)
+        let finalTimeMinutes = sectionTime[sectionName];
+        
+        // ✅ Section time eka nethnam exam duration eka use karanna
+        if (!finalTimeMinutes || finalTimeMinutes === 0) {
+          console.log(`⚠️ No section time for ${sectionName}, using fallback`);
+          
+          // ✅ Total duration eka sections walata distribute karanna
+          if (meta.duration_minutes) {
+            const totalSections = sectionOrder.filter(name => itemsBySection[name]?.length > 0).length;
+            finalTimeMinutes = Math.round(meta.duration_minutes / totalSections);
+            console.log(`📊 ${sectionName}: Calculated from total duration: ${finalTimeMinutes} minutes`);
+          } else {
+            // ✅ Fallback defaults
+            finalTimeMinutes = isReading ? 25 : 15;
+            console.log(`📊 ${sectionName}: Using default: ${finalTimeMinutes} minutes`);
+          }
+        }
+        
+        // ✅ 🔥 IMPORTANT: Minutes walata seconds walata convert karanna
+        const finalTimeSeconds = finalTimeMinutes * 60;
+        
+        console.log(`📊 ${sectionName}: FINAL - ${finalTimeMinutes} mins (${finalTimeSeconds}s) - ${sectionTime[sectionName] ? 'from exam' : 'using calculated/fallback'}`);
+        
         parts.push({
           key: sectionName.toLowerCase(),
           label: sectionName,
           sections: [sectionName],
           items,
-          durationSec: (sectionTime[sectionName] || 15) * 60,
+          durationSec: finalTimeSeconds,  // ✅ Seconds walin
           breakAfterSec: BREAK_DURATION,
           isAudio: isListening,
           audioUrl: isListening ? listeningAudio : null,
+          isReading: isReading,
         });
+      } else {
+        console.log(`📊 ${sectionName}: No items found, skipping`);
       }
     });
 
+    console.log('📊 Final parts:', parts.map(p => ({ 
+      label: p.label, 
+      durationSec: p.durationSec, 
+      durationMinutes: p.durationSec / 60,
+      items: p.items.length 
+    })));
+
     if (parts.length > 0) return parts;
 
+    // ✅ Fallback if no sections
     const fallbackItems = Object.entries(itemsBySection).flatMap(([sectionName, arr]) =>
       withUid(sectionName, arr)
     );
@@ -302,16 +363,73 @@ export default function ExamTakePage() {
     }];
   }, []);
 
+  // ================================================================
+  // ✅ STEP 6: MAIN INITIALIZATION - Check & Resume
+  // ================================================================
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        console.log('🔍 Initializing exam:', examId);
+        setIsResuming(true);
+
+        // ✅ STEP 1: Check for active attempt in backend
+        let activeAttempt = null;
+        try {
+          const checkRes = await studentApi.get(`/exam-execution/${examId}/check-active`);
+          if (checkRes.data.success && checkRes.data.hasActiveAttempt) {
+            activeAttempt = checkRes.data.data;
+            console.log('✅ Found active attempt:', activeAttempt.attemptId);
+            
+            // ✅ DEBUG: Log resume data
+            console.log('📊 Resume Data:', {
+              attemptId: activeAttempt.attemptId,
+              partIndex: activeAttempt.partIndex,
+              qIndex: activeAttempt.qIndex,
+              timeLeft: activeAttempt.timeLeft,
+              answersCount: Object.keys(activeAttempt.answers || {}).length
+            });
+          } else {
+            // ✅ FIX (Issue 1): confirmed there's no active attempt — this is
+            // a brand new exam, not a resume. Drop the "Resuming" flag right
+            // now instead of waiting for metadata/questions to load and the
+            // whole init routine to reach its `finally` block.
+            setIsResuming(false);
+          }
+        } catch (err) {
+          // ✅ FIX (Issue 1): the check itself failed, so treat it the same
+          // as "no active attempt" — this is a fresh start, not a resume.
+          setIsResuming(false);
+          console.log('No active attempt found, starting new');
+        }
+
+        // ✅ FIX: bail out here if this effect instance was already cleaned
+        // up (route changed, component unmounted, or — in React 18
+        // StrictMode during development — this is the deliberately-discarded
+        // first of two back-to-back invocations). Without this guard, a
+        // stale run can still finish its `POST /start` call after a newer
+        // run has already resumed the very attempt it just created, which
+        // silently flips `phase` from 'intro' back to 'in_part' right as the
+        // screen renders — exactly the symptom of "Intro never shows".
+        if (cancelled) return;
+
+        // ✅ STEP 2: Load exam metadata and questions
         const [metaRes, qRes] = await Promise.all([
           studentApi.get(`/exam-execution/${examId}/metadata`),
           studentApi.get(`/exam-execution/${examId}/questions`),
         ]);
+
+        // ✅ FIX: same guard again after the second await — a stale run
+        // should never reach STEP 3 and commit state.
+        if (cancelled) return;
+
         const meta = metaRes.data.data;
         const items = qRes.data.data;
+
+        console.log('📊 Exam metadata loaded:', { 
+          duration_minutes: meta.duration_minutes,
+          sections: meta.sections 
+        });
 
         const bySection = {};
         items.forEach((it) => {
@@ -320,26 +438,166 @@ export default function ExamTakePage() {
           bySection[sec].push(it);
         });
 
-        const startRes = await studentApi.post(`/exam-execution/${examId}/start`);
-        const attempt = startRes.data.data;
+        console.log('📊 Questions by section:', Object.keys(bySection).map(k => ({ section: k, count: bySection[k].length })));
 
-        if (cancelled) return;
         setExamMeta(meta);
         const builtParts = buildParts(meta, bySection);
         setParts(builtParts);
 
-        setAttemptId(attempt.attemptId);
-        setPhase('intro');
-      } catch (err) {
-        console.error('Failed to initialize exam:', err);
-        if (!cancelled) {
-          setErrorMsg(err?.response?.data?.message || 'Could not load this exam. Please try again.');
-          setPhase('error');
+        // ✅ STEP 3: Resume or Start new
+        if (activeAttempt) {
+          // ✅ RESUME: Use saved data
+          console.log('🔄 Resuming exam from attempt:', activeAttempt.attemptId);
+          console.log(`📊 Resuming at Part ${activeAttempt.partIndex}, Question ${activeAttempt.qIndex}`);
+          
+          setAttemptId(activeAttempt.attemptId);
+          setAnswers(activeAttempt.answers || {});
+          setPartIndex(activeAttempt.partIndex || 0);
+          setQIndex(activeAttempt.qIndex || 0);
+          setPartTimeLeft(activeAttempt.timeLeft || activeAttempt.remainingSeconds || 0);
+          // ✅ Resume goes straight back into the exam — the student already
+          // saw the intro and clicked "Start Exam" in this attempt, so we
+          // don't show it again.
+          setPhase('in_part');
+          
+          showNotification(`🔄 Resuming your exam from Question ${(activeAttempt.qIndex || 0) + 1}...`, 'info');
+        } else {
+          // ✅ FIX (Issue 5): the backend confirmed there is NO active attempt
+          // for this exam, which means a fresh attempt is about to be created
+          // (either this is genuinely the student's first try, or they clicked
+          // "Retake" after finishing a previous attempt). Any localStorage
+          // backup left over at this point necessarily belongs to that OLD
+          // (already completed) attempt — restoring its answers here was the
+          // root cause of "Retake" silently bringing back the old answers.
+          // We simply purge it instead of reading from it.
+          console.log('🧹 No active attempt — clearing any stale localStorage backup before starting fresh');
+          clearExamFromLocalStorage(examId);
+
+          // ✅ START NEW: Create attempt
+          console.log('📝 Starting new exam');
+          // ✅ FIX: don't fire a duplicate `POST /start` from a stale run.
+          if (cancelled) return;
+          const startRes = await studentApi.post(`/exam-execution/${examId}/start`);
+          // ✅ FIX: and don't commit state from a run that's been superseded
+          // while that request was in flight.
+          if (cancelled) return;
+          const attempt = startRes.data.data;
+          
+          setAttemptId(attempt.attemptId);
+          // ✅ FIX (Issue 5): explicitly clear answers so a retake never
+          // inherits state from a previous attempt.
+          setAnswers({});
+          setPartIndex(0);
+          setQIndex(0);
+          // ✅ FIX (Issue 2, the critical bug): use the FIRST section's own
+          // duration from the already-built parts array, not the total exam
+          // duration. Previously this was `meta.duration_minutes * 60`, which
+          // made the first section (Vocabulary) start with the entire exam's
+          // time budget (e.g. 51 min) instead of its own 18 min. This applies
+          // to both first-time attempts and retakes.
+          const firstPart = builtParts[0];
+          setPartTimeLeft(firstPart?.durationSec || meta.duration_minutes * 60);
+          // ✅ FIX: a brand-new attempt (first try OR retake) should land on
+          // the Intro page, not jump straight into questions. The student
+          // reviews the exam info/instructions and clicks "Start Exam" —
+          // which calls beginPart(0, 0) and sets phase to 'in_part' itself.
+          setPhase('intro');
+          // ✅ FIX (Issue 1): belt-and-suspenders — make sure "Resuming" is
+          // definitely off once a brand new attempt has been created.
+          setIsResuming(false);
+          
+          showNotification('📝 Exam ready! Review the instructions and start.', 'info');
         }
+
+        // ✅ Clear old localStorage if exam is complete
+        if (activeAttempt?.status === 'completed') {
+          clearExamFromLocalStorage(examId);
+        }
+
+      } catch (err) {
+        console.error('❌ Failed to initialize exam:', err);
+        if (!cancelled) {
+          // Try localStorage recovery as last resort
+          const localData = getExamFromLocalStorage(examId);
+          if (localData) {
+            console.log('💾 Emergency recovery from localStorage');
+            setAnswers(localData.answers || {});
+            setPartIndex(localData.partIndex || 0);
+            setQIndex(localData.qIndex || 0);
+            setPartTimeLeft(localData.timeLeft || 600);
+            setPhase('in_part');
+            showNotification('Recovered from local backup', 'info');
+          } else {
+            setErrorMsg(err?.response?.data?.message || 'Could not load this exam. Please try again.');
+            setPhase('error');
+          }
+        }
+      } finally {
+        if (!cancelled) setIsResuming(false);
       }
     })();
     return () => { cancelled = true; };
   }, [examId, buildParts]);
+
+  // ================================================================
+  // ✅ STEP 7: SAVE FUNCTIONS - localStorage + Backend (Debounced)
+  // ================================================================
+
+  // ✅ Save to localStorage (immediate, free)
+  const saveToLocalStorage = useCallback(() => {
+    if (!attemptId) return;
+    saveExamToLocalStorage(examId, {
+      attemptId,
+      answers: answersRef.current,
+      partIndex: partIndexRef.current,
+      qIndex: qIndexRef.current,
+      timeLeft: partTimeLeftRef.current
+    });
+  }, [examId, attemptId]);
+
+  // ✅ FIXED: Save to backend with proper data types
+  const saveToBackend = useCallback(async (force = false) => {
+    if (!attemptIdRef.current) return;
+    if (!force && !hasChangesRef.current) return;
+
+    const now = Date.now();
+    if (!force && (now - lastBackendSaveRef.current < SAVE_INTERVAL)) {
+      return;
+    }
+
+    try {
+      // ✅ Ensure all values are proper types
+      const payload = {
+        answers: answersRef.current || {},
+        partIndex: Number(partIndexRef.current) || 0,
+        qIndex: Number(qIndexRef.current) || 0,
+        timeLeft: Number(partTimeLeftRef.current) || 0
+      };
+      
+      await studentApi.put(`/exam-execution/${attemptIdRef.current}/save`, payload);
+      lastBackendSaveRef.current = now;
+      hasChangesRef.current = false;
+      console.log('✅ Backend save successful');
+    } catch (err) {
+      console.error('❌ Backend save failed:', err);
+    }
+  }, []);
+
+  // ✅ Debounced version for answer changes
+  const debouncedBackendSave = useCallback(
+    debounce(() => saveToBackend(false), SAVE_INTERVAL),
+    [saveToBackend]
+  );
+
+  // ✅ Show notification helper
+  const showNotification = (message, type = 'success') => {
+    // Simple notification - can be replaced with toast later
+    console.log(`[${type}] ${message}`);
+  };
+
+  // ================================================================
+  // ✅ REST OF THE COMPONENT (timers, audio, etc.)
+  // ================================================================
 
   const stopAudio = useCallback(() => {
     try {
@@ -431,9 +689,18 @@ export default function ExamTakePage() {
       });
   }, [stopAudio]);
 
-  const beginPart = useCallback((idx) => {
-    const part = partsRef.current[idx];
-    if (!part) return;
+  // ✅ FIXED: beginPart with restoreQIndex parameter
+  const beginPart = useCallback((idx, restoreQIndex = 0) => {
+    // Use parts from state directly (not ref)
+    const part = parts[idx];
+    if (!part) {
+      console.warn(`⚠️ Part ${idx} not found in parts array`);
+      return;
+    }
+
+    const targetQIndex = typeof restoreQIndex === 'number' ? restoreQIndex : 0;
+    
+    console.log(`📊 beginPart: ${part.label}, durationSec: ${part.durationSec} (${part.durationSec / 60} mins), qIndex: ${targetQIndex}`);
 
     stopAudio();
     audioPlayedRef.current = false;
@@ -441,17 +708,17 @@ export default function ExamTakePage() {
 
     if (part.isAudio) {
       setPartIndex(idx);
-      setQIndex(0);
+      setQIndex(targetQIndex);
       setPartTimeLeft(part.durationSec);
       setPhase('in_part');
       startListeningAudio(part.audioUrl);
     } else {
       setPartIndex(idx);
-      setQIndex(0);
+      setQIndex(targetQIndex);
       setPartTimeLeft(part.durationSec);
       setPhase('in_part');
     }
-  }, [stopAudio, startListeningAudio]);
+  }, [parts, stopAudio, startListeningAudio]);
 
   const doSubmit = useCallback(async (autoSubmitted = false) => {
     if (!attemptIdRef.current) return;
@@ -461,6 +728,9 @@ export default function ExamTakePage() {
     setPhase('submitting');
 
     try {
+      // ✅ Clear localStorage on submit
+      clearExamFromLocalStorage(examId);
+      
       const payload = {
         answers: answersRef.current,
         autoSubmitted,
@@ -474,8 +744,11 @@ export default function ExamTakePage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [navigate, stopAudio]);
+  }, [navigate, stopAudio, examId]);
 
+  // ================================================================
+  // ✅ Timer effects
+  // ================================================================
   useEffect(() => {
     if (phase !== 'in_part') return;
 
@@ -499,7 +772,8 @@ export default function ExamTakePage() {
             setBreakTimeLeft(part.breakAfterSec);
             setPhase('break');
           } else {
-            beginPart(idx + 1);
+            // ✅ New section starts at Q0
+            beginPart(idx + 1, 0);
           }
           return 0;
         }
@@ -525,7 +799,8 @@ export default function ExamTakePage() {
         if (prev <= 1) {
           clearInterval(breakTimerRef.current);
           breakTimerRef.current = null;
-          beginPart(partIndexRef.current + 1);
+          // ✅ Next section starts at Q0
+          beginPart(partIndexRef.current + 1, 0);
           return 0;
         }
         return prev - 1;
@@ -540,6 +815,9 @@ export default function ExamTakePage() {
     };
   }, [phase, beginPart]);
 
+  // ================================================================
+  // ✅ Anti-cheat
+  // ================================================================
   const reportViolation = useCallback(async () => {
     if (!attemptIdRef.current) return;
     try {
@@ -601,19 +879,106 @@ export default function ExamTakePage() {
     };
   }, [stopAudio]);
 
+  // ================================================================
+  // ✅ MODIFIED: selectAnswer with auto-save (MOVED AFTER currentItem)
+  // ================================================================
+  
+  // First, define currentItem and related variables
   const currentPart = parts[partIndex];
   const currentItem = currentPart?.items?.[qIndex];
   const totalInPart = currentPart?.items?.length || 0;
 
-  const goNext = () => {
-    if (qIndex < totalInPart - 1) setQIndex(qIndex + 1);
-    setShowExplanation(false);
-  };
+  // ✅ Then define selectAnswer (uses currentItem)
+  const selectAnswer = useCallback((optionIdx) => {
+    if (!currentItem || currentItem.isExample === true) return;
 
-  const goPrev = () => {
-    if (qIndex > 0) setQIndex(qIndex - 1);
+    const key = itemKey(currentItem);
+    let newAnswers;
+    if (answers[key] === optionIdx) {
+      const { [key]: _, ...rest } = answers;
+      newAnswers = rest;
+    } else {
+      newAnswers = { ...answers, [key]: optionIdx };
+    }
+    
+    setAnswers(newAnswers);
+    answersRef.current = newAnswers;
+    
     setShowExplanation(false);
-  };
+    
+    // ✅ Save changes
+    hasChangesRef.current = true;
+    saveToLocalStorage();              // Immediate (free)
+    debouncedBackendSave();            // Debounced (30s)
+  }, [currentItem, answers, saveToLocalStorage, debouncedBackendSave]);
+
+  // ✅ Navigation functions (uses currentItem, totalInPart)
+  const goNext = useCallback(() => {
+    if (qIndex < totalInPart - 1) {
+      setQIndex(qIndex + 1);
+    } else if (partIndex < parts.length - 1) {
+      // ✅ Force save before section change
+      saveToLocalStorage();
+      saveToBackend(true);
+      setPartIndex(partIndex + 1);
+      setQIndex(0);
+    }
+    setShowExplanation(false);
+  }, [qIndex, totalInPart, partIndex, parts.length, saveToLocalStorage, saveToBackend]);
+
+  const goPrev = useCallback(() => {
+    if (qIndex > 0) {
+      setQIndex(qIndex - 1);
+    }
+    setShowExplanation(false);
+  }, [qIndex]);
+
+  // ✅ Auto-save interval (every 30 seconds as fallback)
+  useEffect(() => {
+    if (phase !== 'in_part' || !attemptId) return;
+
+    const intervalId = setInterval(() => {
+      if (hasChangesRef.current) {
+        saveToLocalStorage();
+        saveToBackend(false);
+      }
+    }, SAVE_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [phase, attemptId, saveToLocalStorage, saveToBackend]);
+
+  // ✅ Before unload - save everything
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (phase === 'in_part' && attemptIdRef.current) {
+        saveToLocalStorage();
+        // Use sendBeacon for reliable last-second save
+        try {
+          const payload = JSON.stringify({
+            answers: answersRef.current,
+            partIndex: partIndexRef.current,
+            qIndex: qIndexRef.current,
+            timeLeft: partTimeLeftRef.current
+          });
+          navigator.sendBeacon(
+            `${API_URL}/exam-execution/${attemptIdRef.current}/save`,
+            payload
+          );
+        } catch (err) {
+          // Fallback to regular fetch
+          saveToBackend(true);
+        }
+        
+        // Show warning
+        e.preventDefault();
+        e.returnValue = 'You have unsaved exam progress. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [phase, saveToLocalStorage, saveToBackend]);
 
   const handleSubmit = () => setSubmitModal(true);
 
@@ -626,21 +991,9 @@ export default function ExamTakePage() {
     setShowExplanation(!showExplanation);
   };
 
-  const selectAnswer = useCallback((optionIdx) => {
-    if (!currentItem || currentItem.isExample === true) return;
-
-    const key = itemKey(currentItem);
-    if (answers[key] === optionIdx) {
-      setAnswers((prev) => {
-        const newAnswers = { ...prev };
-        delete newAnswers[key];
-        return newAnswers;
-      });
-    } else {
-      setAnswers((prev) => ({ ...prev, [key]: optionIdx }));
-    }
-    setShowExplanation(false);
-  }, [currentItem, answers]);
+  // ================================================================
+  // ✅ Render calculations
+  // ================================================================
 
   const totalQuestions = parts.reduce(
     (sum, p) => sum + p.items.filter((it) => !it.isExample).length,
@@ -700,7 +1053,7 @@ export default function ExamTakePage() {
     : 0;
 
   // ─── Loading State ───
-  if (phase === 'loading') {
+  if (phase === 'loading' || isResuming) {
     return (
       <div className="min-h-screen bg-[#030810] flex flex-col items-center justify-center gap-4 text-white">
         <div className="relative w-14 h-14">
@@ -712,7 +1065,9 @@ export default function ExamTakePage() {
             transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
           />
         </div>
-        <p className="text-gray-400 text-sm tracking-wide">Preparing your exam…</p>
+        <p className="text-gray-400 text-sm tracking-wide">
+          {isResuming ? 'Resuming your exam...' : 'Preparing your exam…'}
+        </p>
       </div>
     );
   }
@@ -758,11 +1113,11 @@ export default function ExamTakePage() {
             </div>
             <h1 
               className="text-2xl font-bold text-white mb-2 [&_p]:inline [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
-              dangerouslySetInnerHTML={{ __html: examMeta?.title || 'Untitled Exam' }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(examMeta?.title || 'Untitled Exam') }}
             />
             <p 
               className="text-gray-400 mb-6 text-sm [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
-              dangerouslySetInnerHTML={{ __html: examMeta?.description || 'Good luck!' }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(examMeta?.description || 'Good luck!') }}
             />
 
             <div className="flex items-center justify-center gap-2 mb-6 flex-wrap">
@@ -798,7 +1153,7 @@ export default function ExamTakePage() {
                 </p>
               )}
             </div>
-            <Button variant="primary" size="lg" className="w-full" onClick={() => beginPart(0)}>
+            <Button variant="primary" size="lg" className="w-full" onClick={() => beginPart(0, 0)}>
               Start Exam
             </Button>
           </GlassCard>
@@ -856,7 +1211,7 @@ export default function ExamTakePage() {
               <span>{tip}</span>
             </div>
 
-            <Button variant="primary" size="md" className="w-full" onClick={() => beginPart(partIndex + 1)}>
+            <Button variant="primary" size="md" className="w-full" onClick={() => beginPart(partIndex + 1, 0)}>
               Skip Break <ChevronRight size={15} />
             </Button>
           </GlassCard>
@@ -924,7 +1279,7 @@ export default function ExamTakePage() {
   const isExampleQuestion = isExample === true;
   const SectionIcon = sectionIconFor(currentPart.label);
 
-  // ✅ Clean the text content before rendering
+  // ✅ Clean the text content before rendering using DOMPurify
   const cleanText = currentItem.text ? cleanHtmlContent(currentItem.text) : '';
   const cleanPassageText = currentItem.passage_text ? cleanHtmlContent(currentItem.passage_text) : '';
   const cleanExplanation = explanation ? cleanHtmlContent(explanation) : '';
@@ -942,7 +1297,7 @@ export default function ExamTakePage() {
               <h2 className="font-semibold text-white text-sm truncate">{currentPart.label}</h2>
               <p 
                 className="text-[11px] text-gray-500 truncate hidden sm:block [&_p]:inline [&_p]:m-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
-                dangerouslySetInnerHTML={{ __html: examMeta?.title || 'Exam' }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(examMeta?.title || 'Exam') }}
               />
             </div>
           </div>
@@ -1098,7 +1453,7 @@ export default function ExamTakePage() {
                 </div>
               )}
 
-              {/* ✅ Passage Text as HTML - FIXED with cleanHtmlContent */}
+              {/* ✅ Passage Text as HTML - sanitized with DOMPurify */}
               {cleanPassageText && (
                 <div 
                   className="text-sm text-gray-400 mb-4 leading-relaxed bg-white/[0.02] border border-white/5 rounded-xl p-4 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
@@ -1106,7 +1461,7 @@ export default function ExamTakePage() {
                 />
               )}
 
-              {/* ✅ Question Text as HTML - FIXED with cleanHtmlContent */}
+              {/* ✅ Question Text as HTML - sanitized with DOMPurify */}
               <div className="mb-6 sm:mb-8">
                 <div 
                   className="text-base sm:text-xl font-semibold text-white leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:bg-transparent [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300"
@@ -1137,7 +1492,7 @@ export default function ExamTakePage() {
                 </div>
               )}
 
-              {/* ✅ Options as HTML - FIXED */}
+              {/* ✅ Options as HTML - sanitized with DOMPurify */}
               <div className="space-y-2.5 sm:space-y-3">
                 {(currentItem.options || []).map((opt, idx) => {
                   const selectedOpt = selected === idx;
@@ -1171,7 +1526,7 @@ export default function ExamTakePage() {
                       </div>
                       <span 
                         className={`text-xs sm:text-sm leading-relaxed ${isDisabled ? 'text-gray-500' : ''} [&_ruby]:mx-0.5 [&_rt]:text-[10px] [&_rt]:text-blue-300`}
-                        dangerouslySetInnerHTML={{ __html: opt || '' }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(opt || '') }}
                       />
                       {selectedOpt && <CheckCircle size={16} className="ml-auto text-indigo-300 flex-shrink-0" />}
                       {isExample && isCorrect && !selectedOpt && (
@@ -1182,7 +1537,7 @@ export default function ExamTakePage() {
                 })}
               </div>
 
-              {/* ✅ Example Question Explanation as HTML - FIXED with cleanHtmlContent */}
+              {/* ✅ Example Question Explanation as HTML - sanitized with DOMPurify */}
               {isExample && correctAnswerLetter && (
                 <div className="mt-4 p-4 bg-white/5 border border-white/10 rounded-xl">
                   <button
@@ -1242,7 +1597,7 @@ export default function ExamTakePage() {
                   setBreakTimeLeft(nextPart.breakAfterSec);
                   setPhase('break');
                 } else {
-                  beginPart(partIndex + 1);
+                  beginPart(partIndex + 1, 0);
                 }
               } : handleSubmit}>
                 {partIndex < parts.length - 1 ? 'Finish Section' : 'Submit Exam'}
@@ -1464,3 +1819,4 @@ function PaletteContent({
     </>
   );
 }
+

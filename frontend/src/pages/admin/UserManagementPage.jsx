@@ -1,14 +1,16 @@
+// frontend/src/pages/admin/UserManagementPage.jsx
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Users, UserCheck, UserX, Mail, Shield, CheckCircle, X,
+  Search, Users, UserCheck, UserX, Shield, CheckCircle, X,
   UserPlus, Building, ShieldAlert, Loader, Radio, Zap, Activity, Globe,
-  AlertCircle, Check, Ban, Trash2, AlertTriangle, Plus, Settings, Edit, Trash
+  AlertCircle, Check, Ban, Trash2, AlertTriangle
 } from 'lucide-react';
 
 import GlassCard from '../../components/ui/GlassCard';
 import Button from '../../components/ui/Button';
 import Portal from '../../components/ui/Portal';
+import AdminNotifications from '../../components/admin/AdminNotifications';
 
 import {
   fetchUsers,
@@ -16,17 +18,14 @@ import {
   softDeleteUser,
   saveUserPrivileges,
   provisionUser,
-  fetchRoles,
-  createRole,
-  updateRole,
-  deleteRole
+  fetchRoles
 } from '../../services/userService';
 
 // ================================================================
-// ✅ SYSTEM-WIDE PRIVILEGES - FIXED: Validator gets 2 permissions only
+// ✅ SYSTEM-WIDE PRIVILEGES
 // ================================================================
 const SYSTEM_PRIVILEGES = [
-  // 🔐 System Administration
+  // System Administration
   { 
     key: 'manage_users', 
     roles: ['admin', 'super_admin', 'sub_admin'], 
@@ -56,7 +55,7 @@ const SYSTEM_PRIVILEGES = [
     desc: 'Access system audit trail and security logs' 
   },
   
-  // 📚 Academic Operations (Validator) - ONLY 2 permissions
+  // Academic Operations (Validator)
   { 
     key: 'verify_tutors', 
     roles: ['validator'], 
@@ -72,7 +71,7 @@ const SYSTEM_PRIVILEGES = [
     desc: 'Review and audit exam quality, accuracy, and content validity' 
   },
   
-  // 💰 Financial Operations - ✅ Finance Admin gets ONLY these 3 permissions
+  // Financial Operations (Finance Admin)
   { 
     key: 'manage_subscriptions', 
     roles: ['finance'], 
@@ -95,7 +94,7 @@ const SYSTEM_PRIVILEGES = [
     desc: 'Approve and process tutor payout requests' 
   },
   
-  // 📝 Content Management (Tutor)
+  // Content Management (Tutor)
   { 
     key: 'create_exams', 
     roles: ['tutor'], 
@@ -136,49 +135,22 @@ const SYSTEM_PRIVILEGES = [
 ];
 
 // ================================================================
-// ✅ ROLE PRIVILEGE TEMPLATES - FIXED
+// ROLE PRIVILEGE TEMPLATES - Validator & Finance only
 // ================================================================
 const ROLE_PRIVILEGE_TEMPLATES = {
   validator: [
-    'verify_tutors',   // Approve Tutors
-    'audit_exams'      // Audit Exams
+    'verify_tutors',
+    'audit_exams'
   ],
   finance: [
-    'manage_subscriptions',  // Subscription Plans
-    'manage_credits',        // Exam Credit Valuation
-    'approve_payouts'        // Tutor Payouts
-  ],
-  tutor: [
-    'create_exams', 
-    'manage_own_content', 
-    'view_student_progress', 
-    'view_reports'
-  ],
-  student: ['view_own_profile'],
-  admin: [
-    'manage_users', 
-    'manage_system', 
-    'view_audit_logs', 
-    'view_reports', 
-    'view_own_profile'
-  ],
-  super_admin: [
-    'manage_users', 
-    'manage_roles', 
-    'manage_system', 
-    'view_audit_logs',
-    'view_reports', 
-    'view_own_profile'
-  ],
-  sub_admin: [
-    'manage_users', 
-    'view_reports', 
-    'view_own_profile'
+    'manage_subscriptions',
+    'manage_credits',
+    'approve_payouts'
   ]
 };
 
 // ================================================================
-// ✅ PRIVILEGE CATEGORIES CONFIGURATION
+// PRIVILEGE CATEGORIES CONFIGURATION
 // ================================================================
 const PRIVILEGE_CATEGORIES = {
   system: { 
@@ -220,53 +192,6 @@ const getAvailablePrivilegesForRole = (roleId) => {
   return SYSTEM_PRIVILEGES.filter(p => p.roles.includes(roleId));
 };
 
-// ✅ FIXED: ALL_PERMISSION_KEYS - Include ALL permissions
-const ALL_PERMISSION_KEYS = [
-  // 🔐 System Administration
-  'manage_users', 
-  'manage_roles', 
-  'manage_system', 
-  'view_audit_logs',
-  // ✅ Validator
-  'verify_tutors',
-  'audit_exams',
-  // ✅ Finance
-  'manage_subscriptions',
-  'manage_credits',
-  'approve_payouts',
-  // 📝 Tutor
-  'create_exams',
-  'manage_own_content',
-  'view_student_progress',
-  // 📊 General
-  'view_reports',
-  'view_own_profile'
-];
-
-// ✅ FIXED: PERMISSION_LABELS - Include ALL permissions
-const PERMISSION_LABELS = {
-  // System
-  manage_users: 'Manage Users',
-  manage_roles: 'Manage Roles (Create/Edit/Delete)',
-  manage_system: 'System Settings',
-  view_audit_logs: 'View Audit Logs',
-  // ✅ Validator
-  verify_tutors: 'Approve Tutors',
-  audit_exams: 'Audit Exams',
-  // ✅ Finance
-  manage_subscriptions: 'Manage Subscription Plans',
-  manage_credits: 'Manage Credit Valuation',
-  approve_payouts: 'Approve Tutor Payouts',
-  // Tutor
-  create_exams: 'Create Exams',
-  manage_own_content: 'Manage Own Content',
-  view_student_progress: 'View Student Progress',
-  // General
-  view_reports: 'View Reports',
-  view_own_profile: 'View Own Profile'
-};
-
-// ✅ Get display role name for UI
 const getDisplayRole = (user) => {
   const roleMap = {
     'finance': 'Finance',
@@ -294,6 +219,9 @@ const getEmailDomain = (roleId) => {
   }
 };
 
+// ================================================================
+// ✅ MAIN COMPONENT
+// ================================================================
 export default function UserManagementPage() {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -305,38 +233,10 @@ export default function UserManagementPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [isPrivilegeModalOpen, setIsPrivilegeModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
 
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [confirmDeleteModal, setConfirmDeleteModal] = useState({ show: false, uid: null, email: null, currentStatus: null });
 
-  const [editingRole, setEditingRole] = useState(null);
-  
-  // ✅ FIXED: roleForm state with ALL permissions
-  const [roleForm, setRoleForm] = useState({
-    name: '',
-    level: 3,
-    permissions: {
-      manage_users: false,
-      manage_roles: false,
-      manage_system: false,
-      view_audit_logs: false,
-      verify_tutors: false,
-      audit_exams: false,
-      manage_subscriptions: false,
-      manage_credits: false,
-      approve_payouts: false,
-      create_exams: false,
-      manage_own_content: false,
-      view_student_progress: false,
-      view_reports: false,
-      view_own_profile: false
-    }
-  });
-  const [roleFormError, setRoleFormError] = useState('');
-  const [isRoleSubmitting, setIsRoleSubmitting] = useState(false);
-
-  // ✅ Create form with empty default roleId
   const [createForm, setCreateForm] = useState({
     firstName: '',
     lastName: '',
@@ -351,40 +251,32 @@ export default function UserManagementPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rolesLoaded, setRolesLoaded] = useState(false);
 
-  // ✅ Bulk Privilege Assignment States
-  const [isBulkPrivilegeModalOpen, setIsBulkPrivilegeModalOpen] = useState(false);
-  const [selectedUsersForBulk, setSelectedUsersForBulk] = useState([]);
-  const [bulkPrivileges, setBulkPrivileges] = useState([]);
-  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
-
+  // ----------------------------------------------------------------------------
+  // Toast Notification
+  // ----------------------------------------------------------------------------
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
   };
 
+  // ----------------------------------------------------------------------------
+  // Data Fetching
+  // ----------------------------------------------------------------------------
   const fetchAllUsersAndPreAuth = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Fetching users...');
       const data = await fetchUsers();
-      console.log('✅ Users data:', data);
-      
       if (data.success) {
         setUsers(data.users.filter(u => u.status !== 'deleted'));
       } else {
-        console.error('❌ Users fetch failed:', data.message);
         showNotification(data.message || 'Failed to fetch users.', 'error');
       }
     } catch (error) {
-      console.error('❌ Error fetching users:', error);
-      
       if (error.response?.status === 403) {
-        showNotification('You do not have permission to view users. Please contact your administrator.', 'error');
+        showNotification('You do not have permission to view users.', 'error');
       } else if (error.response?.status === 401) {
         showNotification('Your session has expired. Please login again.', 'error');
-        setTimeout(() => {
-          window.location.href = '/auth/login';
-        }, 2000);
+        setTimeout(() => window.location.href = '/auth/login', 2000);
       } else {
         showNotification('Failed to fetch users. Please try again later.', 'error');
       }
@@ -395,36 +287,24 @@ export default function UserManagementPage() {
 
   const fetchAllRoles = async () => {
     try {
-      console.log('🔄 Fetching roles...');
       const data = await fetchRoles();
-      console.log('✅ Roles data:', data);
-      
       if (data.success) {
-        const filteredRoles = data.roles.filter(r => r.id !== 'super_admin');
+        const filteredRoles = data.roles.filter(r => r.id === 'validator' || r.id === 'finance');
         setRoles(filteredRoles);
         if (filteredRoles.length > 0) {
           const defaultRole = filteredRoles.find(r => r.id === 'validator') || filteredRoles[0];
-          setCreateForm(prev => ({
-            ...prev,
-            roleId: defaultRole.id
-          }));
-          console.log('✅ Default role set to:', defaultRole.id);
+          setCreateForm(prev => ({ ...prev, roleId: defaultRole.id }));
         }
         setRolesLoaded(true);
       } else {
-        console.error('❌ Roles fetch failed:', data.message);
         showNotification(data.message || 'Failed to fetch roles.', 'error');
       }
     } catch (error) {
-      console.error('❌ Error fetching roles:', error);
-      
       if (error.response?.status === 403) {
         showNotification('You do not have permission to manage roles.', 'error');
       } else if (error.response?.status === 401) {
         showNotification('Your session has expired. Please login again.', 'error');
-        setTimeout(() => {
-          window.location.href = '/auth/login';
-        }, 2000);
+        setTimeout(() => window.location.href = '/auth/login', 2000);
       } else {
         showNotification('Failed to fetch roles. Please try again later.', 'error');
       }
@@ -436,7 +316,9 @@ export default function UserManagementPage() {
     fetchAllRoles();
   }, []);
 
-  // --- User lifecycle ---
+  // ----------------------------------------------------------------------------
+  // User Lifecycle
+  // ----------------------------------------------------------------------------
   const toggleSuspend = async (uid, currentStatus, email) => {
     try {
       const data = await toggleUserLifecycle(uid, currentStatus, email);
@@ -453,7 +335,6 @@ export default function UserManagementPage() {
         }
       }
     } catch (error) {
-      console.error("Lifecycle runtime transformation failed:", error);
       showNotification("Failed to sync account transformation lifecycle.", "error");
     }
   };
@@ -473,12 +354,13 @@ export default function UserManagementPage() {
         showNotification("User profile dropped to deleted storage context successfully.", "error");
       }
     } catch (error) {
-      console.error("Soft purge matrix crashed:", error);
       showNotification("Failed to securely tag node to soft-deleted state.", "error");
     }
   };
 
-  // --- Privileges ---
+  // ----------------------------------------------------------------------------
+  // Privileges
+  // ----------------------------------------------------------------------------
   const savePrivileges = async () => {
     try {
       const payload = {
@@ -494,15 +376,11 @@ export default function UserManagementPage() {
         showNotification("Security token capability access scopes committed clean.", "success");
       }
     } catch (error) {
-      console.error("Failed to commit capability profiles:", error);
-      
       if (error.response?.status === 403) {
-        showNotification("You do not have permission to change user privileges. Please contact your administrator.", "error");
+        showNotification("You do not have permission to change user privileges.", "error");
       } else if (error.response?.status === 401) {
         showNotification("Your session has expired. Please login again.", "error");
-        setTimeout(() => {
-          window.location.href = '/auth/login';
-        }, 2000);
+        setTimeout(() => window.location.href = '/auth/login', 2000);
       } else {
         showNotification("Failed to finalize staff permissions matrix update.", "error");
       }
@@ -530,14 +408,14 @@ export default function UserManagementPage() {
     });
   };
 
-  // --- Create user ---
+  // ----------------------------------------------------------------------------
+  // Create User
+  // ----------------------------------------------------------------------------
   const handleProvisionUser = async (e) => {
     e.preventDefault();
     setFormError('');
     setIsSubmitting(true);
     const formattedEmail = createForm.email.toLowerCase().trim();
-
-    console.log('📋 Form data before submit:', createForm);
 
     if (!createForm.firstName.trim() || !createForm.lastName.trim() || !formattedEmail || !createForm.roleId) {
       setFormError('All fields are mandatory.');
@@ -552,9 +430,7 @@ export default function UserManagementPage() {
 
     try {
       const fullName = `${createForm.firstName.trim()} ${createForm.lastName.trim()}`;
-      
       const isFinance = createForm.roleId === 'finance';
-      const isValidator = createForm.roleId === 'validator';
       
       const payload = {
         name: fullName,
@@ -565,8 +441,6 @@ export default function UserManagementPage() {
         languageScope: isFinance ? '' : (createForm.languageScope || 'Japanese'),
         privileges: createForm.privileges
       };
-      
-      console.log('📤 Sending payload to backend:', payload);
       
       const data = await provisionUser(payload);
       if (data.success) {
@@ -586,15 +460,11 @@ export default function UserManagementPage() {
         showNotification("Staff provisioning lifecycle executed. Invitation dispatched.", "success");
       }
     } catch (error) {
-      console.error("Provision error:", error);
-      
       if (error.response?.status === 403) {
-        setFormError('You do not have permission to provision users. Please contact your administrator.');
+        setFormError('You do not have permission to provision users.');
       } else if (error.response?.status === 401) {
         setFormError('Your session has expired. Please login again.');
-        setTimeout(() => {
-          window.location.href = '/auth/login';
-        }, 2000);
+        setTimeout(() => window.location.href = '/auth/login', 2000);
       } else {
         setFormError(error.response?.data?.message || "Failed to create user.");
       }
@@ -615,163 +485,9 @@ export default function UserManagementPage() {
     });
   };
 
-  // --- Role Management ---
-  // ✅ FIXED: openRoleModal with ALL permissions
-  const openRoleModal = (role = null) => {
-    if (role) {
-      setEditingRole(role);
-      const permissions = {};
-      ALL_PERMISSION_KEYS.forEach(key => {
-        permissions[key] = role.permissions && role.permissions[key] === true;
-      });
-      setRoleForm({
-        name: role.name,
-        level: role.level,
-        permissions: permissions
-      });
-    } else {
-      setEditingRole(null);
-      const permissions = {};
-      ALL_PERMISSION_KEYS.forEach(key => {
-        permissions[key] = false;
-      });
-      setRoleForm({
-        name: '',
-        level: 3,
-        permissions: permissions
-      });
-    }
-    setRoleFormError('');
-    setIsRoleModalOpen(true);
-  };
-
-  const handleToggleRolePermission = (permKey) => {
-    setRoleForm(prev => ({
-      ...prev,
-      permissions: {
-        ...prev.permissions,
-        [permKey]: !prev.permissions[permKey]
-      }
-    }));
-  };
-
-  // ✅ FIXED: handleSaveRole with ALL permissions
-  const handleSaveRole = async (e) => {
-    e.preventDefault();
-    setRoleFormError('');
-    setIsRoleSubmitting(true);
-    if (!roleForm.name.trim()) {
-      setRoleFormError('Role name is required.');
-      setIsRoleSubmitting(false);
-      return;
-    }
-    
-    const permissions = {};
-    ALL_PERMISSION_KEYS.forEach(key => {
-      permissions[key] = roleForm.permissions[key] || false;
-    });
-    
-    const payload = {
-      name: roleForm.name.trim(),
-      level: parseInt(roleForm.level) || 3,
-      permissions: permissions
-    };
-    
-    try {
-      let data;
-      if (editingRole) {
-        data = await updateRole(editingRole.id, payload);
-      } else {
-        data = await createRole(payload);
-      }
-      if (data.success) {
-        await fetchAllRoles();
-        setIsRoleModalOpen(false);
-        showNotification(`Role ${editingRole ? 'updated' : 'created'} successfully!`, 'success');
-      }
-    } catch (error) {
-      setRoleFormError(error.response?.data?.message || `Failed to ${editingRole ? 'update' : 'create'} role.`);
-    } finally {
-      setIsRoleSubmitting(false);
-    }
-  };
-
-  const handleDeleteRole = async (roleId, roleName) => {
-    if (!window.confirm(`Are you sure you want to delete the role "${roleName}"? This cannot be undone if users are assigned to it.`)) return;
-    try {
-      const data = await deleteRole(roleId);
-      if (data.success) {
-        await fetchAllRoles();
-        showNotification(`Role "${roleName}" deleted successfully.`, 'success');
-      }
-    } catch (error) {
-      showNotification(error.response?.data?.message || 'Failed to delete role.', 'error');
-    }
-  };
-
-  // ✅ Bulk Privilege Assignment Handler
-  const handleBulkPrivilegeAssignment = async () => {
-    if (selectedUsersForBulk.length === 0 || bulkPrivileges.length === 0) {
-      showNotification('Please select at least one user and one privilege.', 'error');
-      return;
-    }
-
-    setIsBulkSubmitting(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    try {
-      for (const userId of selectedUsersForBulk) {
-        const user = users.find(u => u.id === userId);
-        if (!user) continue;
-
-        try {
-          const existingPrivileges = user.privileges || [];
-          const mergedPrivileges = [...new Set([...existingPrivileges, ...bulkPrivileges])];
-
-          const payload = {
-            privileges: mergedPrivileges,
-            languageScope: user.languageScope || 'All',
-            status: user.status,
-            email: user.email,
-            reason: `Bulk assignment: ${bulkPrivileges.join(', ')}`
-          };
-
-          await saveUserPrivileges(userId, payload);
-          successCount++;
-        } catch (err) {
-          console.error(`Failed to update user ${userId}:`, err);
-          failCount++;
-        }
-      }
-
-      await fetchAllUsersAndPreAuth();
-      
-      if (failCount === 0) {
-        showNotification(
-          `✅ Successfully assigned ${bulkPrivileges.length} privileges to ${successCount} users!`,
-          'success'
-        );
-      } else {
-        showNotification(
-          `⚠️ ${successCount} users updated, ${failCount} failed. Check console for details.`,
-          'error'
-        );
-      }
-
-      setIsBulkPrivilegeModalOpen(false);
-      setSelectedUsersForBulk([]);
-      setBulkPrivileges([]);
-
-    } catch (error) {
-      console.error('Bulk assignment error:', error);
-      showNotification('Failed to complete bulk assignment. Please try again.', 'error');
-    } finally {
-      setIsBulkSubmitting(false);
-    }
-  };
-
-  // ---------- Filters ----------
+  // ----------------------------------------------------------------------------
+  // Filters
+  // ----------------------------------------------------------------------------
   const filtered = users.filter(u => {
     if (search && !u.name?.toLowerCase().includes(search.toLowerCase()) &&
         !u.email?.toLowerCase().includes(search.toLowerCase()) &&
@@ -779,12 +495,13 @@ export default function UserManagementPage() {
     
     const userRole = u.roleId || u.role || 'student';
     if (roleFilter !== 'all' && userRole !== roleFilter) return false;
-    
     if (statusFilter !== 'all' && u.status !== statusFilter) return false;
     return true;
   });
 
-  // ---------- Render ----------
+  // ----------------------------------------------------------------------------
+  // RENDER
+  // ----------------------------------------------------------------------------
   return (
     <div className="space-y-6 p-2 selection:bg-blue-500/30 relative">
       {/* Toast Notification */}
@@ -869,7 +586,7 @@ export default function UserManagementPage() {
         )}
       </AnimatePresence>
 
-      {/* Header */}
+      {/* Header with Bell */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-3xl font-bold text-white tracking-tight">User Management Hub</h1>
@@ -878,22 +595,8 @@ export default function UserManagementPage() {
           </p>
         </motion.div>
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end select-none">
-          <Button
-            variant="secondary"
-            size="sm"
-            className="bg-white/5 border-white/10 hover:bg-white/10 text-gray-300 flex items-center gap-1.5"
-            onClick={() => setIsBulkPrivilegeModalOpen(true)}
-          >
-            <Shield size={14} /> Bulk Permissions
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="bg-white/5 border-white/10 hover:bg-white/10 text-gray-300"
-            onClick={() => openRoleModal()}
-          >
-            <Settings size={14} className="mr-1" /> Manage Roles
-          </Button>
+          {/* ✅ Notification Bell - Same level as Add Staff button */}
+          <AdminNotifications />
           <Button
             variant="primary"
             onClick={() => setIsCreateModalOpen(true)}
@@ -931,7 +634,7 @@ export default function UserManagementPage() {
         ))}
       </div>
 
-      {/* Main Table Card */}
+      {/* Main Table Card - code continues... */}
       <GlassCard className="p-5 bg-white dark:bg-slate-950/20 border border-slate-200 dark:border-white/5 rounded-2xl shadow-xl">
         {/* Search and Filters */}
         <div className="flex flex-col gap-4 mb-5">
@@ -953,7 +656,7 @@ export default function UserManagementPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between pt-2 border-t border-slate-100 dark:border-white/5">
             <div className="flex flex-wrap gap-1.5 items-center">
               <span className="text-xs font-semibold text-slate-400 mr-2 flex items-center gap-1"><Activity size={12}/> Role Type:</span>
-              {['all', 'student', 'tutor', 'validator', 'finance', 'admin', 'super_admin'].map(r => (
+              {['all', 'student', 'tutor', 'validator', 'finance', 'super_admin'].map(r => (
                 <button key={r} onClick={() => setRoleFilter(r)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-medium capitalize transition-all ${
                     roleFilter === r
@@ -980,7 +683,7 @@ export default function UserManagementPage() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Table - abbreviated for brevity, keep existing table code */}
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900/10">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400 text-sm">
@@ -1010,6 +713,7 @@ export default function UserManagementPage() {
                 {filtered.map(u => {
                   const displayRole = getDisplayRole(u);
                   const userRoleForBadge = u.roleId || u.role || 'student';
+                  const userRoleId = u.roleId || u.role || 'student';
                   
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/60 dark:hover:bg-white/[0.01] transition-all group">
@@ -1066,8 +770,7 @@ export default function UserManagementPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-end gap-2">
-                          {(u.roleId === 'validator' || u.roleId === 'finance' || u.roleId === 'admin' || u.roleId === 'super_admin' || 
-                            u.role === 'validator' || u.role === 'finance' || u.role === 'admin' || u.role === 'super_admin') && (
+                          {(userRoleId === 'validator' || userRoleId === 'finance') && (
                             <Button
                               variant="secondary"
                               className="px-2.5 py-1.5 text-xs font-bold border border-blue-500/30 text-blue-600 dark:text-blue-400 flex items-center gap-1.5 bg-blue-500/5 hover:bg-blue-500/10 rounded-xl transition-all"
@@ -1076,9 +779,6 @@ export default function UserManagementPage() {
                               <Shield size={12} /> Permissions
                             </Button>
                           )}
-                          <Button variant="ghost" size="sm" className="p-2 border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-transparent hover:bg-slate-100 rounded-xl">
-                            <Mail size={13} className="text-slate-500 dark:text-slate-400" />
-                          </Button>
                           <Button
                             variant={u.status === 'suspended' ? 'success' : 'danger'}
                             size="sm"
@@ -1117,7 +817,7 @@ export default function UserManagementPage() {
       <AnimatePresence>
         {isCreateModalOpen && (
           <Portal>
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
               <motion.div 
                 initial={{ scale: 0.95, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -1125,26 +825,27 @@ export default function UserManagementPage() {
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                 className="w-full max-w-lg"
               >
-                <GlassCard className="p-0 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
+                <GlassCard className="p-0 bg-white/5 dark:bg-white/5 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
                   
-                  {/* ✅ Sticky Header */}
-                  <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-white/5 sticky top-0 z-20 bg-white dark:bg-[#070c19] flex-shrink-0">
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <UserPlus className="text-blue-500" size={18} /> Add New Staff Node
+                  {/* Header */}
+                  <div className="flex justify-between items-center px-6 py-4 border-b border-white/5 flex-shrink-0">
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <UserPlus className="text-blue-400" size={18} /> 
+                      <span>Add New Staff Node</span>
                     </h3>
                     <button 
                       onClick={() => setIsCreateModalOpen(false)} 
-                      className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl flex-shrink-0 transition-colors"
+                      className="text-white/40 hover:text-white/80 p-1 rounded-xl flex-shrink-0 transition-all duration-200 hover:bg-white/5"
                     >
                       <X size={18} />
                     </button>
                   </div>
 
-                  {/* ✅ Scrollable Content */}
-                  <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-                    <form onSubmit={handleProvisionUser} className="space-y-4">
+                  {/* Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+                    <form onSubmit={handleProvisionUser} className="space-y-5">
                       {formError && (
-                        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs p-3 rounded-xl flex items-center gap-2 font-medium">
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-xl flex items-center gap-2 font-medium backdrop-blur-sm">
                           <ShieldAlert size={15} /> {formError}
                         </div>
                       )}
@@ -1152,57 +853,54 @@ export default function UserManagementPage() {
                       {/* First Name & Last Name */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">First Name</label>
+                          <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">First Name</label>
                           <input
                             type="text" required placeholder="Asgiri"
                             value={createForm.firstName}
                             onChange={e => setCreateForm(p => ({ ...p, firstName: e.target.value }))}
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                            className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Last Name</label>
+                          <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">Last Name</label>
                           <input
                             type="text" required placeholder="Perera"
                             value={createForm.lastName}
                             onChange={e => setCreateForm(p => ({ ...p, lastName: e.target.value }))}
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                            className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
                           />
                         </div>
                       </div>
 
                       {/* Email */}
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Official Corporate Email</label>
+                        <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">Official Corporate Email</label>
                         <input
                           type="email" required
                           placeholder={`username@${getEmailDomain(createForm.roleId)}`}
                           value={createForm.email}
                           onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                          className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
                         />
                       </div>
 
                       {/* System Role + Affiliation */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                            System Role
-                          </label>
+                          <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">System Role</label>
                           <select
                             value={createForm.roleId}
                             onChange={e => {
                               const selectedRole = roles.find(r => r.id === e.target.value);
-                              console.log('📋 Selected role:', selectedRole);
                               let privileges = [];
                               let organization = '';
                               let languageScope = 'Japanese';
                               
                               if (selectedRole?.id === 'validator') {
-                                privileges = ROLE_PRIVILEGE_TEMPLATES.validator;
+                                privileges = [];
                                 languageScope = 'Japanese';
                               } else if (selectedRole?.id === 'finance') {
-                                privileges = ROLE_PRIVILEGE_TEMPLATES.finance;
+                                privileges = [];
                                 organization = 'Novacore Solutions';
                                 languageScope = '';
                               }
@@ -1216,22 +914,20 @@ export default function UserManagementPage() {
                               }));
                             }}
                             disabled={!rolesLoaded || roles.length === 0}
-                            className={`w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors ${
-                              (!rolesLoaded || roles.length === 0) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                            }`}
+                            className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {!rolesLoaded || roles.length === 0 ? (
-                              <option value="">⏳ Loading roles...</option>
+                              <option value="" className="bg-gray-900">Loading roles...</option>
                             ) : (
                               roles.map(role => (
-                                <option key={role.id} value={role.id}>
-                                  {role.name} {role.id === 'finance' ? '💰' : role.id === 'validator' ? '✅' : ''}
+                                <option key={role.id} value={role.id} className="bg-gray-900 text-white hover:bg-gray-800">
+                                  {role.name}
                                 </option>
                               ))
                             )}
                           </select>
                           {rolesLoaded && roles.length > 0 && createForm.roleId && (
-                            <p className="text-[9px] text-gray-500">
+                            <p className="text-[9px] text-white/40">
                               Selected: <span className="text-blue-400 font-medium">
                                 {roles.find(r => r.id === createForm.roleId)?.name || 'None'}
                               </span>
@@ -1242,96 +938,59 @@ export default function UserManagementPage() {
                         <div className="space-y-1.5">
                           {createForm.roleId === 'validator' ? (
                             <>
-                              <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                                🇯🇵 Language Scope
-                              </label>
+                              <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">Language Scope</label>
                               <select
                                 value={createForm.languageScope}
                                 onChange={e => setCreateForm(p => ({ ...p, languageScope: e.target.value }))}
-                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none cursor-pointer"
+                                className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 cursor-pointer"
                               >
-                                <option value="Japanese">🇯🇵 Japanese Language</option>
-                                <option value="Korean">🇰🇷 Korean Language</option>
+                                <option value="Japanese" className="bg-gray-900 text-white hover:bg-gray-800">Japanese Language</option>
+                                <option value="Korean" className="bg-gray-900 text-white hover:bg-gray-800">Korean Language</option>
                               </select>
-                              <p className="text-[9px] text-blue-400">
-                                ✅ Validator will only see exams in this language
-                              </p>
+                              <p className="text-[9px] text-blue-400/70">Validator will only see exams in this language</p>
                             </>
                           ) : createForm.roleId === 'finance' ? (
                             <>
-                              <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                                Organization
-                              </label>
+                              <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">Organization</label>
                               <input
                                 type="text"
                                 disabled
                                 value="Novacore Solutions"
-                                className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2.5 text-slate-400 text-sm cursor-not-allowed"
+                                className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2.5 text-white/50 text-sm cursor-not-allowed"
                               />
-                              <p className="text-[9px] text-emerald-400">✅ Auto-assigned for Finance Admin</p>
+                              <p className="text-[9px] text-emerald-400/70">Auto-assigned for Finance Admin</p>
                             </>
                           ) : createForm.roleId === 'admin' || createForm.roleId === 'sub_admin' ? (
                             <>
-                              <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                                Organization
-                              </label>
+                              <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">Organization</label>
                               <input
                                 type="text"
                                 disabled
                                 value="Novacore Solutions"
-                                className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2.5 text-slate-400 text-sm cursor-not-allowed"
+                                className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2.5 text-white/50 text-sm cursor-not-allowed"
                               />
                             </>
                           ) : (
                             <>
-                              <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">
-                                Institution
-                              </label>
+                              <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">Institution</label>
                               <input
                                 type="text"
                                 placeholder="e.g., Langoora"
                                 value={createForm.institution}
                                 onChange={e => setCreateForm(p => ({ ...p, institution: e.target.value }))}
-                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                                className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
                               />
                             </>
                           )}
                         </div>
                       </div>
 
-                      {/* Selected Role Info */}
-                      {createForm.roleId && rolesLoaded && roles.length > 0 && (
-                        <div className="p-2 bg-blue-500/5 border border-blue-500/20 rounded-lg">
-                          <p className="text-[10px] text-blue-400">
-                            📋 Creating user with role: <span className="text-white font-bold">
-                              {roles.find(r => r.id === createForm.roleId)?.name || 'Unknown'}
-                            </span>
-                            <span className="text-gray-500 ml-2 text-[9px]">(ID: {createForm.roleId})</span>
-                            {createForm.privileges.length > 0 && (
-                              <span className="ml-2 text-emerald-400 text-[9px]">
-                                • {createForm.privileges.length} privileges assigned
-                              </span>
-                            )}
-                            {createForm.roleId === 'validator' && (
-                              <span className="ml-2 text-blue-400 text-[9px]">
-                                • Language: {createForm.languageScope}
-                              </span>
-                            )}
-                            {createForm.roleId === 'finance' && (
-                              <span className="ml-2 text-emerald-400 text-[9px]">
-                                • Organization: Novacore Solutions
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* ✅ Privileges */}
+                      {/* Privileges */}
                       {(createForm.roleId === 'validator' || createForm.roleId === 'finance') && (
-                        <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-white/5">
+                        <div className="space-y-3 pt-4 border-t border-white/5">
                           <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1">
-                              <Zap size={13} className="text-amber-500"/> Assign Action Permissions
+                            <label className="text-[11px] font-bold tracking-wider text-white/70 uppercase flex items-center gap-1">
+                              <Zap size={14} className="text-amber-400"/> Assign Action Permissions
                             </label>
                             <button
                               type="button"
@@ -1342,55 +1001,57 @@ export default function UserManagementPage() {
                                   privileges: template
                                 }));
                               }}
-                              className="text-[9px] text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                              className="text-[10px] text-blue-400/70 hover:text-blue-300 transition-colors font-medium px-3 py-1 rounded-lg border border-blue-500/20 hover:border-blue-500/40 hover:bg-blue-500/10"
                             >
                               Apply Template
                             </button>
                           </div>
                           
                           {Object.entries(PRIVILEGE_CATEGORIES).map(([categoryKey, category]) => {
+                            if (categoryKey === 'general') return null;
+                            
                             const categoryPrivileges = getAvailablePrivilegesForRole(createForm.roleId)
                               .filter(p => p.category === categoryKey);
                             
                             if (categoryPrivileges.length === 0) return null;
                             
-                            const checkedCount = categoryPrivileges.filter(p => 
-                              createForm.privileges.includes(p.key)
+                            const checkedCount = createForm.privileges.filter(p => 
+                              categoryPrivileges.some(cp => cp.key === p)
                             ).length;
                             
                             return (
-                              <div key={categoryKey} className="space-y-1.5">
+                              <div key={categoryKey} className="space-y-2">
                                 <div className="flex items-center justify-between">
-                                  <span className={`text-[9px] font-semibold uppercase tracking-wider ${category.color}`}>
+                                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${category.color}`}>
                                     {category.label}
                                   </span>
-                                  <span className="text-[8px] text-slate-400">
+                                  <span className="text-[9px] text-white/30">
                                     {checkedCount}/{categoryPrivileges.length}
                                   </span>
                                 </div>
-                                <div className="space-y-1.5 pl-2 max-h-32 overflow-y-auto pr-1 scrollbar-thin">
+                                <div className="space-y-2 pl-2 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
                                   {categoryPrivileges.map((p) => {
                                     const isChecked = createForm.privileges.includes(p.key);
                                     return (
                                       <div
                                         key={p.key}
                                         onClick={() => handleToggleFormPrivilege(p.key)}
-                                        className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-2.5 select-none ${
+                                        className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
                                           isChecked
                                             ? `${category.bg} ${category.border} shadow-sm`
-                                            : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 hover:border-white/20'
+                                            : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10'
                                         }`}
                                       >
-                                        <div className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
-                                          isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300 dark:border-white/10'
+                                        <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
+                                          isChecked ? 'bg-blue-500 border-blue-500 shadow-lg shadow-blue-500/30' : 'border-white/20'
                                         }`}>
-                                          {isChecked && <Check size={9} className="text-white" />}
+                                          {isChecked && <Check size={10} className="text-white" />}
                                         </div>
                                         <div>
-                                          <div className={`text-[10px] font-bold ${isChecked ? 'text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                                          <div className={`text-[11px] font-bold ${isChecked ? 'text-blue-400' : 'text-white/80'}`}>
                                             {p.label}
                                           </div>
-                                          <div className="text-[9px] text-slate-500 dark:text-slate-400 leading-normal">
+                                          <div className="text-[10px] text-white/40 leading-normal mt-0.5">
                                             {p.desc}
                                           </div>
                                         </div>
@@ -1402,8 +1063,8 @@ export default function UserManagementPage() {
                             );
                           })}
                           
-                          <p className="text-[8px] text-slate-500 mt-1">
-                            ⚡ Click "Apply Template" to assign default permissions for this role
+                          <p className="text-[9px] text-white/30 mt-1">
+                            Click "Apply Template" to assign default permissions for this role
                           </p>
                         </div>
                       )}
@@ -1412,14 +1073,14 @@ export default function UserManagementPage() {
                     </form>
                   </div>
 
-                  {/* ✅ Fixed Footer */}
-                  <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-white dark:bg-[#070c19] flex-shrink-0">
+                  {/* Footer */}
+                  <div className="flex justify-end gap-3 px-6 py-4 border-t border-white/5 bg-white/5 backdrop-blur-sm flex-shrink-0">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       onClick={() => setIsCreateModalOpen(false)}
-                      className="text-xs"
+                      className="text-xs text-white/60 hover:text-white hover:bg-white/10 px-4 py-2 rounded-xl transition-all duration-200"
                     >
                       Cancel
                     </Button>
@@ -1429,7 +1090,7 @@ export default function UserManagementPage() {
                       size="sm"
                       disabled={isSubmitting}
                       onClick={handleProvisionUser}
-                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm disabled:opacity-50 flex items-center gap-2"
+                      className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:shadow-blue-500/20 shadow-md text-white font-bold px-5 py-2 rounded-xl text-xs transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
                     >
                       {isSubmitting ? (
                         <>
@@ -1455,493 +1116,143 @@ export default function UserManagementPage() {
       <AnimatePresence>
         {isPrivilegeModalOpen && selectedUser && (
           <Portal>
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-              <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}>
-                <GlassCard className="w-full max-w-2xl p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
-                  <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-white/5 pb-4 sticky top-0 bg-white dark:bg-[#070c19] z-10">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="w-full max-w-2xl"
+              >
+                <GlassCard className="p-0 bg-white/5 dark:bg-white/5 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
+                  
+                  {/* Header */}
+                  <div className="flex justify-between items-center px-6 py-4 border-b border-white/5 flex-shrink-0">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <Shield className="text-indigo-500" size={18} /> Update Staff Privileges
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <Shield className="text-indigo-400" size={18} /> 
+                        <span>Update Staff Privileges</span>
                       </h3>
-                      <p className="text-xs font-semibold text-slate-400 mt-1 capitalize">
+                      <p className="text-[11px] text-white/40 mt-0.5 capitalize">
                         {selectedUser.name || 'Staff User'} • {getDisplayRole(selectedUser)}
                       </p>
                     </div>
-                    <button onClick={() => setIsPrivilegeModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl">
-                      <X size={18} />
-                    </button>
-                  </div>
-
-                  {selectedUser.role === 'validator' && (
-                    <div className="mb-4 space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Modify Assigned Language Scope</label>
-                      <select
-                        value={selectedUser.languageScope}
-                        onChange={e => setSelectedUser(prev => ({ ...prev, languageScope: e.target.value }))}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none cursor-pointer"
-                      >
-                        <option value="Japanese">🇯🇵 Japanese Language Only</option>
-                        <option value="Korean">🇰🇷 Korean Language Only</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {/* ✅ Quick Apply Templates */}
-                  <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-2">Quick Apply Template</label>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.keys(ROLE_PRIVILEGE_TEMPLATES).map(templateRole => (
-                        <button
-                          key={templateRole}
-                          type="button"
-                          onClick={() => {
-                            const template = ROLE_PRIVILEGE_TEMPLATES[templateRole] || [];
-                            setSelectedUser(prev => ({
-                              ...prev,
-                              privileges: template
-                            }));
-                          }}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 hover:border-blue-500/30 hover:bg-blue-500/10 transition-all"
-                        >
-                          {templateRole.replace('_', ' ').toUpperCase()}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-[9px] text-slate-400 mt-1.5">Apply predefined privilege templates for each role</p>
-                  </div>
-
-                  {/* ✅ Privileges by Category */}
-                  <div className="space-y-4 mb-5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                    {Object.entries(PRIVILEGE_CATEGORIES).map(([categoryKey, category]) => {
-                      const userRole = selectedUser.roleId || selectedUser.role || 'student';
-                      const categoryPrivileges = SYSTEM_PRIVILEGES.filter(p => 
-                        p.category === categoryKey && p.roles.includes(userRole)
-                      );
-                      
-                      if (categoryPrivileges.length === 0) return null;
-                      
-                      const checkedCount = categoryPrivileges.filter(p => 
-                        selectedUser.privileges?.includes(p.key)
-                      ).length;
-                      
-                      return (
-                        <div key={categoryKey} className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-1 h-4 rounded ${category.bg}`} />
-                              <span className={`text-xs font-bold uppercase tracking-wider ${category.color}`}>
-                                {category.label}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-400">
-                              {checkedCount}/{categoryPrivileges.length}
-                            </span>
-                          </div>
-                          <div className="space-y-1.5 pl-3">
-                            {categoryPrivileges.map((p) => {
-                              const isChecked = selectedUser.privileges?.includes(p.key);
-                              return (
-                                <div
-                                  key={p.key}
-                                  onClick={() => handleToggleExistingPrivilege(p.key)}
-                                  className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                                    isChecked
-                                      ? `${category.bg} ${category.border} shadow-sm`
-                                      : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 hover:border-white/20'
-                                  }`}
-                                >
-                                  <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
-                                    isChecked 
-                                      ? 'bg-indigo-500 border-indigo-500' 
-                                      : 'border-slate-300 dark:border-white/10'
-                                  }`}>
-                                    {isChecked && <Check size={11} className="text-white" />}
-                                  </div>
-                                  <div>
-                                    <div className={`text-xs font-bold ${
-                                      isChecked ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'
-                                    }`}>
-                                      {p.label}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
-                                      {p.desc}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
-                    <Button variant="ghost" size="sm" onClick={() => setIsPrivilegeModalOpen(false)} className="text-xs">Close</Button>
-                    <Button variant="success" size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 font-bold px-4 py-2 rounded-xl text-xs shadow-sm" onClick={savePrivileges}>Save Configuration</Button>
-                  </div>
-                </GlassCard>
-              </motion.div>
-            </div>
-          </Portal>
-        )}
-      </AnimatePresence>
-
-      {/* --- ROLE MANAGEMENT MODAL --- */}
-      <AnimatePresence>
-        {isRoleModalOpen && (
-          <Portal>
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-              <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}>
-                <GlassCard className="w-full max-w-2xl p-6 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-y-auto">
-                  <div className="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-white/5 pb-4">
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <Settings className="text-purple-500" size={18} />
-                      {editingRole ? 'Edit Role' : 'Create New Role'}
-                    </h3>
-                    <button onClick={() => setIsRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl">
-                      <X size={18} />
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleSaveRole} className="space-y-4">
-                    {roleFormError && (
-                      <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs p-3 rounded-xl flex items-center gap-2 font-medium">
-                        <ShieldAlert size={15} /> {roleFormError}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Role Name</label>
-                        <input
-                          type="text" required placeholder="e.g., Sub Admin"
-                          value={roleForm.name} onChange={e => setRoleForm({ ...roleForm, name: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Privilege Level</label>
-                        <input
-                          type="number" required min="1" max="10"
-                          value={roleForm.level} onChange={e => setRoleForm({ ...roleForm, level: parseInt(e.target.value) || 3 })}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                        />
-                        <p className="text-[10px] text-slate-400">Lower number = higher privilege (1 = highest)</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-white/5">
-                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1">
-                        <Shield size={13} className="text-purple-500"/> Permissions
-                      </label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                        {ALL_PERMISSION_KEYS.map(permKey => (
-                          <div
-                            key={permKey}
-                            onClick={() => handleToggleRolePermission(permKey)}
-                            className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
-                              roleForm.permissions[permKey]
-                                ? 'bg-purple-500/10 border-purple-500/40 text-purple-300 shadow-sm'
-                                : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-white/10 text-gray-400 hover:border-white/20'
-                            }`}
-                          >
-                            <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${roleForm.permissions[permKey] ? 'bg-purple-500 border-purple-500' : 'border-slate-300 dark:border-white/10'}`}>
-                              {roleForm.permissions[permKey] && <Check size={11} className="text-white" />}
-                            </div>
-                            <div>
-                              <div className={`text-xs font-bold ${roleForm.permissions[permKey] ? 'text-purple-600 dark:text-purple-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                                {PERMISSION_LABELS[permKey] || permKey}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setIsRoleModalOpen(false)} className="text-xs">Cancel</Button>
-                      <Button type="submit" variant="success" size="sm" disabled={isRoleSubmitting} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm">
-                        {isRoleSubmitting ? 'Saving...' : editingRole ? 'Update Role' : 'Create Role'}
-                      </Button>
-                    </div>
-                  </form>
-
-                  {!editingRole && (
-                    <div className="mt-6 border-t border-slate-100 dark:border-white/5 pt-4">
-                      <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Existing Roles</h4>
-                      <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                        {roles.map(role => (
-                          <div key={role.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
-                            <div className="flex items-center gap-3">
-                              <span className="text-sm font-medium text-white">{role.name}</span>
-                              <span className="text-[10px] text-slate-400">Level {role.level}</span>
-                              <span className="text-[10px] text-slate-500">{Object.keys(role.permissions || {}).filter(k => role.permissions[k]).length} permissions</span>
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => openRoleModal(role)}
-                                className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
-                              >
-                                <Edit size={14} />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteRole(role.id, role.name)}
-                                className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
-                              >
-                                <Trash size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </GlassCard>
-              </motion.div>
-            </div>
-          </Portal>
-        )}
-      </AnimatePresence>
-
-      {/* --- ✅ FIXED: BULK PRIVILEGE ASSIGNMENT MODAL --- */}
-      <AnimatePresence>
-        {isBulkPrivilegeModalOpen && (
-          <Portal>
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-              <motion.div 
-                initial={{ scale: 0.96, opacity: 0 }} 
-                animate={{ scale: 1, opacity: 1 }} 
-                exit={{ scale: 0.96, opacity: 0 }}
-                className="w-full max-w-2xl"
-              >
-                <GlassCard className="p-0 bg-white dark:bg-[#070c19] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
-                  
-                  {/* ✅ Sticky Header - Fixed like Create New Role modal */}
-                  <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-white/5 sticky top-0 z-20 bg-white dark:bg-[#070c19] flex-shrink-0">
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <Shield className="text-indigo-500" size={18} /> Bulk Privilege Assignment
-                    </h3>
                     <button 
-                      onClick={() => {
-                        setIsBulkPrivilegeModalOpen(false);
-                        setSelectedUsersForBulk([]);
-                        setBulkPrivileges([]);
-                      }} 
-                      className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl flex-shrink-0 transition-colors"
+                      onClick={() => setIsPrivilegeModalOpen(false)} 
+                      className="text-white/40 hover:text-white/80 p-1 rounded-xl flex-shrink-0 transition-all duration-200 hover:bg-white/5"
                     >
                       <X size={18} />
                     </button>
                   </div>
 
-                  {/* ✅ Scrollable Content */}
-                  <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-                    {/* Step 1: Select Users */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                          Select Users ({selectedUsersForBulk.length} selected)
+                  {/* Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+                    {/* Language Scope - Only for Validator */}
+                    {selectedUser.role === 'validator' && (
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold tracking-wider text-white/60 uppercase">
+                          Modify Assigned Language Scope
                         </label>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const allIds = users
-                                .filter(u => {
-                                  const userRole = u.roleId || u.role || 'student';
-                                  return ['validator', 'finance', 'admin', 'super_admin', 'sub_admin'].includes(userRole);
-                                })
-                                .map(u => u.id);
-                              setSelectedUsersForBulk(allIds);
-                            }}
-                            className="text-[9px] text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                          >
-                            Select All Staff
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedUsersForBulk([])}
-                            className="text-[9px] text-gray-400 hover:text-gray-300 transition-colors font-medium"
-                          >
-                            Clear
-                          </button>
-                        </div>
+                        <select
+                          value={selectedUser.languageScope}
+                          onChange={e => setSelectedUser(prev => ({ ...prev, languageScope: e.target.value }))}
+                          className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 cursor-pointer"
+                        >
+                          <option value="Japanese" className="bg-gray-900 text-white hover:bg-gray-800">Japanese Language Only</option>
+                          <option value="Korean" className="bg-gray-900 text-white hover:bg-gray-800">Korean Language Only</option>
+                        </select>
                       </div>
-                      <div className="max-h-40 overflow-y-auto space-y-1 border border-white/10 rounded-xl p-2 scrollbar-thin">
-                        {users
-                          .filter(u => {
-                            const userRole = u.roleId || u.role || 'student';
-                            return ['validator', 'finance', 'admin', 'super_admin', 'sub_admin'].includes(userRole);
-                          })
-                          .map(user => {
-                            const displayRole = getDisplayRole(user);
-                            return (
-                              <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedUsersForBulk.includes(user.id)}
-                                  onChange={() => {
-                                    setSelectedUsersForBulk(prev =>
-                                      prev.includes(user.id)
-                                        ? prev.filter(id => id !== user.id)
-                                        : [...prev, user.id]
-                                    );
-                                  }}
-                                  className="w-4 h-4 rounded border-white/10 text-blue-500 focus:ring-blue-500"
-                                />
-                                <span className="text-sm text-white">{user.name || 'Unnamed User'}</span>
-                                <span className="text-xs text-gray-400 ml-2">({displayRole})</span>
-                                <span className="text-xs text-gray-500 ml-auto">{user.email}</span>
-                              </label>
-                            );
-                          })}
-                        {users.filter(u => {
-                          const userRole = u.roleId || u.role || 'student';
-                          return ['validator', 'finance', 'admin', 'super_admin', 'sub_admin'].includes(userRole);
-                        }).length === 0 && (
-                          <p className="text-xs text-gray-500 text-center py-4">No staff users available</p>
-                        )}
-                      </div>
-                    </div>
+                    )}
 
-                    {/* Step 2: Select Privileges */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                          Select Privileges ({bulkPrivileges.length} selected)
-                        </label>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const allKeys = SYSTEM_PRIVILEGES.map(p => p.key);
-                              setBulkPrivileges(allKeys);
-                            }}
-                            className="text-[9px] text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                          >
-                            Select All
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setBulkPrivileges([])}
-                            className="text-[9px] text-gray-400 hover:text-gray-300 transition-colors font-medium"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </div>
-                      <div className="max-h-40 overflow-y-auto space-y-1 border border-white/10 rounded-xl p-2 scrollbar-thin">
-                        {SYSTEM_PRIVILEGES.map(p => (
-                          <label key={p.key} className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
-                            <input
-                              type="checkbox"
-                              checked={bulkPrivileges.includes(p.key)}
-                              onChange={() => {
-                                setBulkPrivileges(prev =>
-                                  prev.includes(p.key)
-                                    ? prev.filter(k => k !== p.key)
-                                    : [...prev, p.key]
+                    {/* Privileges by Category - WITHOUT General Access */}
+                    <div className="space-y-4 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
+                      {Object.entries(PRIVILEGE_CATEGORIES).map(([categoryKey, category]) => {
+                        if (categoryKey === 'general') return null;
+                        
+                        const userRole = selectedUser.roleId || selectedUser.role || 'student';
+                        const categoryPrivileges = SYSTEM_PRIVILEGES.filter(p => 
+                          p.category === categoryKey && p.roles.includes(userRole)
+                        );
+                        
+                        if (categoryPrivileges.length === 0) return null;
+                        
+                        const checkedCount = categoryPrivileges.filter(p => 
+                          selectedUser.privileges?.includes(p.key)
+                        ).length;
+                        
+                        return (
+                          <div key={categoryKey} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-1 h-4 rounded ${category.bg}`} />
+                                <span className={`text-[10px] font-semibold uppercase tracking-wider ${category.color}`}>
+                                  {category.label}
+                                </span>
+                              </div>
+                              <span className="text-[9px] text-white/30">
+                                {checkedCount}/{categoryPrivileges.length}
+                              </span>
+                            </div>
+                            <div className="space-y-2 pl-2">
+                              {categoryPrivileges.map((p) => {
+                                const isChecked = selectedUser.privileges?.includes(p.key);
+                                return (
+                                  <div
+                                    key={p.key}
+                                    onClick={() => handleToggleExistingPrivilege(p.key)}
+                                    className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-3 select-none ${
+                                      isChecked
+                                        ? `${category.bg} ${category.border} shadow-sm`
+                                        : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10'
+                                    }`}
+                                  >
+                                    <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
+                                      isChecked 
+                                        ? 'bg-indigo-500 border-indigo-500 shadow-lg shadow-indigo-500/30' 
+                                        : 'border-white/20'
+                                    }`}>
+                                      {isChecked && <Check size={10} className="text-white" />}
+                                    </div>
+                                    <div>
+                                      <div className={`text-[11px] font-bold ${
+                                        isChecked ? 'text-indigo-400' : 'text-white/80'
+                                      }`}>
+                                        {p.label}
+                                      </div>
+                                      <div className="text-[10px] text-white/40 leading-normal mt-0.5">
+                                        {p.desc}
+                                      </div>
+                                    </div>
+                                  </div>
                                 );
-                              }}
-                              className="w-4 h-4 rounded border-white/10 text-blue-500 focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-white">{p.label}</span>
-                            <span className={`text-[9px] ml-2 px-1.5 py-0.5 rounded ${PRIVILEGE_CATEGORIES[p.category]?.bg || 'bg-gray-500/10'} ${PRIVILEGE_CATEGORIES[p.category]?.color || 'text-gray-400'}`}>
-                              {PRIVILEGE_CATEGORIES[p.category]?.label || p.category}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Step 3: Quick Templates */}
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-2">Quick Apply Templates</label>
-                      <div className="flex flex-wrap gap-2">
-                        {Object.keys(ROLE_PRIVILEGE_TEMPLATES).map(templateRole => (
-                          <button
-                            key={templateRole}
-                            type="button"
-                            onClick={() => {
-                              const template = ROLE_PRIVILEGE_TEMPLATES[templateRole] || [];
-                              setBulkPrivileges(prev => {
-                                const merged = [...new Set([...prev, ...template])];
-                                return merged;
-                              });
-                            }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 hover:border-blue-500/30 hover:bg-blue-500/10 transition-all"
-                          >
-                            + {templateRole.replace('_', ' ').toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-[9px] text-slate-400 mt-1.5">
-                        Click to add template privileges to current selection (not replace)
-                      </p>
-                    </div>
-
-                    {/* Summary */}
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                      <p className="text-xs text-gray-400">
-                        <span className="font-bold text-white">{selectedUsersForBulk.length}</span> users will receive{' '}
-                        <span className="font-bold text-white">{bulkPrivileges.length}</span> privileges
-                      </p>
-                      <p className="text-[10px] text-gray-500 mt-1">
-                        ⚡ This will <span className="text-emerald-400">add</span> privileges to existing permissions (not replace)
-                      </p>
-                      {selectedUsersForBulk.length > 0 && bulkPrivileges.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-[10px] text-blue-400">
-                            📋 Affected users: {selectedUsersForBulk.map(id => {
-                              const user = users.find(u => u.id === id);
-                              return user?.name || 'Unknown';
-                            }).join(', ')}
-                          </p>
-                          <p className="text-[10px] text-emerald-400 mt-1">
-                            ✅ Privileges: {bulkPrivileges.map(key => {
-                              const priv = SYSTEM_PRIVILEGES.find(p => p.key === key);
-                              return priv?.label || key;
-                            }).join(', ')}
-                          </p>
-                        </div>
-                      )}
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     <div className="h-2" />
                   </div>
 
-                  {/* ✅ Fixed Footer */}
-                  <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-white dark:bg-[#070c19] flex-shrink-0">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => {
-                        setIsBulkPrivilegeModalOpen(false);
-                        setSelectedUsersForBulk([]);
-                        setBulkPrivileges([]);
-                      }} 
-                      className="text-xs"
+                  {/* Footer */}
+                  <div className="flex justify-end gap-3 px-6 py-4 border-t border-white/5 bg-white/5 backdrop-blur-sm flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsPrivilegeModalOpen(false)}
+                      className="text-xs text-white/60 hover:text-white hover:bg-white/10 px-4 py-2 rounded-xl transition-all duration-200"
                     >
-                      Cancel
+                      Close
                     </Button>
-                    <Button 
-                      variant="primary" 
-                      size="sm" 
-                      disabled={selectedUsersForBulk.length === 0 || bulkPrivileges.length === 0 || isBulkSubmitting}
-                      onClick={handleBulkPrivilegeAssignment}
-                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm disabled:opacity-50 flex items-center gap-2"
+                    <Button
+                      variant="success"
+                      size="sm"
+                      onClick={savePrivileges}
+                      className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:shadow-blue-500/20 shadow-md text-white font-bold px-5 py-2 rounded-xl text-xs transition-all duration-200 flex items-center gap-2"
                     >
-                      {isBulkSubmitting ? (
-                        <>
-                          <Loader size={14} className="animate-spin mr-1" />
-                          Assigning...
-                        </>
-                      ) : (
-                        <>
-                          <Shield size={14} className="mr-1" />
-                          Assign to {selectedUsersForBulk.length} Users
-                        </>
-                      )}
+                      <Shield size={14} />
+                      Save Configuration
                     </Button>
                   </div>
                 </GlassCard>

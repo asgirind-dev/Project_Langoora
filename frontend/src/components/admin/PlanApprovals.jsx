@@ -4,12 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertCircle, CheckCircle, XCircle, Clock, Eye, FileText,
   Loader2, User, Tag, Sparkles, RefreshCw, Rocket,
-  Calendar
+  Calendar, X
 } from 'lucide-react';
 import GlassCard from '../ui/GlassCard';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import SubscriptionService from '../../services/subscriptionService';
+import Portal from '../ui/Portal';
 
 export default function PlanApprovals() {
   const [pendingPlans, setPendingPlans] = useState([]);
@@ -18,7 +19,15 @@ export default function PlanApprovals() {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [reviewNotes, setReviewNotes] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null);
+  
+  // ✅ Toast state - Top Right
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  // ✅ Toast function
+  const showNotification = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
 
   const fetchPendingPlans = async () => {
     setLoading(true);
@@ -27,6 +36,7 @@ export default function PlanApprovals() {
       setPendingPlans(data || []);
     } catch (error) {
       console.error('Error fetching pending plans:', error);
+      showNotification('❌ Failed to fetch pending plans', 'error');
     } finally {
       setLoading(false);
     }
@@ -43,9 +53,9 @@ export default function PlanApprovals() {
       await fetchPendingPlans();
       setShowModal(false);
       setReviewNotes('');
-      showToast('✅ Plan approved successfully! Finance admin has been notified.', 'success');
+      showNotification('✅ Plan approved successfully! Finance admin has been notified.', 'success');
     } catch (error) {
-      showToast(`❌ Failed to approve plan: ${error.message}`, 'error');
+      showNotification(`❌ Failed to approve plan: ${error.message}`, 'error');
     } finally {
       setProcessingId(null);
     }
@@ -53,7 +63,7 @@ export default function PlanApprovals() {
 
   const handleReject = async (planId) => {
     if (!reviewNotes.trim()) {
-      showToast('⚠️ Please provide a reason for rejection.', 'error');
+      showNotification('⚠️ Please provide a reason for rejection.', 'error');
       return;
     }
     setProcessingId(planId);
@@ -62,17 +72,12 @@ export default function PlanApprovals() {
       await fetchPendingPlans();
       setShowModal(false);
       setReviewNotes('');
-      showToast('✅ Plan rejected. Finance admin has been notified.', 'success');
+      showNotification('✅ Plan rejected. Finance admin has been notified.', 'success');
     } catch (error) {
-      showToast(`❌ Failed to reject plan: ${error.message}`, 'error');
+      showNotification(`❌ Failed to reject plan: ${error.message}`, 'error');
     } finally {
       setProcessingId(null);
     }
-  };
-
-  const showToast = (message, type = 'success') => {
-    setToastMessage({ message, type });
-    setTimeout(() => setToastMessage(null), 4000);
   };
 
   const openReviewModal = (plan) => {
@@ -82,7 +87,47 @@ export default function PlanApprovals() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* ✅ Toast Notification - Top Right */}
+      <AnimatePresence>
+        {toast.show && (
+          <Portal>
+            <motion.div
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl max-w-sm ${
+                toast.type === 'success'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-emerald-950/20'
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-rose-950/20'
+              }`}
+            >
+              <div className={`p-1.5 rounded-xl border ${
+                toast.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/20'
+                  : 'bg-rose-500/10 border-rose-500/20'
+              }`}>
+                {toast.type === 'success'
+                  ? <CheckCircle size={18} className="text-emerald-400" />
+                  : <AlertCircle size={18} className="text-rose-400" />
+                }
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider opacity-60">Plan Approvals</p>
+                <p className="text-sm font-medium mt-0.5 leading-tight">{toast.message}</p>
+              </div>
+              <button 
+                onClick={() => setToast(p => ({ ...p, show: false }))} 
+                className="text-gray-400 hover:text-white p-1 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          </Portal>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -315,24 +360,6 @@ export default function PlanApprovals() {
               </div>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
-
-      {/* Toast Notification */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className={`fixed bottom-6 right-6 px-6 py-3 rounded-xl border shadow-lg z-50 ${
-              toastMessage.type === 'success' 
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                : 'bg-red-500/10 border-red-500/30 text-red-400'
-            }`}
-          >
-            {toastMessage.message}
-          </motion.div>
         )}
       </AnimatePresence>
     </div>

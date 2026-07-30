@@ -1,8 +1,8 @@
 // frontend/src/pages/admin/SystemSettings.jsx
 import { useState, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Save, Shield, Layout, Sliders, Activity, CheckCircle, XCircle
+  Save, Shield, Layout, Sliders, Activity, CheckCircle, XCircle, X, AlertCircle
 } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import HomepageCMS from '../../components/admin/homepageCMS';
@@ -12,12 +12,15 @@ import EmailAnalytics from '../../components/admin/emailAnalytics';
 import { saveHeroBanners } from '../../services/cmsService';
 import studentApi from '../../services/examExecutionService';
 import { saveGlobalConfig } from '../../services/globalConfigService';
+import Portal from '../../components/ui/Portal';
+import AdminNotifications from '../../components/admin/AdminNotifications';
 
 export default function SystemSettings() {
   const [activeTab, setActiveTab] = useState('cms');
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState(null); // 'success' | 'error' | null
-  const [saveMessage, setSaveMessage] = useState('');
+  
+  // ✅ Toast state - Same as UserManagementPage
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   // Refs to access child component methods
   const cmsRef = useRef();
@@ -31,10 +34,15 @@ export default function SystemSettings() {
     { id: 'email-analytics', label: 'Email Analytics', icon: Activity, component: EmailAnalytics },
   ];
 
+  // ✅ Toast notification function - Same as UserManagementPage
+  const showNotification = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
-    setSaveStatus(null);
-    setSaveMessage('');
+    setToast({ show: false, message: '', type: 'success' });
     
     try {
       let success = true;
@@ -72,10 +80,7 @@ export default function SystemSettings() {
           // Get global config from child component
           const globalConfig = globalRef.current?.getGlobalConfig();
           if (globalConfig) {
-            // ✅ saveGlobalConfig now returns the full response { success, message, data }
             const response = await saveGlobalConfig(globalConfig);
-            
-            // ✅ Check the response correctly
             if (response && response.success === true) {
               message = response.message || 'Global configurations saved successfully!';
             } else {
@@ -93,21 +98,11 @@ export default function SystemSettings() {
       }
       
       if (success) {
-        setSaveStatus('success');
-        setSaveMessage(message);
-        setTimeout(() => {
-          setSaveStatus(null);
-          setSaveMessage('');
-        }, 3000);
+        showNotification(message, 'success');
       }
     } catch (error) {
       console.error('Error saving:', error);
-      setSaveStatus('error');
-      setSaveMessage(error.message || 'Failed to save settings');
-      setTimeout(() => {
-        setSaveStatus(null);
-        setSaveMessage('');
-      }, 3000);
+      showNotification(error.message || 'Failed to save settings', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -118,8 +113,48 @@ export default function SystemSettings() {
   const activeRef = tabs.find(tab => tab.id === activeTab)?.ref;
 
   return (
-    <div className="space-y-8 text-left">
-      {/* Header */}
+    <div className="space-y-8 text-left relative">
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast.show && (
+          <Portal>
+            <motion.div
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl max-w-sm ${
+                toast.type === 'success'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-emerald-950/20'
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-rose-950/20'
+              }`}
+            >
+              <div className={`p-1.5 rounded-xl border ${
+                toast.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/20'
+                  : 'bg-rose-500/10 border-rose-500/20'
+              }`}>
+                {toast.type === 'success'
+                  ? <CheckCircle size={18} className="text-emerald-400" />
+                  : <AlertCircle size={18} className="text-rose-400" />
+                }
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider opacity-60">System Settings</p>
+                <p className="text-sm font-medium mt-0.5 leading-tight">{toast.message}</p>
+              </div>
+              <button 
+                onClick={() => setToast(p => ({ ...p, show: false }))} 
+                className="text-gray-400 hover:text-white p-1 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          </Portal>
+        )}
+      </AnimatePresence>
+
+      {/* Header with Bell */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -127,16 +162,8 @@ export default function SystemSettings() {
             <p className="text-gray-400">Manage platform assets and overlay configurations</p>
           </div>
           <div className="flex items-center gap-3">
-            {saveStatus === 'success' && (
-              <span className="flex items-center gap-1 text-emerald-400 text-sm">
-                <CheckCircle size={16} /> {saveMessage || 'Saved successfully'}
-              </span>
-            )}
-            {saveStatus === 'error' && (
-              <span className="flex items-center gap-1 text-red-400 text-sm">
-                <XCircle size={16} /> {saveMessage || 'Error saving'}
-              </span>
-            )}
+            {/* ✅ Notification Bell - Same level as Save button */}
+            <AdminNotifications />
             <Button 
               variant="primary" 
               onClick={handleSave} 

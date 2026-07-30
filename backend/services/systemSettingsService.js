@@ -71,9 +71,8 @@ class SystemSettingsService {
           maintenanceEstimatedTime: null,       
           maintenanceMessage: '',                 
           sessionTimeouts: { 
-            admin: 15, 
-            super_admin: 15,      // ✅ Added
-            finance_admin: 10,    // ✅ Added
+            super_admin: 15,      
+            finance_admin: 10,    
             finance: 10, 
             validator: 15, 
             tutor: 20, 
@@ -100,9 +99,8 @@ class SystemSettingsService {
         maintenanceEstimatedTime: policyData.maintenanceEstimatedTime || null,  
         maintenanceMessage: policyData.maintenanceMessage || '',              
         sessionTimeouts: policyData.sessionTimeouts || { 
-          admin: 15, 
-          super_admin: 15,      // ✅ Added
-          finance_admin: 10,    // ✅ Added
+          super_admin: 15,      
+          finance_admin: 10,    
           finance: 10, 
           validator: 15, 
           tutor: 20, 
@@ -132,7 +130,6 @@ class SystemSettingsService {
           creditPrice: 50,
           signupBonus: 10,
           platformCommission: 20,
-          minPayoutThreshold: 5000,
           senderEmail: 'noreply@langoora.com',
           senderName: 'Langoora',
           showAnnouncement: false,
@@ -176,7 +173,6 @@ class SystemSettingsService {
         creditPrice: Number(configData.creditPrice || 50),
         signupBonus: Number(configData.signupBonus || 10),
         platformCommission: Number(configData.platformCommission || 20),
-        minPayoutThreshold: Number(configData.minPayoutThreshold || 5000),
         senderEmail: senderEmail,
         senderName: senderName,
         showAnnouncement: Boolean(configData.showAnnouncement),

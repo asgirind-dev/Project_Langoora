@@ -1,18 +1,17 @@
 // frontend/src/components/admin/globalConfigurations.jsx
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, TrendingUp, Mail, AlertTriangle, RefreshCw,
-  CheckCircle, XCircle, Info, ShieldAlert, CheckCircle2, Sparkles
+  CheckCircle, XCircle, Info, ShieldAlert, CheckCircle2, Sparkles, X
 } from 'lucide-react';
 import GlassCard from '../ui/GlassCard';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import { fetchGlobalConfig, saveGlobalConfig, sendTestEmail } from '../../services/globalConfigService';
+import Portal from '../ui/Portal';
 
-// Static style map for the announcement banner controls. Kept as literal
-// class strings (never template-interpolated) so Tailwind's build-time
-// scanner always picks them up — interpolating `${color}` directly into
-// class names silently breaks in production once unused classes are purged.
+// Static style map for the announcement banner controls.
 const ANNOUNCEMENT_COLORS = [
   {
     value: 'amber', label: 'Warning', tag: 'Notice', icon: AlertTriangle,
@@ -51,17 +50,25 @@ const GlobalConfigurations = forwardRef((props, ref) => {
   const [isSaving, setIsSaving] = useState(false);
   const [testEmailLogs, setTestEmailLogs] = useState([]);
 
+  // ✅ Toast state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
   const [globalConfig, setGlobalConfig] = useState({
     creditPrice: 50,
     signupBonus: 10,
     platformCommission: 20,
-    minPayoutThreshold: 5000,
     senderEmail: 'asgirind186@gmail.com',
     senderName: 'Langoora',
     showAnnouncement: false,
     announcementText: '',
     announcementColor: 'amber'
   });
+
+  // ✅ Toast function
+  const showNotification = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
 
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
@@ -72,8 +79,10 @@ const GlobalConfigurations = forwardRef((props, ref) => {
       try {
         setIsSaving(true);
         const response = await saveGlobalConfig(globalConfig);
+        showNotification('✅ Global configurations saved successfully!', 'success');
         return { success: true, message: 'Global configurations saved successfully', data: response };
       } catch (error) {
+        showNotification('❌ ' + (error.message || 'Failed to save global settings'), 'error');
         return { success: false, message: error.message };
       } finally {
         setIsSaving(false);
@@ -94,6 +103,7 @@ const GlobalConfigurations = forwardRef((props, ref) => {
       }
     } catch (error) {
       console.error("Error fetching global configurations:", error);
+      showNotification('❌ Failed to load global configurations', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -114,7 +124,7 @@ const GlobalConfigurations = forwardRef((props, ref) => {
         timestamp: new Date().toLocaleString()
       }, ...prev].slice(0, 5));
 
-      alert('✅ Test email sent successfully! Check your inbox.');
+      showNotification('✅ Test email sent successfully! Check your inbox.', 'success');
     } catch (error) {
       setTestEmailLogs(prev => [{
         email: globalConfig.senderEmail,
@@ -124,14 +134,53 @@ const GlobalConfigurations = forwardRef((props, ref) => {
         timestamp: new Date().toLocaleString()
       }, ...prev].slice(0, 5));
 
-      alert('❌ Failed to send test email: ' + error.message);
+      showNotification('❌ Failed to send test email: ' + error.message, 'error');
     }
   };
 
   return (
-    <div className="max-w-4xl space-y-6 mx-auto">
+    <div className="max-w-4xl space-y-6 mx-auto relative">
+      {/* ✅ Toast Notification - Top Right */}
+      <AnimatePresence>
+        {toast.show && (
+          <Portal>
+            <motion.div
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl max-w-sm ${
+                toast.type === 'success'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-emerald-950/20'
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-rose-950/20'
+              }`}
+            >
+              <div className={`p-1.5 rounded-xl border ${
+                toast.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/20'
+                  : 'bg-rose-500/10 border-rose-500/20'
+              }`}>
+                {toast.type === 'success'
+                  ? <CheckCircle size={18} className="text-emerald-400" />
+                  : <AlertTriangle size={18} className="text-rose-400" />
+                }
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider opacity-60">Global Config</p>
+                <p className="text-sm font-medium mt-0.5 leading-tight">{toast.message}</p>
+              </div>
+              <button 
+                onClick={() => setToast(p => ({ ...p, show: false }))} 
+                className="text-gray-400 hover:text-white p-1 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          </Portal>
+        )}
+      </AnimatePresence>
 
-      {/* 1. Currency & Credit Configuration */}
+      {/* 1. Currency & Credit Framework */}
       <GlassCard className="p-6 space-y-6 border-white/10">
         <div className="flex items-center gap-3 border-b border-white/5 pb-4">
           <DollarSign className="text-emerald-400" size={22} />
@@ -146,7 +195,7 @@ const GlobalConfigurations = forwardRef((props, ref) => {
             <RefreshCw className="animate-spin mr-2" size={14} /> Loading configurations...
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
               <label className="text-xs text-gray-400 font-medium block">Base Credit Price (LKR)</label>
               <div className="flex items-center gap-2">
@@ -175,22 +224,7 @@ const GlobalConfigurations = forwardRef((props, ref) => {
               />
               <p className="text-[10px] text-gray-500">New students get {globalConfig.signupBonus || 0} free credits</p>
             </div>
-          </div>
-        )}
-      </GlassCard>
 
-      {/* 2. Platform Fee & Revenue Share */}
-      <GlassCard className="p-6 space-y-6 border-white/10">
-        <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-          <TrendingUp className="text-cyan-400" size={22} />
-          <div>
-            <h3 className="text-lg font-bold text-white">Revenue & Commission Structure</h3>
-            <p className="text-xs text-gray-400">Platform commission and tutor payout configurations</p>
-          </div>
-        </div>
-
-        {!isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
               <label className="text-xs text-gray-400 font-medium block">Platform Commission (%)</label>
               <div className="flex items-center gap-2">
@@ -206,34 +240,15 @@ const GlobalConfigurations = forwardRef((props, ref) => {
                 <span className="text-gray-500 text-sm">%</span>
               </div>
               <p className="text-[10px] text-gray-500">
-                Platform: {globalConfig.platformCommission || 0}% |
+                Platform: {globalConfig.platformCommission || 0}% | 
                 Tutor: {100 - (globalConfig.platformCommission || 20)}%
-              </p>
-            </div>
-
-            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
-              <label className="text-xs text-gray-400 font-medium block">Min Tutor Payout (LKR)</label>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-500 text-sm">LKR</span>
-                <input
-                  type="number"
-                  min="100"
-                  max="100000"
-                  step="100"
-                  value={globalConfig.minPayoutThreshold || ''}
-                  onChange={(e) => updateGlobalConfig('minPayoutThreshold', Number(e.target.value))}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
-                />
-              </div>
-              <p className="text-[10px] text-gray-500">
-                Minimum earnings for tutor payout: LKR {globalConfig.minPayoutThreshold || 0}
               </p>
             </div>
           </div>
         )}
       </GlassCard>
 
-      {/* 3. Email System Configuration */}
+      {/* 2. Email System Configuration */}
       <GlassCard className="p-6 space-y-6 border-white/10">
         <div className="flex items-center gap-3 border-b border-white/5 pb-4">
           <Mail className="text-purple-400" size={22} />
@@ -274,7 +289,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
               </div>
             </div>
 
-            {/* Test Email Section with History */}
             <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
@@ -300,7 +314,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
                 <Badge color="blue">SMTP Ready</Badge>
               </div>
 
-              {/* Test Email History */}
               {testEmailLogs.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-blue-500/10">
                   <p className="text-[10px] font-medium text-gray-400 mb-2">Recent Test History</p>
@@ -329,7 +342,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
               )}
             </div>
 
-            {/* Email Configuration Info */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px]">
               <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl text-center">
                 <span className="text-gray-500">SMTP Host</span>
@@ -348,7 +360,7 @@ const GlobalConfigurations = forwardRef((props, ref) => {
         )}
       </GlassCard>
 
-      {/* 4. Public Notice / Announcement Banner */}
+      {/* 3. Public Notice / Announcement Banner */}
       <GlassCard className="p-6 space-y-6 border-white/10">
         <div className="flex items-center gap-3 border-b border-white/5 pb-4">
           <AlertTriangle className="text-amber-400" size={22} />
@@ -360,7 +372,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
 
         {!isLoading && (
           <div className="space-y-5">
-            {/* Toggle */}
             <div className="flex items-center justify-between gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
               <div className="flex items-center gap-4">
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -382,7 +393,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
               </Badge>
             </div>
 
-            {/* Message */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs text-gray-400 font-medium block">Announcement Message</label>
@@ -401,7 +411,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
               <p className="text-[10px] text-gray-500">Keep it short — one clear sentence reads best in the bar.</p>
             </div>
 
-            {/* Color / style picker */}
             <div className="space-y-2">
               <label className="text-xs text-gray-400 font-medium block">Banner Style</label>
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
@@ -427,7 +436,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
               </div>
             </div>
 
-            {/* Live preview, mirrors the real public banner */}
             <div className="space-y-2">
               <label className="text-xs text-gray-400 font-medium block">Live Preview</label>
               <div className="rounded-xl overflow-hidden border border-white/10">
@@ -465,7 +473,6 @@ const GlobalConfigurations = forwardRef((props, ref) => {
           </div>
         )}
       </GlassCard>
-
     </div>
   );
 });

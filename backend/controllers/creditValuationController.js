@@ -5,9 +5,90 @@ const creditService = require('../services/CreditValuationService');
 // ✅ ADD: Audit Log Service
 const auditLogService = require('../services/auditLogService');
 
+// ✅ ADD: Notification Service
+const notificationService = require('../services/NotificationService');
+
 // ✅ Helper for non-blocking audit logging
 const logAudit = (fn, data) => {
   fn(data).catch(err => console.error('Audit log error:', err));
+};
+
+// ✅ Helper for non-blocking notification sending
+const sendNotification = async (fn, data) => {
+  try {
+    await fn(data);
+  } catch (err) {
+    console.error('Notification error:', err);
+  }
+};
+
+// ✅ FIXED: Helper to get Admin User IDs for notifications
+const getAdminIds = async () => {
+  try {
+    console.log('🔍 [Credit] Fetching admin users...');
+    
+    // Method 1: Query with role filter
+    const usersSnapshot = await db.collection('users')
+      .where('role', 'in', ['admin', 'super_admin'])
+      .get();
+    
+    let userIds = [];
+    
+    usersSnapshot.forEach(doc => {
+      const userData = doc.data();
+      console.log(`🔍 [Credit] Admin user found: ${doc.id} - ${userData.email} - Role: ${userData.role}`);
+      userIds.push(doc.id);
+    });
+    
+    console.log(`🔍 [Credit] Found ${userIds.length} admin users with role filter`);
+    
+    // ✅ Method 2: If no users found, try without filter (fallback)
+    if (userIds.length === 0) {
+      console.log('⚠️ [Credit] No admin users found with role filter, trying fallback...');
+      
+      const allUsers = await db.collection('users').get();
+      
+      allUsers.forEach(doc => {
+        const userData = doc.data();
+        const role = userData.role || userData.roleId || '';
+        // Check for admin roles (case insensitive)
+        if (role.toLowerCase() === 'admin' || 
+            role.toLowerCase() === 'super_admin' || 
+            role.toLowerCase() === 'superadmin') {
+          console.log(`🔍 [Credit] Found admin user (fallback): ${doc.id} - ${userData.email} - Role: ${role}`);
+          userIds.push(doc.id);
+        }
+      });
+      
+      console.log(`🔍 [Credit] Found ${userIds.length} admin users with fallback`);
+    }
+    
+    // ✅ Method 3: If still no users, check by email domain or permissions
+    if (userIds.length === 0) {
+      console.log('⚠️ [Credit] Still no admin users, checking by email domain...');
+      
+      const allUsers = await db.collection('users').get();
+      
+      allUsers.forEach(doc => {
+        const userData = doc.data();
+        const email = userData.email || '';
+        // Check for admin email patterns
+        if (email.includes('admin') || 
+            email.includes('novacore.com') || 
+            (userData.privileges && userData.privileges.includes('manage_users'))) {
+          console.log(`🔍 [Credit] Found admin user (by email/privileges): ${doc.id} - ${userData.email}`);
+          userIds.push(doc.id);
+        }
+      });
+    }
+    
+    console.log(`🔍 [Credit] Final Admin IDs:`, userIds);
+    return userIds;
+    
+  } catch (error) {
+    console.error('❌ [Credit] Error fetching admin IDs:', error);
+    return [];
+  }
 };
 
 const logCategoryActivity = async (id, actionType, logDetails) => {
@@ -112,10 +193,11 @@ exports.getCategories = async (req, res) => {
 };
 
 // =========================================================================
-// UPDATE LEVEL CREDITS - WITH AUDIT LOG
+// UPDATE LEVEL CREDITS - WITH AUDIT LOG & NOTIFICATION TO ADMIN
 // ✅ FIXED: Update credit_cost instead of credits
 // ✅ FIXED: Set isCreditSet = true when finance admin sets credits
 // ✅ FIXED: Properly track pending status
+// ✅ NEW: Send notification to Admin when credit is assigned
 // =========================================================================
 exports.updateLevelCredits = async (req, res) => {
   try {
@@ -173,6 +255,29 @@ exports.updateLevelCredits = async (req, res) => {
       userAgent: req.headers['user-agent'] || 'unknown'
     });
 
+    // ✅ NEW: Send Notification to Admins when credit is set
+    try {
+      const adminIds = await getAdminIds();
+      if (adminIds.length > 0) {
+        await sendNotification(notificationService.sendToMany, [
+          adminIds,
+          {
+            type: 'credit_assigned',
+            title: '💰 Exam Credit Assigned by Finance',
+            message: `Finance Admin has assigned ${creditsInt} credits to "${levelName}" in "${categoryId}".`,
+            actionUrl: '/admin/languages',
+            levelId: levelId,
+            levelName: levelName,
+            categoryId: categoryId,
+            credits: creditsInt
+          }
+        ]);
+        console.log(`✅ Credit assignment notification sent to ${adminIds.length} admins`);
+      }
+    } catch (notifError) {
+      console.error('❌ Failed to send credit assignment notification:', notifError);
+    }
+
     console.log(`✅ Level ${levelId} credits updated from ${previousCredits} to ${creditsInt}`);
 
     res.status(200).json({ 
@@ -195,9 +300,10 @@ exports.updateLevelCredits = async (req, res) => {
 };
 
 // =========================================================================
-// UPDATE CATEGORY CREDITS - WITH AUDIT LOG
+// UPDATE CATEGORY CREDITS - WITH AUDIT LOG & NOTIFICATION TO ADMIN
 // ✅ FIXED: Use credit_cost instead of credits
 // ✅ FIXED: Set isCreditSet = true when finance admin sets credits
+// ✅ NEW: Send notification to Admin when credit is assigned
 // =========================================================================
 exports.updateCategoryCredits = async (req, res) => {
   try {
@@ -253,6 +359,28 @@ exports.updateCategoryCredits = async (req, res) => {
       ip: req.ip || req.connection.remoteAddress,
       userAgent: req.headers['user-agent'] || 'unknown'
     });
+
+    // ✅ NEW: Send Notification to Admins when credit is set
+    try {
+      const adminIds = await getAdminIds();
+      if (adminIds.length > 0) {
+        await sendNotification(notificationService.sendToMany, [
+          adminIds,
+          {
+            type: 'credit_assigned',
+            title: '💰 Exam Credit Assigned by Finance',
+            message: `Finance Admin has assigned ${creditsInt} credits to category "${categoryName}".`,
+            actionUrl: '/admin/languages',
+            categoryId: id,
+            categoryName: categoryName,
+            credits: creditsInt
+          }
+        ]);
+        console.log(`✅ Credit assignment notification sent to ${adminIds.length} admins`);
+      }
+    } catch (notifError) {
+      console.error('❌ Failed to send credit assignment notification:', notifError);
+    }
 
     console.log(`✅ Category ${id} credits updated from ${previousCredits} to ${creditsInt}`);
 

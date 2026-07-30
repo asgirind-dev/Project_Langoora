@@ -22,7 +22,6 @@ const DEFAULT_GLOBAL_CONFIG = {
   creditPrice: 5,
   signupBonus: 10,
   platformCommission: 10,
-  minPayoutThreshold: 5000,
   senderEmail: 'noreply@langoora.com',
   senderName: 'Langoora',
   showAnnouncement: false,
@@ -30,16 +29,75 @@ const DEFAULT_GLOBAL_CONFIG = {
   announcementColor: 'blue'
 };
 
+// ✅ DEFAULT SECURITY POLICIES - ADMIN REMOVED
 const DEFAULT_SECURITY_POLICIES = {
   enableAntiCheat: true,
   maxViolationWarnings: 3,
   maintenanceMode: false,
   maintenanceEstimatedTime: '',
   maintenanceMessage: '',
-  sessionTimeouts: 3600
+  sessionTimeouts: {
+    super_admin: 15,
+    finance_admin: 10,
+    finance: 10,
+    validator: 15,
+    tutor: 20,
+    student: 45
+  }
 };
 
 const DEFAULT_BANNERS = [];
+
+// ✅ Helper function to clean sessionTimeouts (remove admin role)
+const cleanSessionTimeouts = (sessionTimeouts) => {
+  if (!sessionTimeouts) return DEFAULT_SECURITY_POLICIES.sessionTimeouts;
+  
+  // If sessionTimeouts is a number (old format), convert to object
+  if (typeof sessionTimeouts === 'number') {
+    console.warn('⚠️ sessionTimeouts is a number, converting to object with defaults');
+    return {
+      super_admin: 15,
+      finance_admin: 10,
+      finance: 10,
+      validator: 15,
+      tutor: 20,
+      student: 45
+    };
+  }
+  
+  // Remove admin role if exists
+  if (sessionTimeouts.admin !== undefined) {
+    console.warn('⚠️ Removing "admin" role from sessionTimeouts');
+    const { admin, ...rest } = sessionTimeouts;
+    return rest;
+  }
+  
+  // Ensure all required roles exist
+  const requiredRoles = ['super_admin', 'finance_admin', 'finance', 'validator', 'tutor', 'student'];
+  const cleaned = { ...sessionTimeouts };
+  
+  requiredRoles.forEach(role => {
+    if (cleaned[role] === undefined) {
+      console.warn(`⚠️ Missing "${role}" role, adding default (15 minutes)`);
+      cleaned[role] = 15;
+    }
+  });
+  
+  return cleaned;
+};
+
+// ✅ Helper function to ensure sessionTimeouts is valid
+const ensureValidSessionTimeouts = (data) => {
+  if (!data) return DEFAULT_SECURITY_POLICIES.sessionTimeouts;
+  
+  if (typeof data === 'number') {
+    return DEFAULT_SECURITY_POLICIES.sessionTimeouts;
+  }
+  
+  // Remove admin if exists
+  const { admin, ...rest } = data;
+  return rest;
+};
 
 class SystemSettingsController {
   // =============================================
@@ -113,6 +171,12 @@ class SystemSettingsController {
   async getSecuritySettings(req, res) {
     try {
       const policies = await systemSettingsService.getSecurityPolicies();
+      
+      // ✅ Ensure sessionTimeouts is cleaned
+      if (policies && policies.sessionTimeouts) {
+        policies.sessionTimeouts = cleanSessionTimeouts(policies.sessionTimeouts);
+      }
+      
       return res.status(200).json({
         success: true,
         data: policies || DEFAULT_SECURITY_POLICIES
@@ -131,7 +195,9 @@ class SystemSettingsController {
   // SAVE SECURITY SETTINGS - WITH AUDIT LOG
   async saveSecuritySettings(req, res) {
     try {
-      const {
+      console.log('📝 saveSecuritySettings called with body:', req.body);
+      
+      let {
         enableAntiCheat,
         maxViolationWarnings,
         maintenanceMode,
@@ -140,22 +206,45 @@ class SystemSettingsController {
         sessionTimeouts
       } = req.body;
 
+      // ✅ Clean sessionTimeouts - remove admin role
+      sessionTimeouts = cleanSessionTimeouts(sessionTimeouts);
+      
+      console.log('✅ Cleaned sessionTimeouts:', sessionTimeouts);
+
+      // Validate sessionTimeouts
+      if (sessionTimeouts) {
+        const roles = ['super_admin', 'finance_admin', 'finance', 'validator', 'tutor', 'student'];
+        for (const role of roles) {
+          const value = sessionTimeouts[role];
+          if (value !== undefined && (typeof value !== 'number' || value < 5 || value > 180)) {
+            return res.status(400).json({
+              success: false,
+              message: `Invalid timeout value for ${role}. Must be between 5 and 180 minutes.`
+            });
+          }
+        }
+      }
+
       // Get old security policies for comparison
       let oldPolicies = DEFAULT_SECURITY_POLICIES;
       try {
         oldPolicies = await systemSettingsService.getSecurityPolicies();
+        // ✅ Clean old policies too
+        if (oldPolicies && oldPolicies.sessionTimeouts) {
+          oldPolicies.sessionTimeouts = cleanSessionTimeouts(oldPolicies.sessionTimeouts);
+        }
       } catch (err) {
         console.warn('⚠️ Could not fetch old policies:', err.message);
         oldPolicies = DEFAULT_SECURITY_POLICIES;
       }
 
       const updatedPolicies = await systemSettingsService.updateSecurityPolicies({
-        enableAntiCheat,
-        maxViolationWarnings,
-        maintenanceMode,
-        maintenanceEstimatedTime,
-        maintenanceMessage,
-        sessionTimeouts
+        enableAntiCheat: enableAntiCheat !== undefined ? enableAntiCheat : DEFAULT_SECURITY_POLICIES.enableAntiCheat,
+        maxViolationWarnings: maxViolationWarnings !== undefined ? maxViolationWarnings : DEFAULT_SECURITY_POLICIES.maxViolationWarnings,
+        maintenanceMode: maintenanceMode !== undefined ? maintenanceMode : DEFAULT_SECURITY_POLICIES.maintenanceMode,
+        maintenanceEstimatedTime: maintenanceEstimatedTime || '',
+        maintenanceMessage: maintenanceMessage || '',
+        sessionTimeouts: sessionTimeouts || DEFAULT_SECURITY_POLICIES.sessionTimeouts
       });
 
       // ✅ SYSTEM CONFIG AUDIT LOG - SECURITY SETTINGS UPDATED
@@ -169,6 +258,18 @@ class SystemSettingsController {
       if (oldPolicies.maintenanceMode !== maintenanceMode) {
         changes.maintenanceMode = { old: oldPolicies.maintenanceMode, new: maintenanceMode };
       }
+      
+      // Track sessionTimeout changes
+      if (oldPolicies.sessionTimeouts && sessionTimeouts) {
+        const allRoles = new Set([...Object.keys(oldPolicies.sessionTimeouts), ...Object.keys(sessionTimeouts)]);
+        for (const role of allRoles) {
+          const oldVal = oldPolicies.sessionTimeouts[role];
+          const newVal = sessionTimeouts[role];
+          if (oldVal !== newVal) {
+            changes[`sessionTimeout_${role}`] = { old: oldVal, new: newVal };
+          }
+        }
+      }
 
       logAudit(auditLogService.logSystemConfig, {
         actorId: req.user?.uid || 'system',
@@ -180,6 +281,8 @@ class SystemSettingsController {
         userAgent: req.headers['user-agent'] || 'unknown'
       });
 
+      console.log('✅ Security policies saved successfully');
+
       return res.status(200).json({
         success: true,
         message: 'Security policies committed successfully.',
@@ -187,7 +290,11 @@ class SystemSettingsController {
       });
     } catch (error) {
       console.error("❌ Error in saveSecuritySettings:", error.message);
-      return res.status(500).json({ success: false, message: error.message });
+      console.error("Stack:", error.stack);
+      return res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Internal server error' 
+      });
     }
   }
 
@@ -224,7 +331,6 @@ class SystemSettingsController {
         creditPrice,
         signupBonus,
         platformCommission,
-        minPayoutThreshold,
         senderEmail,
         senderName,
         showAnnouncement,
@@ -250,13 +356,6 @@ class SystemSettingsController {
         return res.status(400).json({
           success: false,
           message: 'Platform commission must be between 0% and 100%'
-        });
-      }
-
-      if (minPayoutThreshold !== undefined && (minPayoutThreshold < 100 || minPayoutThreshold > 100000)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Minimum payout threshold must be between LKR 100 and LKR 100,000'
         });
       }
 
@@ -286,20 +385,19 @@ class SystemSettingsController {
 
       // Save configurations
       const updatedConfig = await systemSettingsService.updateGlobalConfig({
-        creditPrice,
-        signupBonus,
-        platformCommission,
-        minPayoutThreshold,
-        senderEmail,
-        senderName,
-        showAnnouncement,
-        announcementText,
-        announcementColor
+        creditPrice: creditPrice !== undefined ? creditPrice : DEFAULT_GLOBAL_CONFIG.creditPrice,
+        signupBonus: signupBonus !== undefined ? signupBonus : DEFAULT_GLOBAL_CONFIG.signupBonus,
+        platformCommission: platformCommission !== undefined ? platformCommission : DEFAULT_GLOBAL_CONFIG.platformCommission,
+        senderEmail: senderEmail || DEFAULT_GLOBAL_CONFIG.senderEmail,
+        senderName: senderName || DEFAULT_GLOBAL_CONFIG.senderName,
+        showAnnouncement: showAnnouncement !== undefined ? showAnnouncement : DEFAULT_GLOBAL_CONFIG.showAnnouncement,
+        announcementText: announcementText || '',
+        announcementColor: announcementColor || DEFAULT_GLOBAL_CONFIG.announcementColor
       });
 
       // ✅ SYSTEM CONFIG AUDIT LOG - GLOBAL SETTINGS UPDATED
       const changes = {};
-      const fieldsToTrack = ['creditPrice', 'signupBonus', 'platformCommission', 'minPayoutThreshold', 'senderEmail', 'senderName', 'showAnnouncement'];
+      const fieldsToTrack = ['creditPrice', 'signupBonus', 'platformCommission', 'senderEmail', 'senderName', 'showAnnouncement'];
       fieldsToTrack.forEach(field => {
         const oldVal = oldConfig[field];
         const newVal = req.body[field];
@@ -355,7 +453,6 @@ class SystemSettingsController {
           data: {
             exchangeRate: DEFAULT_GLOBAL_CONFIG.creditPrice,
             platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission,
-            minPayoutThreshold: DEFAULT_GLOBAL_CONFIG.minPayoutThreshold,
             signupBonus: DEFAULT_GLOBAL_CONFIG.signupBonus,
             currency: 'LKR',
             _note: 'Using default values (config not found)'
@@ -370,7 +467,6 @@ class SystemSettingsController {
         data: {
           exchangeRate: data.creditPrice || DEFAULT_GLOBAL_CONFIG.creditPrice,
           platformCommission: data.platformCommission || DEFAULT_GLOBAL_CONFIG.platformCommission,
-          minPayoutThreshold: data.minPayoutThreshold || DEFAULT_GLOBAL_CONFIG.minPayoutThreshold,
           signupBonus: data.signupBonus || DEFAULT_GLOBAL_CONFIG.signupBonus,
           currency: 'LKR'
         }
@@ -383,7 +479,6 @@ class SystemSettingsController {
         data: {
           exchangeRate: DEFAULT_GLOBAL_CONFIG.creditPrice,
           platformCommission: DEFAULT_GLOBAL_CONFIG.platformCommission,
-          minPayoutThreshold: DEFAULT_GLOBAL_CONFIG.minPayoutThreshold,
           signupBonus: DEFAULT_GLOBAL_CONFIG.signupBonus,
           currency: 'LKR',
           _note: 'Using fallback values (Firestore quota exceeded)'

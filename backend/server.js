@@ -39,7 +39,7 @@ const { maintenanceMiddleware } = require('./middleware/maintenanceMiddleware');
 
 const { initSubscriptionCron } = require('./services/subscriptionCron');
 // ============================================
-// 🔥 Auto-Settle Service
+// Auto-Settle Service
 // ============================================
 const { scheduleMonthlySettlement } = require('./services/autoSettleService');
 
@@ -60,7 +60,7 @@ app.use('/api/exams', examRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes); 
 app.use('/api/subscription-management', subscriptionRoutes); 
-app.use('/api/tutors', tutorProfileRoutes); 
+app.use('/api/tutor-profile', tutorProfileRoutes);
 app.use('/api/student', studentProfileRoutes); 
 app.use('/api/planner', studyPlannerRoutes); 
 app.use('/api/validator/tutors', tutorValidationRoutes);
@@ -82,10 +82,10 @@ app.use('/api/payouts', payoutRoutes); // Fix: duplicate /api/finance path fix �
 // Serve static uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ⏰ Initialize Cron Job
+
 initSubscriptionCron();
 
-// 🚀 Start Server
+
 const PORT = process.env.PORT || 5000;
 
 

@@ -4,10 +4,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Clock, AlertTriangle, LogOut, RefreshCw } from 'lucide-react';
+import studentApi from '../../services/examExecutionService';
 
-// ✅ Default timeout values (fallback if API fails)
+// ✅ Default timeout values (fallback if API fails) - ADMIN REMOVED
 const DEFAULT_TIMEOUTS = {
-  admin: 15,
+  // admin: 15,  // ❌ COMPLETELY REMOVED
   super_admin: 15,
   finance_admin: 10,
   finance: 10,
@@ -35,16 +36,26 @@ export function SessionTimeoutManager({ children }) {
   const countdownRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
 
-  // ✅ Fetch session timeouts from backend
+  // ✅ Fetch session timeouts from backend - FIXED with studentApi
   useEffect(() => {
     const fetchTimeouts = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/system-settings/security');
-        const data = await response.json();
+        // ✅ Using studentApi instead of hardcoded fetch
+        const response = await studentApi.get('/system-settings/security');
         
-        if (data.success && data.data?.sessionTimeouts) {
-          setSessionTimeouts(data.data.sessionTimeouts);
+        if (response.data.success && response.data.data?.sessionTimeouts) {
+          const timeouts = response.data.data.sessionTimeouts;
+          
+          // ✅ Remove 'admin' key if it somehow exists in the response
+          if (timeouts.admin !== undefined) {
+            console.warn('⚠️ "admin" role found in response, removing it');
+            delete timeouts.admin;
+          }
+          
+          setSessionTimeouts(timeouts);
+          console.log('✅ Session timeouts loaded:', timeouts);
         } else {
+          console.warn('⚠️ No session timeouts in response, using defaults');
           setSessionTimeouts(DEFAULT_TIMEOUTS);
         }
       } catch (error) {
@@ -58,11 +69,27 @@ export function SessionTimeoutManager({ children }) {
     fetchTimeouts();
   }, []);
 
-  // ✅ Get user's timeout setting - DYNAMIC
+  // ✅ Get user's timeout setting - DYNAMIC with admin mapping
   const getUserTimeout = useCallback(() => {
     const userRole = user?.role || localStorage.getItem('userRole') || 'student';
     const timeouts = sessionTimeouts || DEFAULT_TIMEOUTS;
-    return timeouts[userRole] || 45;
+    
+    // ✅ Map 'admin' to 'super_admin' if needed (backward compatibility)
+    let effectiveRole = userRole;
+    if (userRole === 'admin') {
+      console.warn('⚠️ "admin" role detected, mapping to "super_admin"');
+      effectiveRole = 'super_admin';
+    }
+    
+    // ✅ If role not found in timeouts, use default
+    const timeout = timeouts[effectiveRole];
+    if (timeout === undefined) {
+      console.warn(`⚠️ Role "${effectiveRole}" not found in timeouts, using default 45 minutes`);
+      return 45;
+    }
+    
+    console.log(`✅ User role: ${effectiveRole}, Timeout: ${timeout} minutes`);
+    return timeout;
   }, [user, sessionTimeouts]);
 
   // ✅ Get timeout in milliseconds
@@ -348,7 +375,7 @@ export function SessionTimeoutManager({ children }) {
     }
   }, [handleAutoLogout, extendSession]);
 
-  // ✅ Expose test functions
+  // ✅ Expose test functions - FIXED with proper dependency array and cleanup
   useEffect(() => {
     window.showEmergencyModal = createEmergencyModal;
     
@@ -372,8 +399,18 @@ export function SessionTimeoutManager({ children }) {
         hasUser: !!user,
         path: window.location.pathname,
         isMounted: true,
-        timeoutsSource: sessionTimeouts ? 'backend' : 'default'
+        timeoutsSource: sessionTimeouts ? 'backend' : 'default',
+        availableRoles: sessionTimeouts ? Object.keys(sessionTimeouts) : Object.keys(DEFAULT_TIMEOUTS)
       })
+    };
+    
+    console.log('✅ SessionTimeoutManager mounted');
+    console.log('📊 Available roles:', sessionTimeouts ? Object.keys(sessionTimeouts) : Object.keys(DEFAULT_TIMEOUTS));
+    
+    // ✅ Cleanup - remove window variables on unmount
+    return () => {
+      delete window.showEmergencyModal;
+      delete window.__testSession;
     };
   }, [createEmergencyModal, extendSession, handleAutoLogout, showWarning, timeRemaining, isIdle, user, getUserTimeout, sessionTimeouts]);
 

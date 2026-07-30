@@ -19,6 +19,15 @@ router.post('/staff-login', authController.loginStaff);
 // Finalize extended profiles for onboarded Google accounts
 router.post('/complete-google-registration', authController.completeGoogleRegistration);
 
+// ==========================================
+// ✅ PASSWORD RESET ROUTES (No Token Required)
+// ==========================================
+
+// Request password reset - sends email with reset link
+router.post('/forgot-password', authController.forgotPassword);
+
+// Confirm new password after receiving reset link
+router.post('/reset-password', authController.resetPassword);
 
 // ==========================================
 // PROTECTED ROUTES (Valid Session Token Required)

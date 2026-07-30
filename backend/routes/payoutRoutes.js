@@ -77,6 +77,8 @@ router.post('/sync-all-tutors', payoutController.syncAllTutors);
 // 20. Manual sync specific tutor (GET method - browser එකෙන් test කරන්න)
 router.get('/sync/:tutorId', payoutController.autoSyncUser);
 
+router.post('/revert-all-settled', payoutController.revertAllSettled);
+
 // ============================================
 // 🔥 WEBHOOK: User update auto-sync endpoint
 // ============================================
@@ -112,7 +114,7 @@ router.post('/webhook/user-update', async (req, res) => {
 });
 
 // ============================================
-// 🔥 AUTO SETTLE ROUTES (NEW)
+// 🔥 AUTO SETTLE ROUTES
 // ============================================
 
 // 21. Manual settlement trigger - Admin එකෙන් call කරන්න
@@ -194,6 +196,10 @@ router.get('/settlement-status', async (req, res) => {
     }
 });
 
+// 24. ✅ DIRECT SETTLEMENT ROUTE - සෑම මසකම 25 වෙනිදා Call කරන්න
+// POST /api/payouts/settle-monthly
+router.post('/settle-monthly', payoutController.settlePendingPayouts);
+
 // ============================================
 // Alternative update route
 // ============================================
@@ -217,5 +223,7 @@ router.put('/update/:id', async (req, res) => {
         });
     }
 });
+
+
 
 module.exports = router;

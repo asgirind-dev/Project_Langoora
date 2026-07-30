@@ -1,57 +1,85 @@
-// backend/controllers/financeController.js
 const { db } = require('../config/firebase');
 
 // ==========================================
-// HELPER 1: Credits Pool
+// HELPER 1: Credits Pool & Categories Count
 // ==========================================
-const getTotalCreditsPool = async () => {
+const getCategoriesAndCreditsPool = async () => {
   try {
     const catsSnapshot = await db.collection('exam_categories')
       .where('status', '!=', 'deleted')
       .get();
     
-    const poolPromises = catsSnapshot.docs.map(async (catDoc) => {
+    const totalCategories = catsSnapshot.size;
+    let totalCreditsPool = 0;
+
+    for (const catDoc of catsSnapshot.docs) {
       const catData = catDoc.data();
-      
-      const levelsSnapshot = await db.collection(`exam_categories/${catDoc.id}/levels`).get();
-      let subTotal = 0;
+      const catId = catDoc.id;
+
+      const levelsSnapshot = await db.collection(`exam_categories/${catId}/levels`).get();
 
       if (!levelsSnapshot.empty) {
         levelsSnapshot.forEach(levelDoc => {
           const levelData = levelDoc.data();
-          if (levelData.status !== 'deleted' && levelData.is_active !== 0) {
-            subTotal += parseInt(levelData.credits, 10) || 0;
+          if (levelData.status !== 'deleted') {
+            const cost = Number(
+              levelData.credit_cost !== undefined ? levelData.credit_cost : (levelData.credits || 0)
+            );
+            totalCreditsPool += cost;
           }
         });
       } else {
-        subTotal += parseInt(catData.credits, 10) || 0;
+        if (catData.status !== 'deleted') {
+          const cost = Number(
+            catData.credit_cost !== undefined ? catData.credit_cost : (catData.credits || 0)
+          );
+          totalCreditsPool += cost;
+        }
       }
-      return subTotal;
-    });
+    }
 
-    const results = await Promise.all(poolPromises);
-    return results.reduce((sum, val) => sum + val, 0);
+    return { totalCategories, totalCreditsPool };
 
   } catch (error) {
-    console.error("Error calculating credits pool:", error);
-    return 0;
+    console.error("Error calculating credits pool & categories:", error);
+    return { totalCategories: 0, totalCreditsPool: 0 };
   }
 };
 
 // ==========================================
-// HELPER 2: Active Users Count
+// HELPER 2: Subscription Plans Metrics
+// ==========================================
+const getSubscriptionPlansMetrics = async () => {
+  try {
+    const snapshot = await db.collection('subscription_plans').get();
+    const totalPlans = snapshot.size;
+    let activePlans = 0;
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const isActive = data.active === true || data.active === 'true' || data.status === 'approved' || data.status === 'active';
+      if (isActive) activePlans += 1;
+    });
+
+    return { totalPlans, activePlans };
+  } catch (error) {
+    console.error("Error fetching subscription plans metrics:", error);
+    return { totalPlans: 0, activePlans: 0 };
+  }
+};
+
+// ==========================================
+// HELPER 3: Active Users Count
 // ==========================================
 const fetchActiveUsersCount = async () => {
   try {
     const snapshot = await db.collection('users')
       .where('status', '==', 'active')
-      .where('role', 'in', ['student', 'tutor'])
-      .count()
       .get();
       
-    return snapshot.data().count;
+    return snapshot.size;
   } catch (error) {
-    console.warn("Count aggregation failed, fallback used:", error.message);
+    console.warn("Count aggregation failed:", error.message);
     return 0;
   }
 };
@@ -76,27 +104,30 @@ exports.getFinanceStats = async (req, res) => {
     const startPrev = new Date(prevYear, prevMonth, 1);
     const endPrev = new Date(prevYear, prevMonth + 1, 1);
 
-    const [txSnapshot, activeCredits, activeUsers] = await Promise.all([
-      db.collection('transactions')
-        .where('status', 'in', ['success', 'completed', 'Success', 'Completed'])
-        .get(),
-      getTotalCreditsPool(),
-      fetchActiveUsersCount()
+    const [txSnapshot, examCategoryMetrics, activeUsers, plansMetrics] = await Promise.all([
+      db.collection('transactions').get(),
+      getCategoriesAndCreditsPool(),
+      fetchActiveUsersCount(),
+      getSubscriptionPlansMetrics()
     ]);
 
     const totalTxCount = txSnapshot.size;
 
     txSnapshot.forEach(doc => {
       const data = doc.data();
-      const amt = Number(data.amount_paid !== undefined ? data.amount_paid : (data.amount || 0));
-      totalRevenue += amt;
-      successfulTxCount += 1;
+      const statusFormatted = String(data.status || '').toLowerCase().trim();
+      
+      if (statusFormatted === 'success' || statusFormatted === 'completed') {
+        const amt = Number(data.amount_paid !== undefined ? data.amount_paid : (data.amount || 0));
+        totalRevenue += amt;
+        successfulTxCount += 1;
 
-      if (data.created_at) {
-        const date = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
-        if (!isNaN(date.getTime())) {
-          if (date >= startCurrent) currentMonthRevenue += amt;
-          else if (date >= startPrev && date < endPrev) prevMonthRevenue += amt;
+        if (data.created_at) {
+          const date = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
+          if (!isNaN(date.getTime())) {
+            if (date >= startCurrent) currentMonthRevenue += amt;
+            else if (date >= startPrev && date < endPrev) prevMonthRevenue += amt;
+          }
         }
       }
     });
@@ -112,7 +143,10 @@ exports.getFinanceStats = async (req, res) => {
 
     res.status(200).json({
       totalRevenue,
-      activeCredits,
+      activeCredits: examCategoryMetrics.totalCreditsPool,
+      totalCategories: examCategoryMetrics.totalCategories,
+      totalPlans: plansMetrics.totalPlans,
+      activePlans: plansMetrics.activePlans,
       activeUsers,
       growth: Math.round(growth),
       totalTxCount,
@@ -127,7 +161,8 @@ exports.getFinanceStats = async (req, res) => {
 };
 
 // ==========================================
-// 2. GET RECENT TRANSACTIONS (LIMIT 5)
+// 2. GET RECENT TRANSACTIONS (LIMIT 5) 
+// ✅ FIXED: Date format now includes date + time
 // ==========================================
 exports.getRecentTransactions = async (req, res) => {
   try {
@@ -163,27 +198,34 @@ exports.getRecentTransactions = async (req, res) => {
       if (!userName) userName = 'Student User';
 
       const amount = data.amount_paid !== undefined ? data.amount_paid : (data.amount || 0);
-      const planName = data.plan_name || 'Lite';
+      const planName = data.plan_name || 'Standard';
       const credits = data.credits_added !== undefined ? data.credits_added : (data.credits || 0);
       const typeFormatted = data.type === 'subscription_purchase' ? 'Subscription' : (data.type || 'Payment');
 
+      // ✅ FIXED: Date format with both date and time
       let formattedDate = 'N/A';
       if (data.created_at) {
         const dateObj = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
         if (!isNaN(dateObj.getTime())) {
-          formattedDate = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          formattedDate = dateObj.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
         }
       }
 
       return {
-        id: doc.id,
+        id: data.transaction_id || doc.id,
         user: userName,
         amount: `LKR ${Number(amount).toLocaleString()}`,
         planName,
         credits,
         type: typeFormatted,
-        status: 'Completed',
-        time: formattedDate,
+        status: data.status || 'Completed',
+        time: formattedDate,  // Now shows "Jan 15, 2025, 02:30 PM"
         avatar: userName.charAt(0).toUpperCase()
       };
     });
@@ -198,15 +240,13 @@ exports.getRecentTransactions = async (req, res) => {
 };
 
 // ==========================================
-// 3. GET REVENUE CHART DATA
+// 3. GET REVENUE CHART DATA (SUCCESSFUL ONLY)
 // ==========================================
 exports.getRevenueChartData = async (req, res) => {
   try {
     const months = [];
     const now = new Date();
     
-    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-
     for (let i = 5; i >= 0; i--) {
       const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
       months.push({
@@ -216,9 +256,7 @@ exports.getRevenueChartData = async (req, res) => {
       });
     }
 
-    const txSnapshot = await db.collection('transactions')
-      .where('created_at', '>=', sixMonthsAgo)
-      .get();
+    const txSnapshot = await db.collection('transactions').get();
 
     const chartData = months.map(({ month, start, end }) => {
       let revenue = 0;
@@ -226,11 +264,16 @@ exports.getRevenueChartData = async (req, res) => {
 
       txSnapshot.forEach(doc => {
         const data = doc.data();
-        if (data.created_at) {
-          const date = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
-          if (date >= start && date < end) {
-            revenue += Number(data.amount_paid !== undefined ? data.amount_paid : (data.amount || 0));
-            credits += Number(data.credits_added !== undefined ? data.credits_added : (data.credits || 0));
+        const statusFormatted = String(data.status || '').toLowerCase().trim();
+
+        // 🔹 Only consider Success or Completed transactions
+        if (statusFormatted === 'success' || statusFormatted === 'completed') {
+          if (data.created_at) {
+            const date = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
+            if (!isNaN(date.getTime()) && date >= start && date < end) {
+              revenue += Number(data.amount_paid !== undefined ? data.amount_paid : (data.amount || 0));
+              credits += Number(data.credits_added !== undefined ? data.credits_added : (data.credits || 0));
+            }
           }
         }
       });
@@ -251,15 +294,12 @@ exports.getRevenueChartData = async (req, res) => {
 };
 
 // ==========================================
-// 4. GET ALL TRANSACTIONS
+// 4. GET ALL TRANSACTIONS (SORTED BY NEWEST FIRST)
+// ✅ FIXED: Date format now includes date + time
 // ==========================================
 exports.getAllTransactions = async (req, res) => {
   try {
-    const snapshot = await db.collection('transactions')
-      .orderBy('created_at', 'desc')
-      .limit(100) 
-      .get();
-
+    const snapshot = await db.collection('transactions').get();
     const userCache = {};
 
     const transactionsPromises = snapshot.docs.map(async (doc) => {
@@ -305,13 +345,21 @@ exports.getAllTransactions = async (req, res) => {
         else if (s === 'pending') statusFormatted = 'Pending';
       }
 
+      let rawDate = 0;
       let formattedTimestamp = 'N/A';
       if (data.created_at) {
         const dateObj = data.created_at?.toDate ? data.created_at.toDate() : new Date(data.created_at);
         if (!isNaN(dateObj.getTime())) {
-          const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          const dateStr = dateObj.toISOString().slice(0, 10);
-          formattedTimestamp = `${dateStr} ${timeStr}`;
+          rawDate = dateObj.getTime();
+          // ✅ FIXED: Full date + time format
+          formattedTimestamp = dateObj.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
         }
       }
 
@@ -322,24 +370,27 @@ exports.getAllTransactions = async (req, res) => {
         plan: planName,
         tier: planName,
         amount: Number(amount),
-        credits,
-        gateway,
+        credits: Number(credits),
+        gateway: gateway,
         status: statusFormatted,
-        timestamp: formattedTimestamp
+        timestamp: formattedTimestamp,
+        rawDate: rawDate
       };
     });
 
-    const transactions = await Promise.all(transactionsPromises);
+    let transactions = await Promise.all(transactionsPromises);
+    transactions.sort((a, b) => b.rawDate - a.rawDate);
+
     res.status(200).json(transactions);
 
   } catch (error) {
-    console.error("Error fetching transactions:", error);
+    console.error("Error fetching all transactions:", error);
     res.status(500).json({ error: error.message });
   }
 };
 
 // ==========================================
-// 5. GET ACTIVE USERS
+// 5. GET ACTIVE USERS COUNT
 // ==========================================
 exports.getActiveUsers = async (req, res) => {
   try {
@@ -349,85 +400,3 @@ exports.getActiveUsers = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-// ==========================================
-// 6. GET ALL TUTORS WITH TOKENS
-// ==========================================
-exports.getAllTutorsWithTokens = async (req, res) => {
-  try {
-    const purchasedSnapshot = await db.collection('purchased_exams')
-      .where('status', '==', 'completed')
-      .get();
-    
-    const tutorMap = {};
-
-    purchasedSnapshot.forEach(doc => {
-      const data = doc.data();
-      const tutorId = data.tutor_id;
-      
-      if (!tutorId) return;
-      
-      if (!tutorMap[tutorId]) {
-        tutorMap[tutorId] = {
-          tutorId: tutorId,
-          tutorName: data.tutor_name || 'Unknown',
-          totalTokens: 0,
-          paperCount: 0,
-          studentIds: [],
-          examIds: []
-        };
-      }
-      
-      tutorMap[tutorId].totalTokens += data.credits_deducted || 0;
-      tutorMap[tutorId].paperCount += 1;
-      
-      if (data.student_id && !tutorMap[tutorId].studentIds.includes(data.student_id)) {
-        tutorMap[tutorId].studentIds.push(data.student_id);
-      }
-      if (data.exam_id && !tutorMap[tutorId].examIds.includes(data.exam_id)) {
-        tutorMap[tutorId].examIds.push(data.exam_id);
-      }
-    });
-
-    const settingsRef = db.collection('system_settings').doc('global_config');
-    const settingsDoc = await settingsRef.get();
-    const settings = settingsDoc.data() || {};
-    const exchangeRate = settings.creditPrice || 10;
-    const commission = settings.platformCommission || 20;
-
-    const tutors = Object.values(tutorMap).map(tutor => {
-      const grossAmount = tutor.totalTokens * exchangeRate;
-      const commissionAmount = grossAmount * (commission / 100);
-      const netPayout = grossAmount - commissionAmount;
-
-      return {
-        ...tutor,
-        studentCount: tutor.studentIds.length,
-        examCount: tutor.examIds.length,
-        grossAmount,
-        commissionAmount,
-        netPayout,
-        exchangeRate,
-        commission,
-        tokensPerPaper: tutor.paperCount > 0 ? Math.round(tutor.totalTokens / tutor.paperCount) : 0
-      };
-    });
-
-    res.status(200).json({
-      success: true,
-      data: tutors
-    });
-
-  } catch (error) {
-    console.error('Error fetching tutors tokens:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
-  }
-};
-
-// ✅ NO module.exports needed!
-// All functions are exported using exports.
-// Just leave it like this!

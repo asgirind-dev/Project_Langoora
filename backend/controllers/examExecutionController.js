@@ -9,6 +9,228 @@ const logAudit = (fn, data) => {
   fn(data).catch(err => console.error('Audit log error:', err));
 };
 
+// ================================================================
+// ✅ STEP 1: CHECK ACTIVE ATTEMPT (NEW)
+// ================================================================
+/**
+ * 🔍 Check if student has an active attempt - WITH AUDIT LOG
+ * GET /api/exam-execution/:examId/check-active
+ */
+const checkActiveAttempt = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const studentId = req.user?.id || req.user?.uid;
+
+    if (!studentId) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'User not authenticated' 
+      });
+    }
+
+    console.log(`🔍 Checking active attempt for student: ${studentId}, exam: ${examId}`);
+
+    const db = require('../config/firebase').db;
+
+    // Find active attempts
+    const snapshot = await db.collection('student_exams')
+      .where('studentId', '==', studentId)
+      .where('examId', '==', examId)
+      .where('status', '==', 'active')
+      .get();
+
+    if (snapshot.empty) {
+      console.log('✅ No active attempt found');
+      return res.status(200).json({
+        success: true,
+        hasActiveAttempt: false,
+        data: null
+      });
+    }
+
+    // Get the most recent active attempt
+    const docs = snapshot.docs.sort((a, b) => {
+      return new Date(b.data().startTime) - new Date(a.data().startTime);
+    });
+
+    const doc = docs[0];
+    const attemptData = doc.data();
+    const attemptId = doc.id;
+
+    console.log(`✅ Active attempt found: ${attemptId}`);
+
+    // Check if time is still remaining
+    const durationMinutes = attemptData.duration_minutes || 60;
+    const startTime = new Date(attemptData.startTime);
+    const elapsedSeconds = (Date.now() - startTime.getTime()) / 1000;
+    const totalSeconds = durationMinutes * 60;
+
+    console.log(`⏱️ Elapsed: ${elapsedSeconds}s, Total: ${totalSeconds}s`);
+
+    if (elapsedSeconds > totalSeconds) {
+      console.log('⏰ Time expired - auto submitting');
+      // Time's up - auto submit
+      await db.collection('student_exams').doc(attemptId).update({
+        status: 'completed',
+        autoSubmitted: true,
+        endTime: new Date().toISOString()
+      });
+      
+      return res.status(200).json({
+        success: true,
+        hasActiveAttempt: false,
+        data: null,
+        timeExpired: true
+      });
+    }
+
+    // Return active attempt with remaining time
+    const remainingSeconds = Math.max(0, totalSeconds - elapsedSeconds);
+
+    console.log(`⏱️ Remaining: ${remainingSeconds}s`);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - RESUMED
+    logAudit(auditLogService.logExamAttempt, {
+      studentId: studentId,
+      studentEmail: req.user?.email || 'unknown',
+      examId: examId,
+      examTitle: attemptData.title || 'Exam',
+      attemptId: attemptId,
+      action: 'resumed',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    return res.status(200).json({
+      success: true,
+      hasActiveAttempt: true,
+      data: {
+        attemptId,
+        answers: attemptData.answers || {},
+        partIndex: attemptData.partIndex || 0,
+        qIndex: attemptData.qIndex || 0,
+        timeLeft: attemptData.timeLeft || remainingSeconds,
+        remainingSeconds,
+        elapsedSeconds,
+        totalSeconds,
+        startTime: attemptData.startTime,
+        duration_minutes: durationMinutes,
+        title: attemptData.title,
+        category_id: attemptData.category_id,
+        level_id: attemptData.level_id,
+        tutor_id: attemptData.tutor_id,
+        tutor_name: attemptData.tutor_name,
+        totalQuestions: attemptData.totalQuestions || 0,
+        ...attemptData
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Check active attempt error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to check active attempt',
+      error: error.message
+    });
+  }
+};
+
+// ================================================================
+// ✅ STEP 2: SAVE PROGRESS (NEW)
+// ================================================================
+/**
+ * 💾 Save exam progress - WITH AUDIT LOG
+ * PUT /api/exam-execution/:attemptId/save
+ */
+const saveProgress = async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { answers, partIndex, qIndex, timeLeft } = req.body;
+    const studentId = req.user?.id || req.user?.uid;
+
+    if (!studentId) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'User not authenticated' 
+      });
+    }
+
+    const db = require('../config/firebase').db;
+    const attemptRef = db.collection('student_exams').doc(attemptId);
+    const attemptDoc = await attemptRef.get();
+
+    if (!attemptDoc.exists) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Attempt not found' 
+      });
+    }
+
+    const attemptData = attemptDoc.data();
+    if (attemptData.studentId !== studentId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Unauthorized' 
+      });
+    }
+
+    // Only save if status is still active
+    if (attemptData.status !== 'active') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Exam already submitted' 
+      });
+    }
+
+    await attemptRef.update({
+      answers: answers || {},
+      partIndex: partIndex || 0,
+      qIndex: qIndex || 0,
+      timeLeft: timeLeft || 0,
+      lastSavedAt: new Date().toISOString()
+    });
+
+    console.log(`✅ Progress saved for attempt: ${attemptId}`);
+
+    // ✅ EXAM ATTEMPT AUDIT LOG - PROGRESS SAVED (only log occasionally)
+    // Only log every 5th save to avoid spam
+    const saveCount = (attemptData._saveCount || 0) + 1;
+    await attemptRef.update({
+      _saveCount: saveCount
+    });
+
+    if (saveCount % 5 === 0) {
+      logAudit(auditLogService.logExamAttempt, {
+        studentId: studentId,
+        studentEmail: req.user?.email || 'unknown',
+        examId: attemptData.examId || 'unknown',
+        examTitle: attemptData.title || 'Exam',
+        attemptId: attemptId,
+        action: 'progress_saved',
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Progress saved',
+      savedAt: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Save progress error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to save progress',
+      error: error.message
+    });
+  }
+};
+
+// ================================================================
+// ✅ STEP 3: MODIFIED START EXAM (with resume support)
+// ================================================================
 /**
  * 📝 Start a new exam attempt session matrix - WITH AUDIT LOG
  * POST /api/exam-execution/:examId/start
@@ -21,6 +243,78 @@ const start = async (req, res) => {
     if (!studentId) {
       return res.status(401).json({ success: false, message: 'User not authenticated' });
     }
+
+    console.log(`🚀 Starting exam for student: ${studentId}, exam: ${examId}`);
+
+    const db = require('../config/firebase').db;
+
+    // ✅ FIRST: Check if there's an active attempt
+    const activeSnapshot = await db.collection('student_exams')
+      .where('studentId', '==', studentId)
+      .where('examId', '==', examId)
+      .where('status', '==', 'active')
+      .get();
+
+    if (!activeSnapshot.empty) {
+      const docs = activeSnapshot.docs.sort((a, b) => {
+        return new Date(b.data().startTime) - new Date(a.data().startTime);
+      });
+      const doc = docs[0];
+      const attemptData = doc.data();
+      const attemptId = doc.id;
+
+      console.log(`🔄 Found active attempt: ${attemptId}`);
+
+      // Check if time expired
+      const durationMinutes = attemptData.duration_minutes || 60;
+      const startTime = new Date(attemptData.startTime);
+      const elapsedSeconds = (Date.now() - startTime.getTime()) / 1000;
+      const totalSeconds = durationMinutes * 60;
+
+      if (elapsedSeconds > totalSeconds) {
+        console.log('⏰ Time expired - auto submitting');
+        await db.collection('student_exams').doc(attemptId).update({
+          status: 'completed',
+          autoSubmitted: true,
+          endTime: new Date().toISOString()
+        });
+        // ✅ Continue to create new attempt (will fall through)
+        console.log('📝 Creating new attempt after auto-submit');
+      } else {
+        // ✅ Resume existing attempt
+        const remainingSeconds = Math.max(0, totalSeconds - elapsedSeconds);
+        
+        console.log(`✅ Returning existing attempt with ${remainingSeconds}s remaining`);
+        
+        // ✅ EXAM ATTEMPT AUDIT LOG - RESUMED
+        logAudit(auditLogService.logExamAttempt, {
+          studentId: studentId,
+          studentEmail: req.user?.email || 'unknown',
+          examId: examId,
+          examTitle: attemptData.title || 'Exam',
+          attemptId: attemptId,
+          action: 'resumed',
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || 'unknown'
+        });
+
+        return res.status(200).json({
+          success: true,
+          data: {
+            attemptId,
+            ...attemptData,
+            isResumed: true,
+            remainingSeconds,
+            elapsedSeconds,
+            totalSeconds,
+            timeLeft: remainingSeconds
+          }
+        });
+      }
+    }
+
+    // No active attempt or time expired - create new
+    console.log('📝 Creating new attempt');
     
     const attempt = await examExecutionService.startExam(examId, studentId);
 
@@ -421,7 +715,15 @@ const getFeedback = async (req, res) => {
   }
 };
 
+// ================================================================
+// ✅ EXPORTS
+// ================================================================
 module.exports = {
+  // ✅ NEW: Resume system functions
+  checkActiveAttempt,
+  saveProgress,
+  
+  // ✅ Existing functions
   start,
   metadata,
   questions,

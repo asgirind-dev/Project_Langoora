@@ -1,13 +1,15 @@
 const { db } = require("../config/firebase");
 
 /**
- * Small helper to keep field defaults consistent across create/update paths.
+ * ✅ FIXED: Small helper to keep field defaults consistent across create/update paths.
+ * Now uses toLowerCase() to match Firestore document IDs (e.g., "jlpt" instead of "JLPT")
  * Section-agnostic on purpose: Listening, Grammar, Vocabulary, Reading all
  * flow through the same normalization so they are written identically.
  */
 const normalizeCategoryId = (categoryId) => {
   if (!categoryId) return "";
-  return categoryId.toUpperCase().replace(/[\s_]/g, "-").trim();
+  // ✅ FIXED: toLowerCase() instead of toUpperCase()
+  return categoryId.toLowerCase().replace(/[\s_]/g, "-").trim();
 };
 
 /**

@@ -123,13 +123,15 @@ export default function CreateExamPage() {
   // ✅ UTILITY FUNCTIONS
   // ============================================================
   
+  // ✅ FIXED: Use toLowerCase() instead of toUpperCase()
+  // This ensures category_id matches Firestore document IDs (e.g., "jlpt")
   const getNormalizedCategory = (catId) => {
     if (!catId) return '';
-    return catId.toUpperCase().replace(/[\s_]/g, '-').trim();
+    return catId.toLowerCase().replace(/[\s_]/g, '-').trim();
   };
 
-  const isEpstopik = getNormalizedCategory(meta.category_id) === 'EPS-TOPIK';
-  const isJlpt = getNormalizedCategory(meta.category_id) === 'JLPT';
+  const isEpstopik = getNormalizedCategory(meta.category_id) === 'eps-topik';
+  const isJlpt = getNormalizedCategory(meta.category_id) === 'jlpt';
 
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -378,7 +380,7 @@ export default function CreateExamPage() {
   // render or from the long-lived autosave interval reading refs.
   const buildExamPayload = (metaSnapshot, sectionsSnapshot, questionsSnapshot, statusOverride) => {
     const normalizedCategory = getNormalizedCategory(metaSnapshot.category_id);
-    const isEpstopikSnapshot = normalizedCategory === 'EPS-TOPIK';
+    const isEpstopikSnapshot = normalizedCategory === 'eps-topik';
 
     return {
       title: metaSnapshot.title.trim() || 'Untitled Draft',
@@ -715,11 +717,11 @@ export default function CreateExamPage() {
       return cName === normalizedCatId || cId === normalizedCatId;
     });
     
-    const isEpstopik = normalizedCatId === 'EPS-TOPIK' ||
-                       catId?.toUpperCase().includes('EPS') ||
-                       (targetCluster && getNormalizedCategory(targetCluster.category_name) === 'EPS-TOPIK');
-    const isJlpt = normalizedCatId === 'JLPT' || 
-                   (targetCluster && getNormalizedCategory(targetCluster.category_name) === 'JLPT');
+    const isEpstopik = normalizedCatId === 'eps-topik' ||
+                       catId?.toLowerCase().includes('eps') ||
+                       (targetCluster && getNormalizedCategory(targetCluster.category_name) === 'eps-topik');
+    const isJlpt = normalizedCatId === 'jlpt' || 
+                   (targetCluster && getNormalizedCategory(targetCluster.category_name) === 'jlpt');
     
     console.log('🔍 Category detection:', { 
       catId, 
